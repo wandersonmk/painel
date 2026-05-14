@@ -1,0 +1,43 @@
+import { requireSuperAdmin, getServiceClient } from '~~/server/utils/requireSuperAdmin'
+
+export default defineEventHandler(async (event) => {
+  await requireSuperAdmin(event)
+  const supabase = getServiceClient()
+
+  try {
+    const { data: empresas, error } = await supabase
+      .from('empresas')
+      .select('id, nome, email, whatsapp, subscription_status, subscription_plan, subscription_period, trial_ends_at, subscription_renews_at, subscription_price, ativo, created_at, auth_user_id, max_instancias, cancel_at_period_end')
+      .order('created_at', { ascending: false })
+    if (error) throw error
+
+    const clientesComRole = await Promise.all((empresas || []).map(async (emp) => {
+      let userRole = 'user'
+      if (emp.auth_user_id) {
+        const { data: u } = await supabase.from('usuarios').select('role').eq('auth_user_id', emp.auth_user_id).single()
+        if (u) userRole = u.role
+      }
+      return {
+        id: emp.id,
+        nome: emp.nome,
+        email: emp.email || '',
+        whatsapp: emp.whatsapp,
+        subscription_status: emp.subscription_status || 'trial',
+        subscription_plan: emp.subscription_plan || 'free',
+        subscription_period: emp.subscription_period || 'trial',
+        trial_ends_at: emp.trial_ends_at,
+        subscription_renews_at: emp.subscription_renews_at,
+        subscription_price: emp.subscription_price,
+        ativo: emp.ativo,
+        created_at: emp.created_at,
+        role: userRole,
+        max_instancias: emp.max_instancias ?? 1,
+        cancel_at_period_end: emp.cancel_at_period_end || false,
+      }
+    }))
+
+    return { success: true, data: clientesComRole }
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Erro ao listar clientes' }
+  }
+})

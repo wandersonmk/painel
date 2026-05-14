@@ -2,27 +2,26 @@
 import { ref, onMounted } from 'vue'
 
 const hasToken = ref(false)
-const tokenAtual = ref<string | null>(null)
+const tokenPreview = ref<string | null>(null)
 const editing = ref(false)
 const novoToken = ref('')
 const salvando = ref(false)
 const removendo = ref(false)
-const showToken = ref(false)
 
 let toast: Awaited<ReturnType<typeof useToastSafe>> | null = null
 
 async function loadStatus() {
   try {
-    const resp = await $fetch<{ success: boolean; hasToken: boolean; token: string | null }>('/api/admin/token-global', {
+    const resp = await $fetch<{ success: boolean; hasToken: boolean; preview: string | null }>('/api/admin/token-global', {
       method: 'POST',
       body: { action: 'get' },
       headers: await useAdminAuthHeaders(),
     })
     hasToken.value = resp.hasToken
-    tokenAtual.value = resp.token
+    tokenPreview.value = resp.preview
   } catch {
     hasToken.value = false
-    tokenAtual.value = null
+    tokenPreview.value = null
   }
 }
 
@@ -65,10 +64,9 @@ async function remover() {
   finally { removendo.value = false }
 }
 
-function maskToken(t: string | null) {
-  if (!t) return ''
-  if (t.length <= 10) return '•'.repeat(t.length)
-  return `${t.slice(0, 6)}${'•'.repeat(20)}${t.slice(-4)}`
+function displayMask(preview: string | null) {
+  if (!preview) return '••••••••••••'
+  return `sk-${'•'.repeat(20)}${preview}`
 }
 
 onMounted(async () => {
@@ -100,16 +98,8 @@ onMounted(async () => {
     <div v-if="hasToken && !editing" class="space-y-3">
       <div class="flex items-center gap-2">
         <code class="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono text-slate-700 dark:text-slate-300 truncate">
-          {{ showToken ? tokenAtual : maskToken(tokenAtual) }}
+          {{ displayMask(tokenPreview) }}
         </code>
-        <button
-          @click="showToken = !showToken"
-          class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400"
-          :aria-label="showToken ? 'Ocultar token' : 'Mostrar token'"
-          type="button"
-        >
-          <i :class="['fa-solid', showToken ? 'fa-eye-slash' : 'fa-eye']" aria-hidden="true" />
-        </button>
       </div>
       <div class="flex gap-2">
         <button type="button" @click="editing = true; novoToken = ''" class="px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold">

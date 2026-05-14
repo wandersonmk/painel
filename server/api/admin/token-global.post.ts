@@ -11,7 +11,9 @@ export default defineEventHandler(async (event) => {
 
   if (body.action === 'get') {
     const { data } = await supabase.from('admin_settings').select('valor').eq('chave', CHAVE).maybeSingle()
-    return { success: true, hasToken: !!data?.valor, token: data?.valor || null }
+    const valor = data?.valor as string | undefined
+    const preview = valor && valor.length > 4 ? valor.slice(-4) : null
+    return { success: true, hasToken: !!valor, preview }
   }
 
   if (body.action === 'save') {

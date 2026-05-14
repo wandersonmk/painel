@@ -1,15 +1,16 @@
 import { ref, computed, readonly } from 'vue'
-import type { User, Session } from '@supabase/supabase-js'
+import type { Session } from '@supabase/supabase-js'
 
 export function useAuth() {
   const supabase = useSupabaseClient()
 
-  const user = useState<User | null>('auth_user', () => null)
+  // user é o estado mantido pelo módulo @nuxtjs/supabase — sobrevive a refreshes
+  const user = useSupabaseUser()
   const session = useState<Session | null>('auth_session', () => null)
   const isLoading = useState<boolean>('auth_loading', () => import.meta.server ? false : true)
   const errorMessage = ref<string | null>(null)
 
-  const isAuthenticated = computed(() => !!user.value && !!session.value)
+  const isAuthenticated = computed(() => !!user.value)
 
   const signInWithEmailAndPassword = async (email: string, password: string) => {
     isLoading.value = true
@@ -17,7 +18,6 @@ export function useAuth() {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
-      user.value = data.user
       session.value = data.session
       return data.user
     } catch (err: any) {
@@ -30,7 +30,6 @@ export function useAuth() {
 
   const signOut = async () => {
     await supabase.auth.signOut()
-    user.value = null
     session.value = null
   }
 
@@ -38,17 +37,14 @@ export function useAuth() {
     if (import.meta.server) return
     try {
       const { data } = await supabase.auth.getSession()
-      if (data.session) {
-        user.value = data.session.user
-        session.value = data.session
-      }
+      if (data.session) session.value = data.session
     } finally {
       isLoading.value = false
     }
   }
 
   return {
-    user: readonly(user),
+    user,
     session: readonly(session),
     isAuthenticated,
     isLoading: readonly(isLoading),

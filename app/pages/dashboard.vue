@@ -433,8 +433,8 @@ const revenueChartOptions = computed(() => ({
         <h2 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Stripe · Financeiro</h2>
       </div>
 
-      <div v-if="stripeLoading" class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div v-for="i in 4" :key="i" class="h-28 rounded-md bg-slate-100 dark:bg-white/5 animate-pulse border border-slate-200 dark:border-white/5" />
+      <div v-if="stripeLoading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div v-for="i in 4" :key="i" class="h-24 rounded-xl bg-slate-100 dark:bg-white/5 animate-pulse border border-slate-200 dark:border-white/5" />
       </div>
 
       <div v-else-if="stripeError" class="p-4 rounded-md bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 text-red-700 dark:text-red-400 text-sm flex items-center gap-2">
@@ -442,90 +442,42 @@ const revenueChartOptions = computed(() => ({
         <span>{{ stripeError }}</span>
       </div>
 
-      <div v-else-if="stripeData" class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <!-- Receita do mês -->
-        <div :class="['relative overflow-hidden p-3.5 sm:p-5 flex flex-col gap-2 sm:gap-3', cardBase, cardHover]">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Receita este mês</span>
-            <div class="w-8 h-8 rounded bg-emerald-100 dark:bg-emerald-500/15 flex items-center justify-center">
-              <i class="fa-solid fa-arrow-trend-up text-emerald-600 dark:text-emerald-400 text-sm" aria-hidden="true" />
-            </div>
-          </div>
-          <div>
-            <p class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{{ displayBRL(stripeData.revenueThisMonth) }}</p>
-            <p class="text-xs text-slate-500 dark:text-slate-500 mt-0.5">{{ stripeData.paymentsCount }} pagamentos aprovados</p>
-          </div>
-          <div class="absolute inset-x-0 bottom-0 h-0.5 bg-gradient-to-r from-emerald-500/0 via-emerald-500/60 to-emerald-500/0" />
-        </div>
-
-        <!-- Assinaturas ativas -->
-        <div :class="['relative overflow-hidden p-3.5 sm:p-5 flex flex-col gap-2 sm:gap-3', cardBase, cardHover]">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Assinaturas ativas</span>
-            <div class="w-8 h-8 rounded bg-purple-100 dark:bg-purple-500/15 flex items-center justify-center">
-              <i class="fa-solid fa-repeat text-purple-700 dark:text-purple-400 text-sm" aria-hidden="true" />
-            </div>
-          </div>
-          <div>
-            <p class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{{ stripeData.activeSubscriptions }}</p>
-            <p class="text-xs text-slate-500 dark:text-slate-500 mt-0.5">
-              <span v-if="stripeData.trialingSubscriptions">{{ stripeData.trialingSubscriptions }} em trial · </span>
-              <span>{{ stripeData.canceledSubscriptions }} canceladas</span>
-            </p>
-          </div>
-          <div class="absolute inset-x-0 bottom-0 h-0.5 bg-gradient-to-r from-purple-600/0 via-purple-600/60 to-purple-600/0" />
-        </div>
-
-        <!-- Pendentes/Vencidas -->
-        <div
-          class="relative overflow-hidden rounded-md p-3.5 sm:p-5 flex flex-col gap-2 sm:gap-3 transition-colors border shadow-sm dark:shadow-none"
-          :class="stripeData.pastDueSubscriptions > 0
-            ? 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/20 hover:bg-red-100 dark:hover:bg-red-500/15'
-            : 'bg-white dark:bg-white/[0.04] border-slate-200 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-white/[0.07]'"
+      <div v-else-if="stripeData" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard
+          label="Receita este mês"
+          :unit="`${stripeData.paymentsCount} aprovados`"
+          icon="fa-solid fa-arrow-trend-up"
+          color="emerald"
         >
-          <div class="flex items-center justify-between">
-            <span
-              class="text-xs font-medium uppercase tracking-wider"
-              :class="stripeData.pastDueSubscriptions > 0 ? 'text-red-700 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'"
-            >Inadimplentes</span>
-            <div
-              class="w-8 h-8 rounded flex items-center justify-center"
-              :class="stripeData.pastDueSubscriptions > 0 ? 'bg-red-100 dark:bg-red-500/20' : 'bg-slate-100 dark:bg-slate-500/15'"
-            >
-              <i
-                class="fa-solid fa-clock-rotate-left text-sm"
-                :class="stripeData.pastDueSubscriptions > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'"
-                aria-hidden="true"
-              />
-            </div>
-          </div>
-          <div>
-            <p
-              class="text-xl sm:text-2xl font-bold tabular-nums"
-              :class="stripeData.pastDueSubscriptions > 0 ? 'text-red-700 dark:text-red-300' : 'text-slate-900 dark:text-white'"
-            >{{ stripeData.pastDueSubscriptions }}</p>
-            <p
-              class="text-xs mt-0.5"
-              :class="stripeData.pastDueSubscriptions > 0 ? 'text-red-600 dark:text-red-500' : 'text-slate-500'"
-            >assinaturas em atraso</p>
-          </div>
-          <div v-if="stripeData.pastDueSubscriptions > 0" class="absolute inset-x-0 bottom-0 h-0.5 bg-gradient-to-r from-red-500/0 via-red-500/60 to-red-500/0" />
-        </div>
+          {{ displayBRL(stripeData.revenueThisMonth) }}
+        </KpiCard>
 
-        <!-- Saldo pendente -->
-        <div :class="['relative overflow-hidden p-3.5 sm:p-5 flex flex-col gap-2 sm:gap-3', cardBase, cardHover]">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Saldo pendente</span>
-            <div class="w-8 h-8 rounded bg-amber-100 dark:bg-amber-500/15 flex items-center justify-center">
-              <i class="fa-solid fa-wallet text-amber-600 dark:text-amber-400 text-sm" aria-hidden="true" />
-            </div>
-          </div>
-          <div>
-            <p class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{{ displayBRL(stripeData.pendingBalance) }}</p>
-            <p class="text-xs text-slate-500 mt-0.5">{{ displayBRL(stripeData.availableBalance) }} disponível</p>
-          </div>
-          <div class="absolute inset-x-0 bottom-0 h-0.5 bg-gradient-to-r from-amber-500/0 via-amber-500/60 to-amber-500/0" />
-        </div>
+        <KpiCard
+          label="Assinaturas ativas"
+          :value="stripeData.activeSubscriptions"
+          :unit="stripeData.trialingSubscriptions
+            ? `${stripeData.trialingSubscriptions} trial · ${stripeData.canceledSubscriptions} canc.`
+            : `${stripeData.canceledSubscriptions} canceladas`"
+          icon="fa-solid fa-repeat"
+          color="purple"
+        />
+
+        <KpiCard
+          label="Inadimplentes"
+          :value="stripeData.pastDueSubscriptions"
+          unit="em atraso"
+          icon="fa-solid fa-clock-rotate-left"
+          color="rose"
+        />
+
+        <KpiCard
+          label="Saldo pendente"
+          :unit="`${displayBRL(stripeData.availableBalance)} disponível`"
+          icon="fa-solid fa-wallet"
+          color="amber"
+        >
+          {{ displayBRL(stripeData.pendingBalance) }}
+        </KpiCard>
       </div>
     </section>
 
@@ -666,70 +618,46 @@ const revenueChartOptions = computed(() => ({
         <h2 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Clientes · Métricas</h2>
       </div>
 
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div :class="['p-3.5 sm:p-5 flex flex-col gap-2 sm:gap-3', cardBase, cardHover]">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total</span>
-            <div class="w-8 h-8 rounded bg-indigo-100 dark:bg-indigo-500/15 flex items-center justify-center">
-              <i class="fa-solid fa-database text-indigo-600 dark:text-indigo-400 text-sm" aria-hidden="true" />
-            </div>
-          </div>
-          <div>
-            <p class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
-              <span v-if="clientesLoading" class="inline-block w-12 h-7 bg-slate-200 dark:bg-white/10 rounded-lg animate-pulse" />
-              <span v-else>{{ stats.totalClientes }}</span>
-            </p>
-            <p class="text-xs text-slate-500 mt-0.5">{{ stats.clientesAtivos }} ativos</p>
-          </div>
-        </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard
+          label="Total"
+          :value="stats.totalClientes"
+          :unit="`${stats.clientesAtivos} ativos`"
+          icon="fa-solid fa-database"
+          color="indigo"
+          :loading="clientesLoading"
+          loading-width="w-12"
+        />
 
-        <div :class="['p-3.5 sm:p-5 flex flex-col gap-2 sm:gap-3', cardBase, cardHover]">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Novos hoje</span>
-            <div class="w-8 h-8 rounded bg-emerald-100 dark:bg-emerald-500/15 flex items-center justify-center">
-              <i class="fa-solid fa-user-plus text-emerald-600 dark:text-emerald-400 text-sm" aria-hidden="true" />
-            </div>
-          </div>
-          <div>
-            <p class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
-              <span v-if="clientesLoading" class="inline-block w-8 h-7 bg-slate-200 dark:bg-white/10 rounded-lg animate-pulse" />
-              <span v-else>{{ novosHoje }}</span>
-            </p>
-            <p class="text-xs text-slate-500 mt-0.5">cadastros hoje</p>
-          </div>
-        </div>
+        <KpiCard
+          label="Novos hoje"
+          :value="novosHoje"
+          unit="cadastros hoje"
+          icon="fa-solid fa-user-plus"
+          color="emerald"
+          :loading="clientesLoading"
+          loading-width="w-8"
+        />
 
-        <div :class="['p-3.5 sm:p-5 flex flex-col gap-2 sm:gap-3', cardBase, cardHover]">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Últimos 7 dias</span>
-            <div class="w-8 h-8 rounded bg-blue-100 dark:bg-blue-500/15 flex items-center justify-center">
-              <i class="fa-solid fa-chart-line text-blue-600 dark:text-blue-400 text-sm" aria-hidden="true" />
-            </div>
-          </div>
-          <div>
-            <p class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
-              <span v-if="clientesLoading" class="inline-block w-8 h-7 bg-slate-200 dark:bg-white/10 rounded-lg animate-pulse" />
-              <span v-else>{{ novos7Dias }}</span>
-            </p>
-            <p class="text-xs text-slate-500 mt-0.5">novos na semana</p>
-          </div>
-        </div>
+        <KpiCard
+          label="Últimos 7 dias"
+          :value="novos7Dias"
+          unit="novos na semana"
+          icon="fa-solid fa-chart-line"
+          color="blue"
+          :loading="clientesLoading"
+          loading-width="w-8"
+        />
 
-        <div :class="['p-3.5 sm:p-5 flex flex-col gap-2 sm:gap-3', cardBase, cardHover]">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Últimos 30 dias</span>
-            <div class="w-8 h-8 rounded bg-purple-100 dark:bg-purple-500/15 flex items-center justify-center">
-              <i class="fa-solid fa-calendar-check text-purple-700 dark:text-purple-400 text-sm" aria-hidden="true" />
-            </div>
-          </div>
-          <div>
-            <p class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
-              <span v-if="clientesLoading" class="inline-block w-8 h-7 bg-slate-200 dark:bg-white/10 rounded-lg animate-pulse" />
-              <span v-else>{{ novos30Dias }}</span>
-            </p>
-            <p class="text-xs text-slate-500 mt-0.5">novos no mês</p>
-          </div>
-        </div>
+        <KpiCard
+          label="Últimos 30 dias"
+          :value="novos30Dias"
+          unit="novos no mês"
+          icon="fa-solid fa-calendar-check"
+          color="violet"
+          :loading="clientesLoading"
+          loading-width="w-8"
+        />
       </div>
 
       <!-- Plans breakdown -->

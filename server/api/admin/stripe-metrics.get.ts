@@ -21,13 +21,15 @@ export default defineEventHandler(async (event) => {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
     const startOfMonthTs = Math.floor(startOfMonth.getTime() / 1000)
 
+    const nowTs = Math.floor(Date.now() / 1000)
+
     const [allPayments, subscriptions, balance, payouts, pendingTxns] = await Promise.all([
       stripe.paymentIntents.list({ created: { gte: startOfMonthTs }, limit: 100 }),
       stripe.subscriptions.list({ limit: 100, status: 'all' }),
       stripe.balance.retrieve(),
-      stripe.payouts.list({ limit: 30 }),
-      // "Em breve" = transações pendentes ainda não liberadas pelo Stripe
-      stripe.balanceTransactions.list({ limit: 100, payout: undefined as any }),
+      stripe.payouts.list({ limit: 50 }),
+      // Apenas transações cujo available_on é futuro (ainda não liberadas em saldo)
+      stripe.balanceTransactions.list({ limit: 100, available_on: { gte: nowTs } }),
     ])
 
     const succeeded = allPayments.data.filter(p => p.status === 'succeeded')
@@ -78,28 +80,44 @@ export default defineEventHandler(async (event) => {
       .slice(0, 10)
       .map(mapPayout)
 
-    // "Em breve" — agrupa balance transactions pendentes (sem payout) por available_on.
-    // Cada bucket é um repasse projetado que aparecerá quando o Stripe criar o Payout.
+    // Projeções de repasses: agrupa balance transactions pendentes por available_on.
+    // Filtramos available_on >= now, então só vêm transações ainda não liberadas.
     const scheduledMap = new Map<number, number>()
     for (const t of pendingTxns.data) {
-      if (t.status !== 'pending') continue
-      if (t.type === 'payout' || t.type === 'payout_cancel' || t.type === 'payout_failure') continue
-      // payout-related transactions are excluded; we want charges/refunds/fees that compose the future payout
-      const key = t.available_on
-      scheduledMap.set(key, (scheduledMap.get(key) || 0) + (t.net ?? (t.amount - (t.fee || 0))))
+      if (['payout', 'payout_cancel', 'payout_failure'].includes(t.type)) continue
+      scheduledMap.set(t.available_on, (scheduledMap.get(t.available_on) || 0) + t.net)
     }
-    const scheduledPayouts = Array.from(scheduledMap.entries())
-      .filter(([, net]) => net > 0)
-      .sort(([a], [b]) => a - b)
-      .map(([availableOn, netAmount], idx) => ({
+
+    // O saldo disponível (pode ser negativo por estorno/disputa) é abatido do
+    // primeiro repasse projetado, exatamente como o Stripe exibe no dashboard.
+    const sortedAvailableOn = Array.from(scheduledMap.keys()).sort((a, b) => a - b)
+    const availableAmountCents = balance.available.reduce((sum, b) => sum + b.amount, 0)
+    if (sortedAvailableOn.length > 0 && availableAmountCents !== 0) {
+      const firstKey = sortedAvailableOn[0]
+      scheduledMap.set(firstKey, (scheduledMap.get(firstKey) || 0) + availableAmountCents)
+    }
+
+    // Repasse chega no banco no próprio dia do available_on se for dia útil.
+    // Se cair num sábado → próxima segunda (+2 dias). Domingo → segunda (+1 dia).
+    const nextBusinessDay = (ts: number): number => {
+      const d = new Date(ts * 1000)
+      const dow = d.getUTCDay() // 0=Dom, 6=Sáb
+      if (dow === 6) return ts + 2 * 24 * 60 * 60
+      if (dow === 0) return ts + 1 * 24 * 60 * 60
+      return ts
+    }
+
+    const scheduledPayouts = sortedAvailableOn
+      .map((availableOn, idx) => ({
         id: `scheduled-${availableOn}-${idx}`,
-        amount: netAmount / 100,
+        amount: (scheduledMap.get(availableOn) || 0) / 100,
         currency: 'BRL',
         created: availableOn,
-        arrivalDate: availableOn,
+        arrivalDate: nextBusinessDay(availableOn),
         status: 'scheduled' as const,
         method: 'standard',
       }))
+      .filter(p => p.amount > 0)
 
     return {
       success: true,

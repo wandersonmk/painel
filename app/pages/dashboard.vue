@@ -184,13 +184,14 @@ function getPayoutStatusCls(status: string) {
   return 'bg-slate-100 dark:bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-500/20'
 }
 
-// Próximos repasses = oficiais (pending/in_transit) + projetados (scheduled).
 const allUpcomingPayouts = computed<StripePayout[]>(() => {
   if (!stripeData.value) return []
-  return [
-    ...stripeData.value.upcomingPayouts,
-    ...stripeData.value.scheduledPayouts,
-  ].sort((a, b) => a.arrivalDate - b.arrivalDate)
+  const real = stripeData.value.upcomingPayouts
+  // Exclui projeções que já têm um payout real correspondente (mesma janela de ±3 dias)
+  const scheduled = (stripeData.value.scheduledPayouts || []).filter(s =>
+    !real.some(r => Math.abs(r.arrivalDate - s.arrivalDate) <= 3 * 24 * 60 * 60)
+  )
+  return [...real, ...scheduled].sort((a, b) => a.arrivalDate - b.arrivalDate)
 })
 
 const now = new Date()
@@ -505,10 +506,11 @@ const revenueChartOptions = computed(() => ({
           <table class="w-full text-sm">
             <thead>
               <tr class="border-b border-slate-200 dark:border-white/5 bg-slate-50/60 dark:bg-white/[0.02]">
-                <th class="text-left px-3 sm:px-5 py-3 text-[11px] sm:text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">Data prevista</th>
+                <th class="hidden md:table-cell text-left px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">Iniciado em</th>
                 <th class="hidden md:table-cell text-left px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">Método</th>
                 <th class="text-right px-3 sm:px-5 py-3 text-[11px] sm:text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">Valor</th>
-                <th class="text-center px-3 sm:px-5 py-3 text-[11px] sm:text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">Status</th>
+                <th class="text-left px-3 sm:px-5 py-3 text-[11px] sm:text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">Chegar até</th>
+                <th class="hidden sm:table-cell text-center px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">Status</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 dark:divide-white/5">
@@ -517,10 +519,10 @@ const revenueChartOptions = computed(() => ({
                 :key="payout.id"
                 class="hover:bg-slate-50/80 dark:hover:bg-white/[0.03] transition-colors"
               >
-                <td class="px-3 sm:px-5 py-3">
+                <td class="hidden md:table-cell px-5 py-3">
                   <div class="flex items-center gap-2">
-                    <i class="fa-solid fa-calendar-day text-amber-500 text-xs shrink-0" aria-hidden="true" />
-                    <span class="text-slate-800 dark:text-slate-200 font-medium capitalize text-xs sm:text-sm whitespace-nowrap">{{ formatArrivalDate(payout.arrivalDate) }}</span>
+                    <i class="fa-solid fa-calendar-day text-slate-400 text-xs shrink-0" aria-hidden="true" />
+                    <span class="text-slate-700 dark:text-slate-300 capitalize text-xs sm:text-sm whitespace-nowrap">{{ formatArrivalDate(payout.created) }}</span>
                   </div>
                 </td>
                 <td class="hidden md:table-cell px-5 py-3">
@@ -529,7 +531,13 @@ const revenueChartOptions = computed(() => ({
                 <td class="px-3 sm:px-5 py-3 text-right">
                   <span class="font-semibold text-slate-900 dark:text-white tabular-nums text-xs sm:text-sm whitespace-nowrap">{{ displayBRL(payout.amount) }}</span>
                 </td>
-                <td class="px-3 sm:px-5 py-3 text-center">
+                <td class="px-3 sm:px-5 py-3">
+                  <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-calendar-check text-amber-500 text-xs shrink-0" aria-hidden="true" />
+                    <span class="text-slate-800 dark:text-slate-200 font-medium capitalize text-xs sm:text-sm whitespace-nowrap">{{ formatArrivalDate(payout.arrivalDate) }}</span>
+                  </div>
+                </td>
+                <td class="hidden sm:table-cell px-5 py-3 text-center">
                   <span
                     class="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-medium border whitespace-nowrap"
                     :class="getPayoutStatusCls(payout.status)"

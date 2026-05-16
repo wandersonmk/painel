@@ -138,12 +138,8 @@ function formatArrivalDate(ts: number) {
   })
 }
 
-function formatPhone(phone: string | null) {
-  if (!phone) return '-'
-  const digits = phone.replace(/\D/g, '')
-  if (digits.length === 13) return `+${digits.slice(0, 2)} (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9)}`
-  if (digits.length === 11) return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
-  return phone
+function fmtPhone(phone: string | null) {
+  return formatPhone(phone) ?? '-'
 }
 
 function getPlanBadge(plan: string) {
@@ -848,7 +844,18 @@ const revenueChartOptions = computed(() => ({
               <p class="text-sm font-medium text-slate-800 dark:text-white truncate">{{ c.nome }}</p>
               <div class="flex items-center gap-2 mt-0.5">
                 <i class="fa-solid fa-phone text-slate-400 dark:text-slate-600 text-[10px]" aria-hidden="true" />
-                <span class="text-xs text-slate-500 font-mono">{{ formatPhone(c.whatsapp) }}</span>
+                <span class="text-xs text-slate-500 font-mono">{{ fmtPhone(c.whatsapp) }}</span>
+                <a
+                  v-if="whatsappLink(c.whatsapp)"
+                  :href="whatsappLink(c.whatsapp)!"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500 hover:text-white transition-colors"
+                  :title="`Abrir WhatsApp de ${c.nome}`"
+                  aria-label="Abrir WhatsApp"
+                >
+                  <i class="fa-brands fa-whatsapp text-[11px]" aria-hidden="true" />
+                </a>
               </div>
             </div>
             <div class="flex flex-col items-end gap-1 shrink-0">
@@ -906,7 +913,20 @@ const revenueChartOptions = computed(() => ({
             </div>
             <div class="flex-1 min-w-0">
               <p class="text-sm font-medium text-slate-800 dark:text-white truncate">{{ c.nome }}</p>
-              <p class="text-xs text-slate-500 mt-0.5 font-mono">{{ formatPhone(c.whatsapp) }}</p>
+              <p class="text-xs text-slate-500 mt-0.5 font-mono flex items-center gap-1.5">
+                <span>{{ fmtPhone(c.whatsapp) }}</span>
+                <a
+                  v-if="whatsappLink(c.whatsapp)"
+                  :href="whatsappLink(c.whatsapp)!"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500 hover:text-white transition-colors"
+                  :title="`Abrir WhatsApp de ${c.nome}`"
+                  aria-label="Abrir WhatsApp"
+                >
+                  <i class="fa-brands fa-whatsapp text-[10px]" aria-hidden="true" />
+                </a>
+              </p>
             </div>
             <div class="shrink-0 text-right">
               <span

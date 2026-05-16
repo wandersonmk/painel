@@ -31,6 +31,7 @@ const clienteLimiteInstancias = ref<{ id: string; nome: string; max_instancias: 
 
 const searchQuery = ref('')
 const filterStatus = ref('all')
+const filterPlan = ref('all')
 const statsExpanded = ref(true)
 const isRefreshing = ref(false)
 
@@ -58,6 +59,9 @@ const filteredClientes = computed(() => {
     } else {
       filtered = filtered.filter(c => c.subscription_status === filterStatus.value)
     }
+  }
+  if (filterPlan.value !== 'all') {
+    filtered = filtered.filter(c => c.subscription_plan === filterPlan.value)
   }
   return filtered.slice().sort((a, b) => {
     const dA = diasParaVencimento(a)
@@ -241,6 +245,20 @@ async function confirmLimiteInstancias(quantidade: number) {
               <option value="expired">Expirado</option>
               <option value="vencendo-hoje">Vence hoje</option>
               <option value="canceled">Cancelado</option>
+            </select>
+          </div>
+          <div class="sm:w-48">
+            <label for="plan" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Plano</label>
+            <select
+              id="plan"
+              v-model="filterPlan"
+              class="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-sm text-slate-900 dark:text-white"
+            >
+              <option value="all">Todos</option>
+              <option value="free">Gratuito</option>
+              <option value="basic">Básico</option>
+              <option value="pro">Pro</option>
+              <option value="enterprise">Enterprise</option>
             </select>
           </div>
         </div>

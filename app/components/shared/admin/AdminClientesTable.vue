@@ -46,13 +46,6 @@ function diasRestantesText(c: AdminCliente) {
   return formatDiasVencimento(c)
 }
 
-function formatPhone(phone: string | null) {
-  if (!phone) return null
-  const d = phone.replace(/\D/g, '')
-  if (d.length === 13) return `+${d.slice(0,2)} (${d.slice(2,4)}) ${d.slice(4,9)}-${d.slice(9)}`
-  if (d.length === 11)  return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`
-  return phone
-}
 </script>
 
 <template>
@@ -115,7 +108,15 @@ function formatPhone(phone: string | null) {
                     </span>
                   </div>
                   <p class="hidden md:block text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                    {{ c.email }}<span v-if="formatPhone(c.whatsapp)"> · {{ formatPhone(c.whatsapp) }}</span>
+                    {{ c.email }}<template v-if="formatPhone(c.whatsapp)"> · {{ formatPhone(c.whatsapp) }} <a
+                      :href="whatsappLink(c.whatsapp) ?? '#'"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500 hover:text-white transition-colors align-middle"
+                      :title="`Abrir WhatsApp de ${c.nome}`"
+                      aria-label="Abrir WhatsApp"
+                      @click.stop
+                    ><i class="fa-brands fa-whatsapp text-[11px]" aria-hidden="true" /></a></template>
                   </p>
                   <!-- Mobile: dias restantes inline + status quando o status pill estiver escondido -->
                   <div class="md:hidden mt-1 flex items-center gap-1.5 flex-wrap">

@@ -43,7 +43,7 @@ export const useAdminClientes = () => {
     else if (c.subscription_status === 'trial' && c.trial_ends_at) dataVenc = new Date(c.trial_ends_at)
     else if (c.trial_ends_at) dataVenc = new Date(c.trial_ends_at)
     else if (c.subscription_renews_at) dataVenc = new Date(c.subscription_renews_at)
-    if (!dataVenc) return 0
+    if (!dataVenc) return Number.POSITIVE_INFINITY
 
     const hoje = new Date()
     const hojeBR = new Date(hoje.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
@@ -154,6 +154,7 @@ export const useAdminClientes = () => {
   const isVencido = (c: AdminCliente) => c.subscription_status === 'expired' || diasParaVencimento(c) < 0
   const formatDiasVencimento = (c: AdminCliente) => {
     const d = diasParaVencimento(c)
+    if (!Number.isFinite(d)) return '—'
     if (d < 0) return 'Faça renovação'
     if (d === 0) return 'Vence hoje'
     if (d === 1) return 'Vence amanhã'

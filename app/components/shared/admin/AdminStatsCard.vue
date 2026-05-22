@@ -39,12 +39,12 @@ const valueClass = computed(() => {
 </script>
 
 <template>
-  <div class="px-4 py-3 rounded-xl border shadow-sm flex items-center justify-between gap-3" :class="cardClass">
-    <div class="flex flex-col gap-0.5 min-w-0">
-      <p class="text-xs font-medium truncate" :class="titleClass">{{ title }}</p>
-      <p class="text-2xl font-bold leading-tight tabular-nums" :class="valueClass">{{ value }}</p>
+  <div class="px-3 sm:px-4 py-3 rounded-xl border shadow-sm flex items-center justify-between gap-2 sm:gap-3" :class="cardClass">
+    <div class="flex flex-col gap-0.5 min-w-0 flex-1">
+      <p class="text-[11px] sm:text-xs font-medium truncate" :class="titleClass">{{ title }}</p>
+      <p class="text-base sm:text-2xl font-bold leading-tight tabular-nums truncate" :class="valueClass">{{ value }}</p>
     </div>
-    <div class="size-10 rounded-lg flex items-center justify-center shrink-0" :class="iconColors[color]">
+    <div class="size-8 sm:size-10 rounded-lg flex items-center justify-center shrink-0 text-sm sm:text-base" :class="iconColors[color]">
       <i :class="['fa-solid', icon]" aria-hidden="true" />
     </div>
   </div>

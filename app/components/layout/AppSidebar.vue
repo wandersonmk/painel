@@ -6,6 +6,7 @@ const { user } = useAuth()
 const navItems = [
   { label: 'Dashboard', icon: 'fa-gauge-high', to: '/dashboard' },
   { label: 'Clientes', icon: 'fa-users', to: '/admin' },
+  { label: 'Financeiro', icon: 'fa-wallet', to: '/financeiro' },
 ]
 
 function isActive(to: string) {

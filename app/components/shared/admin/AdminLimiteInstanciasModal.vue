@@ -3,6 +3,7 @@ import { ref, watch, computed } from 'vue'
 
 interface Instancia {
   id: string
+  provider: 'uazapi' | 'meta'
   nome_instancia: string
   status: string
   created_at: string
@@ -14,31 +15,67 @@ const props = defineProps<{
   clienteId: string
   clienteNome: string
   valorAtual: number
+  agentesAtual: number
+  webhooksAtual: number
 }>()
-const emit = defineEmits<{ close: []; confirm: [quantidade: number] }>()
+const emit = defineEmits<{
+  close: []
+  confirm: [limites: { maxInstancias: number; maxAgentes: number; maxWebhooksEntrada: number }]
+}>()
 
 const quantidade = ref(1)
+const qtdAgentes = ref(1)
+const qtdWebhooks = ref(5)
 const instancias = ref<Instancia[]>([])
 const loadingInstancias = ref(false)
+const usoAssistentes = ref(0)
+const usoWebhooks = ref(0)
+const loadingUso = ref(false)
 const idExpandido = ref<string | null>(null)
 const idCopiado = ref<string | null>(null)
 const acaoConfirmacao = ref<{ tipo: 'desconectar' | 'excluir'; instancia: Instancia } | null>(null)
 const processandoAcao = ref(false)
+const abaAtiva = ref<'instancias' | 'limites'>('instancias')
 
 let toast: Awaited<ReturnType<typeof useToastSafe>> | null = null
 
 watch(() => props.show, async (open) => {
   if (open) {
     quantidade.value = props.valorAtual || 1
+    qtdAgentes.value = props.agentesAtual || 1
+    qtdWebhooks.value = props.webhooksAtual ?? 5
+    abaAtiva.value = 'instancias'
     toast = await useToastSafe()
-    await carregarInstancias()
+    await Promise.all([carregarInstancias(), carregarUso()])
   } else {
     instancias.value = []
+    usoAssistentes.value = 0
+    usoWebhooks.value = 0
     idExpandido.value = null
     idCopiado.value = null
     acaoConfirmacao.value = null
   }
 })
+
+async function carregarUso() {
+  if (!props.clienteId) return
+  loadingUso.value = true
+  try {
+    const resp = await $fetch<{ success: boolean; data?: { assistentes: number; webhooks: number } }>('/api/admin/empresa-uso', {
+      query: { empresaId: props.clienteId },
+      headers: await useAdminAuthHeaders(),
+    })
+    if (resp.success && resp.data) {
+      usoAssistentes.value = resp.data.assistentes
+      usoWebhooks.value = resp.data.webhooks
+    }
+  } catch {
+    usoAssistentes.value = 0
+    usoWebhooks.value = 0
+  } finally {
+    loadingUso.value = false
+  }
+}
 
 async function carregarInstancias() {
   if (!props.clienteId) return
@@ -61,9 +98,19 @@ const statusMap: Record<string, { label: string; dot: string; border: string; ba
   connecting:   { label: 'Conectando',   dot: 'bg-amber-400 animate-pulse', border: 'border-amber-400',                  badge: 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-400' },
   disconnected: { label: 'Desconectado', dot: 'bg-slate-400', border: 'border-slate-300 dark:border-slate-700',          badge: 'bg-slate-100 text-slate-600 dark:bg-slate-700/50 dark:text-slate-400' },
   deleted:      { label: 'Excluída',     dot: 'bg-red-400', border: 'border-red-300 dark:border-red-900',                badge: 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400' },
+  ativo:        { label: 'Ativo',        dot: 'bg-emerald-500', border: 'border-emerald-400 dark:border-emerald-500',   badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-400' },
+  inativo:      { label: 'Inativo',      dot: 'bg-slate-400', border: 'border-slate-300 dark:border-slate-700',          badge: 'bg-slate-100 text-slate-600 dark:bg-slate-700/50 dark:text-slate-400' },
 }
 function getStatus(s: string) {
   return statusMap[s] ?? statusMap.disconnected
+}
+
+const providerMap: Record<'uazapi' | 'meta', { label: string; icon: string; badge: string; avatar: string }> = {
+  uazapi: { label: 'UAzAPI', icon: 'fa-brands fa-whatsapp',  badge: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300', avatar: 'bg-emerald-500' },
+  meta:   { label: 'Meta',   icon: 'fa-brands fa-meta',      badge: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300',             avatar: 'bg-blue-500' },
+}
+function getProvider(p: 'uazapi' | 'meta') {
+  return providerMap[p] ?? providerMap.uazapi
 }
 
 function toggleId(id: string) {
@@ -124,7 +171,7 @@ const canaisUsados = computed(() => instancias.value.length)
 </script>
 
 <template>
-  <BaseModal :show="show" title="Canais WhatsApp" max-width="max-w-xl" @close="$emit('close')">
+  <BaseModal :show="show" title="Limites e canais" max-width="max-w-xl" @close="$emit('close')">
 
     <!-- Header do cliente -->
     <div class="flex items-center gap-3 pb-4 mb-4 border-b border-slate-200 dark:border-slate-800">
@@ -139,8 +186,42 @@ const canaisUsados = computed(() => instancias.value.length)
       </div>
     </div>
 
+    <!-- Abas -->
+    <div class="flex items-center gap-1 p-1 mb-4 bg-slate-100 dark:bg-slate-800/60 rounded-lg" role="tablist">
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="abaAtiva === 'instancias'"
+        @click="abaAtiva = 'instancias'"
+        class="flex-1 px-3 py-2 rounded-md text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+        :class="abaAtiva === 'instancias'
+          ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
+      >
+        <i class="fa-brands fa-whatsapp text-emerald-500" aria-hidden="true" />
+        Instâncias
+        <span
+          class="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold tabular-nums"
+          :class="abaAtiva === 'instancias' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'"
+        >{{ canaisUsados }}</span>
+      </button>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="abaAtiva === 'limites'"
+        @click="abaAtiva = 'limites'"
+        class="flex-1 px-3 py-2 rounded-md text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+        :class="abaAtiva === 'limites'
+          ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
+      >
+        <i class="fa-solid fa-sliders text-purple-500" aria-hidden="true" />
+        Limites
+      </button>
+    </div>
+
     <!-- Lista de instâncias -->
-    <section class="mb-5">
+    <section v-show="abaAtiva === 'instancias'">
       <div class="flex items-center justify-between mb-3">
         <h3 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
           <i class="fa-brands fa-whatsapp text-emerald-500" aria-hidden="true" />
@@ -186,16 +267,16 @@ const canaisUsados = computed(() => instancias.value.length)
 
               <!-- Esquerda: info do canal -->
               <div class="flex items-start gap-3 min-w-0 flex-1">
-                <!-- Avatar WhatsApp -->
+                <!-- Avatar provider -->
                 <div class="w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-sm"
-                  :class="inst.status === 'connected' ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'">
-                  <i class="fa-brands fa-whatsapp text-white text-lg" aria-hidden="true" />
+                  :class="(inst.status === 'connected' || inst.status === 'ativo') ? getProvider(inst.provider).avatar : 'bg-slate-300 dark:bg-slate-700'">
+                  <i :class="[getProvider(inst.provider).icon, 'text-white text-lg']" aria-hidden="true" />
                 </div>
 
                 <div class="min-w-0 flex-1">
-                  <!-- Nome + badge -->
+                  <!-- Nome + status + provider -->
                   <div class="flex items-center gap-2 flex-wrap mb-1">
-                    <span class="font-semibold text-slate-900 dark:text-white text-sm leading-tight truncate max-w-[160px]">
+                    <span class="font-semibold text-slate-900 dark:text-white text-sm leading-tight truncate max-w-[140px]">
                       {{ inst.nome_instancia }}
                     </span>
                     <span
@@ -204,6 +285,14 @@ const canaisUsados = computed(() => instancias.value.length)
                     >
                       <span class="w-1.5 h-1.5 rounded-full" :class="getStatus(inst.status).dot" aria-hidden="true" />
                       {{ getStatus(inst.status).label }}
+                    </span>
+                    <span
+                      class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                      :class="getProvider(inst.provider).badge"
+                      :title="`Provedor: ${getProvider(inst.provider).label}`"
+                    >
+                      <i :class="[getProvider(inst.provider).icon, 'text-[10px]']" aria-hidden="true" />
+                      {{ getProvider(inst.provider).label }}
                     </span>
                   </div>
 
@@ -243,8 +332,8 @@ const canaisUsados = computed(() => instancias.value.length)
                 </div>
               </div>
 
-              <!-- Direita: ações -->
-              <div class="flex flex-col items-end gap-1 shrink-0">
+              <!-- Direita: ações (somente UAzAPI) -->
+              <div v-if="inst.provider === 'uazapi'" class="flex flex-col items-end gap-1 shrink-0">
                 <button
                   v-if="inst.status === 'connected' || inst.status === 'disconnected'"
                   @click="abrirConfirmacao('desconectar', inst)"
@@ -275,15 +364,22 @@ const canaisUsados = computed(() => instancias.value.length)
       </div>
     </section>
 
-    <!-- Limite de canais -->
-    <section class="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 p-4">
-      <form @submit.prevent="$emit('confirm', quantidade)" class="space-y-3">
+    <!-- Limites da empresa -->
+    <section v-show="abaAtiva === 'limites'" class="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 p-4">
+      <form
+        @submit.prevent="$emit('confirm', { maxInstancias: quantidade, maxAgentes: qtdAgentes, maxWebhooksEntrada: qtdWebhooks })"
+        class="space-y-4"
+      >
+        <!-- Canais -->
         <div class="flex items-start justify-between gap-3">
-          <div>
-            <label for="max-instancias" class="block text-sm font-semibold text-slate-700 dark:text-slate-300">
-              Limite de canais
+          <div class="min-w-0 flex-1">
+            <label for="max-instancias" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <i class="fa-brands fa-whatsapp text-emerald-500 text-xs" aria-hidden="true" />
+              Canais WhatsApp
             </label>
-            <p class="text-xs text-slate-400 dark:text-slate-600 mt-0.5">Máximo de instâncias simultâneas (1 – 20)</p>
+            <p class="text-xs text-slate-400 dark:text-slate-600 mt-0.5">
+              Em uso: <span class="tabular-nums font-semibold text-slate-600 dark:text-slate-400">{{ canaisUsados }}</span> · Máximo de instâncias simultâneas (1 – 20)
+            </p>
           </div>
           <input
             id="max-instancias"
@@ -295,7 +391,52 @@ const canaisUsados = computed(() => instancias.value.length)
             class="w-20 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-sm text-slate-900 dark:text-white tabular-nums text-center font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
           />
         </div>
-        <div class="flex gap-2 pt-1">
+
+        <!-- Assistentes -->
+        <div class="flex items-start justify-between gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+          <div class="min-w-0 flex-1">
+            <label for="max-agentes" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <i class="fa-solid fa-robot text-purple-500 text-xs" aria-hidden="true" />
+              Assistentes
+            </label>
+            <p class="text-xs text-slate-400 dark:text-slate-600 mt-0.5">
+              Em uso: <span class="tabular-nums font-semibold text-slate-600 dark:text-slate-400">{{ loadingUso ? '…' : usoAssistentes }}</span> · Cada canal precisa de um assistente próprio (1 – 50)
+            </p>
+          </div>
+          <input
+            id="max-agentes"
+            v-model.number="qtdAgentes"
+            type="number"
+            min="1"
+            max="50"
+            required
+            class="w-20 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-sm text-slate-900 dark:text-white tabular-nums text-center font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
+          />
+        </div>
+
+        <!-- Webhooks -->
+        <div class="flex items-start justify-between gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+          <div class="min-w-0 flex-1">
+            <label for="max-webhooks" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <i class="fa-solid fa-bolt text-amber-500 text-xs" aria-hidden="true" />
+              Webhooks de entrada
+            </label>
+            <p class="text-xs text-slate-400 dark:text-slate-600 mt-0.5">
+              Em uso: <span class="tabular-nums font-semibold text-slate-600 dark:text-slate-400">{{ loadingUso ? '…' : usoWebhooks }}</span> · Webhooks que a empresa pode criar (0 – 100)
+            </p>
+          </div>
+          <input
+            id="max-webhooks"
+            v-model.number="qtdWebhooks"
+            type="number"
+            min="0"
+            max="100"
+            required
+            class="w-20 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-sm text-slate-900 dark:text-white tabular-nums text-center font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
+          />
+        </div>
+
+        <div class="flex gap-2 pt-2">
           <button
             type="button"
             @click="$emit('close')"
@@ -307,7 +448,7 @@ const canaisUsados = computed(() => instancias.value.length)
             type="submit"
             class="flex-1 px-4 py-2.5 rounded font-semibold text-sm bg-purple-600 hover:bg-purple-700 text-white transition-colors"
           >
-            Salvar limite
+            Salvar limites
           </button>
         </div>
       </form>

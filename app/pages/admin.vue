@@ -27,7 +27,13 @@ const showLimiteInstanciasModal = ref(false)
 
 const selectedCliente = ref<{ id: string; nome: string } | null>(null)
 const clienteParaEditar = ref<any>(null)
-const clienteLimiteInstancias = ref<{ id: string; nome: string; max_instancias: number } | null>(null)
+const clienteLimiteInstancias = ref<{
+  id: string
+  nome: string
+  max_instancias: number
+  max_agentes: number
+  max_webhooks_entrada: number
+} | null>(null)
 
 const searchQuery = ref('')
 const filterStatus = ref('all')
@@ -144,23 +150,38 @@ async function confirmExcluir() {
 function handleLimiteInstancias(id: string) {
   const c = clientes.value.find(x => x.id === id)
   if (c) {
-    clienteLimiteInstancias.value = { id: c.id, nome: c.nome, max_instancias: c.max_instancias ?? 1 }
+    clienteLimiteInstancias.value = {
+      id: c.id,
+      nome: c.nome,
+      max_instancias: c.max_instancias ?? 1,
+      max_agentes: c.max_agentes ?? 1,
+      max_webhooks_entrada: c.max_webhooks_entrada ?? 5,
+    }
     showLimiteInstanciasModal.value = true
   }
 }
-async function confirmLimiteInstancias(quantidade: number) {
+async function confirmLimiteInstancias(limites: { maxInstancias: number; maxAgentes: number; maxWebhooksEntrada: number }) {
   if (!clienteLimiteInstancias.value) return
   try {
     const resp = await $fetch<{ success: boolean }>('/api/admin/limite-instancias', {
       method: 'POST',
-      body: { clienteId: clienteLimiteInstancias.value.id, maxInstancias: quantidade },
+      body: {
+        clienteId: clienteLimiteInstancias.value.id,
+        maxInstancias: limites.maxInstancias,
+        maxAgentes: limites.maxAgentes,
+        maxWebhooksEntrada: limites.maxWebhooksEntrada,
+      },
       headers: await useAdminAuthHeaders(),
     })
     if (!resp.success) throw new Error('Erro')
     const c = clientes.value.find(x => x.id === clienteLimiteInstancias.value!.id)
-    if (c) c.max_instancias = quantidade
-    toast?.success(`Limite alterado para ${quantidade} canal${quantidade > 1 ? 'is' : ''}`)
-  } catch { toast?.error('Erro ao atualizar limite de canais') }
+    if (c) {
+      c.max_instancias = limites.maxInstancias
+      c.max_agentes = limites.maxAgentes
+      c.max_webhooks_entrada = limites.maxWebhooksEntrada
+    }
+    toast?.success('Limites atualizados')
+  } catch { toast?.error('Erro ao atualizar limites') }
   showLimiteInstanciasModal.value = false
   clienteLimiteInstancias.value = null
 }
@@ -331,6 +352,8 @@ async function confirmLimiteInstancias(quantidade: number) {
         :cliente-id="clienteLimiteInstancias?.id || ''"
         :cliente-nome="clienteLimiteInstancias?.nome || ''"
         :valor-atual="clienteLimiteInstancias?.max_instancias ?? 1"
+        :agentes-atual="clienteLimiteInstancias?.max_agentes ?? 1"
+        :webhooks-atual="clienteLimiteInstancias?.max_webhooks_entrada ?? 5"
         @close="showLimiteInstanciasModal = false; clienteLimiteInstancias = null"
         @confirm="confirmLimiteInstancias"
       />

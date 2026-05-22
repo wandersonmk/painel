@@ -15,6 +15,8 @@ export interface AdminCliente {
   created_at: string
   role?: 'user' | 'admin' | 'manager' | 'superAdmin'
   max_instancias?: number
+  max_agentes?: number
+  max_webhooks_entrada?: number
   cancel_at_period_end?: boolean
 }
 

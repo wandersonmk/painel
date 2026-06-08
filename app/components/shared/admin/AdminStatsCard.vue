@@ -7,8 +7,9 @@ interface Props {
   icon?: string
   color?: 'indigo' | 'amber' | 'purple' | 'red' | 'blue' | 'slate' | 'emerald' | 'orange'
   highlighted?: boolean
+  subtitle?: string
 }
-const props = withDefaults(defineProps<Props>(), { color: 'blue', icon: 'fa-chart-simple', highlighted: false })
+const props = withDefaults(defineProps<Props>(), { color: 'blue', icon: 'fa-chart-simple', highlighted: false, subtitle: '' })
 
 const iconColors: Record<string, string> = {
   indigo: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400',
@@ -43,6 +44,7 @@ const valueClass = computed(() => {
     <div class="flex flex-col gap-0.5 min-w-0 flex-1">
       <p class="text-[11px] sm:text-xs font-medium truncate" :class="titleClass">{{ title }}</p>
       <p class="text-base sm:text-2xl font-bold leading-tight tabular-nums truncate" :class="valueClass">{{ value }}</p>
+      <p v-if="subtitle" class="text-[10px] sm:text-[11px] font-medium truncate opacity-80" :class="titleClass">{{ subtitle }}</p>
     </div>
     <div class="size-8 sm:size-10 rounded-lg flex items-center justify-center shrink-0 text-sm sm:text-base" :class="iconColors[color]">
       <i :class="['fa-solid', icon]" aria-hidden="true" />

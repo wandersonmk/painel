@@ -46,6 +46,37 @@ function diasRestantesText(c: AdminCliente) {
   return formatDiasVencimento(c)
 }
 
+// Badge de cancelamento da assinatura no Stripe.
+// `cancel_at_period_end` = cliente cancelou no Stripe, mantém acesso até o fim do período.
+// `subscription_status === 'canceled'` = assinatura já encerrada.
+// Acento na borda esquerda da linha — sinaliza risco ao varrer a lista (cor + texto, nunca só cor).
+function rowAccent(c: AdminCliente): string {
+  if (c.cancel_at_period_end) return 'border-orange-400 dark:border-orange-500/60'
+  if (c.subscription_status === 'canceled' || isVencido(c)) return 'border-red-400 dark:border-red-500/60'
+  const d = diasParaVencimento(c)
+  if (Number.isFinite(d) && d >= 0 && d <= 7) return 'border-amber-400 dark:border-amber-500/60'
+  return 'border-transparent'
+}
+
+function cancelamentoBadge(c: AdminCliente): { text: string; title: string; cls: string } | null {
+  if (c.cancel_at_period_end) {
+    const ate = formatDate(getDataVencimento(c))
+    return {
+      text: 'Cancelou',
+      title: ate ? `Cliente cancelou a assinatura no Stripe · acesso até ${ate}` : 'Cliente cancelou a assinatura no Stripe',
+      cls: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400',
+    }
+  }
+  if (c.subscription_status === 'canceled') {
+    return {
+      text: 'Cancelado',
+      title: 'Assinatura encerrada no Stripe',
+      cls: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400',
+    }
+  }
+  return null
+}
+
 </script>
 
 <template>
@@ -90,7 +121,7 @@ function diasRestantesText(c: AdminCliente) {
             :class="!c.ativo ? 'opacity-55' : ''"
           >
             <!-- Cliente -->
-            <td class="px-2 sm:px-5 py-3 sm:py-4 max-w-[160px] sm:max-w-none">
+            <td class="px-2 sm:px-5 py-3 sm:py-4 max-w-[160px] sm:max-w-none border-l-4" :class="rowAccent(c)">
               <div class="flex items-center gap-2 sm:gap-3 min-w-0">
                 <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center shrink-0 text-xs sm:text-sm font-bold text-white"
                   :class="c.ativo ? 'bg-purple-600' : 'bg-slate-400 dark:bg-slate-600'">
@@ -105,6 +136,15 @@ function diasRestantesText(c: AdminCliente) {
                     >
                       <i class="fa-solid fa-shield-halved" aria-hidden="true" />
                       <span class="hidden sm:inline">Super Admin</span>
+                    </span>
+                    <span
+                      v-if="cancelamentoBadge(c)"
+                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold"
+                      :class="cancelamentoBadge(c)!.cls"
+                      :title="cancelamentoBadge(c)!.title"
+                    >
+                      <i class="fa-solid fa-ban" aria-hidden="true" />
+                      {{ cancelamentoBadge(c)!.text }}
                     </span>
                   </div>
                   <p class="hidden md:block text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
@@ -284,7 +324,17 @@ function diasRestantesText(c: AdminCliente) {
                   {{ menuCliente.nome.charAt(0).toUpperCase() }}
                 </div>
                 <div class="min-w-0 flex-1">
-                  <p class="font-semibold text-slate-900 dark:text-white text-sm truncate">{{ menuCliente.nome }}</p>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <p class="font-semibold text-slate-900 dark:text-white text-sm truncate">{{ menuCliente.nome }}</p>
+                    <span
+                      v-if="cancelamentoBadge(menuCliente)"
+                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold"
+                      :class="cancelamentoBadge(menuCliente)!.cls"
+                    >
+                      <i class="fa-solid fa-ban" aria-hidden="true" />
+                      {{ cancelamentoBadge(menuCliente)!.text }}
+                    </span>
+                  </div>
                   <p class="text-xs text-slate-500 dark:text-slate-400 truncate">{{ getPlanLabel(menuCliente.subscription_plan) }} · {{ diasRestantesText(menuCliente) }}</p>
                 </div>
               </div>

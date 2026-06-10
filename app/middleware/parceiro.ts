@@ -27,7 +27,9 @@ export default defineNuxtRouteMiddleware(async () => {
       .eq('auth_user_id', user.id)
       .maybeSingle()
 
-    if (usuario?.role === 'superAdmin') return navigateTo('/dashboard')
+    if ((usuario as { role?: string } | null)?.role === 'superAdmin') {
+      return navigateTo('/dashboard')
+    }
 
     await supabase.auth.signOut()
     return navigateTo('/login')

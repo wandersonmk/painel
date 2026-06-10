@@ -8,8 +8,8 @@ const navItems = [
   { label: 'Extratos', icon: 'fa-receipt', to: '/parceiro/extratos' },
   { label: 'Aulas', icon: 'fa-graduation-cap', to: '/parceiro/aulas' },
   { label: 'Materiais', icon: 'fa-box-open', to: '/parceiro/materiais' },
-  { label: 'Termos de responsabilidade', icon: 'fa-file-contract', to: '/parceiro/termos' },
   { label: 'Configurações', icon: 'fa-gear', to: '/parceiro/configuracoes' },
+  { label: 'Termos', icon: 'fa-file-contract', to: '/parceiro/termos' },
 ]
 
 function isActive(to: string) {

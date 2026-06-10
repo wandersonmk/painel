@@ -32,6 +32,42 @@ const primeiroNome = computed(() => parceiro.value?.nome?.split(' ')[0] || '')
 const clientesAtivos = computed(() => clientes.value.filter(c => c.considerada_ativa))
 const clientesInativos = computed(() => clientes.value.filter(c => !c.considerada_ativa))
 
+// ───────── Filtros da lista de clientes ─────────
+const buscaCliente = ref('')
+const vencimentoDe = ref('')
+const vencimentoAte = ref('')
+
+function normalizar(s: string) {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+}
+
+const clientesFiltrados = computed(() => {
+  let lista = clientes.value
+  const termo = normalizar(buscaCliente.value.trim())
+  if (termo) {
+    lista = lista.filter(c => normalizar(c.empresa_nome).includes(termo))
+  }
+  if (vencimentoDe.value) {
+    const de = new Date(`${vencimentoDe.value}T00:00:00`)
+    lista = lista.filter(c => c.proximo_vencimento && new Date(c.proximo_vencimento) >= de)
+  }
+  if (vencimentoAte.value) {
+    const ate = new Date(`${vencimentoAte.value}T23:59:59`)
+    lista = lista.filter(c => c.proximo_vencimento && new Date(c.proximo_vencimento) <= ate)
+  }
+  return lista
+})
+
+const filtrosAtivos = computed(() =>
+  !!buscaCliente.value.trim() || !!vencimentoDe.value || !!vencimentoAte.value,
+)
+
+function limparFiltros() {
+  buscaCliente.value = ''
+  vencimentoDe.value = ''
+  vencimentoAte.value = ''
+}
+
 // Próxima liberação pendente por cliente (menor liberar_em entre os lançamentos "a liberar")
 const aLiberarPorEmpresa = computed(() => {
   const map = new Map<string, { data: string; valor: number }>()
@@ -292,15 +328,56 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
 
     <!-- ────────────────────────────── LISTA DE CLIENTES ────────────────────────────── -->
     <section>
-      <div class="flex items-center gap-2 mb-4">
-        <div class="w-4 h-4 rounded flex items-center justify-center bg-blue-500/20">
-          <i class="fa-solid fa-users text-blue-600 dark:text-blue-400 text-xs" aria-hidden="true" />
+      <div class="flex flex-col lg:flex-row lg:items-center gap-3 mb-4">
+        <div class="flex items-center gap-2 shrink-0">
+          <div class="w-4 h-4 rounded flex items-center justify-center bg-blue-500/20">
+            <i class="fa-solid fa-users text-blue-600 dark:text-blue-400 text-xs" aria-hidden="true" />
+          </div>
+          <h2 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Meus Clientes</h2>
+          <span
+            v-if="clientes.length > 0"
+            class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-500/20"
+          >{{ filtrosAtivos ? `${clientesFiltrados.length} de ${clientes.length}` : clientes.length }}</span>
         </div>
-        <h2 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Meus Clientes</h2>
-        <span
-          v-if="clientes.length > 0"
-          class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-500/20"
-        >{{ clientes.length }}</span>
+
+        <!-- Filtros: nome + período de vencimento -->
+        <div v-if="clientes.length > 0" class="flex flex-col sm:flex-row sm:items-center gap-2 lg:ml-auto">
+          <div class="relative">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs" aria-hidden="true" />
+            <input
+              v-model="buscaCliente"
+              type="search"
+              placeholder="Pesquisar cliente…"
+              class="w-full sm:w-52 pl-8 pr-3 py-2 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded-full text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider shrink-0">Venc.</span>
+            <input
+              v-model="vencimentoDe"
+              type="date"
+              title="Vencimento a partir de"
+              class="flex-1 sm:w-32 px-2.5 py-2 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded-full text-xs text-slate-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+            <span class="text-[10px] text-slate-400">até</span>
+            <input
+              v-model="vencimentoAte"
+              type="date"
+              title="Vencimento até"
+              class="flex-1 sm:w-32 px-2.5 py-2 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded-full text-xs text-slate-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+            <button
+              v-if="filtrosAtivos"
+              @click="limparFiltros"
+              class="w-7 h-7 shrink-0 inline-flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+              title="Limpar filtros"
+              aria-label="Limpar filtros"
+              type="button"
+            >
+              <i class="fa-solid fa-xmark text-xs" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
       </div>
 
       <div :class="['overflow-hidden', cardBase]">
@@ -322,6 +399,19 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
           <p class="text-slate-400 dark:text-slate-600 text-xs mt-1">Quando a Agzap atribuir clientes à sua conta, eles aparecem aqui.</p>
         </div>
 
+        <!-- Sem resultados nos filtros -->
+        <div v-else-if="clientesFiltrados.length === 0" class="px-5 py-12 text-center">
+          <i class="fa-solid fa-magnifying-glass text-slate-300 dark:text-slate-700 text-2xl mb-2 block" aria-hidden="true" />
+          <p class="text-slate-500 text-sm">Nenhum cliente encontrado com esses filtros</p>
+          <button
+            @click="limparFiltros"
+            class="mt-3 text-xs font-semibold text-purple-600 dark:text-purple-400 hover:underline"
+            type="button"
+          >
+            Limpar filtros
+          </button>
+        </div>
+
         <!-- Tabela -->
         <div v-else class="overflow-x-auto">
           <table class="w-full text-sm">
@@ -334,11 +424,12 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
                 <th class="hidden sm:table-cell text-right px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">Assinatura</th>
                 <th class="hidden md:table-cell text-center px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">%</th>
                 <th class="text-right px-3 sm:px-5 py-3 text-[11px] sm:text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">Comissão</th>
+                <th class="hidden md:table-cell text-center px-5 py-3 text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">A liberar</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 dark:divide-white/5">
               <tr
-                v-for="c in clientes"
+                v-for="c in clientesFiltrados"
                 :key="c.vinculo_id"
                 class="hover:bg-slate-50/80 dark:hover:bg-white/[0.03] transition-colors"
                 :class="{ 'opacity-60': !c.considerada_ativa }"
@@ -427,15 +518,19 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
                     :class="c.considerada_ativa ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-600 line-through'"
                     :title="c.considerada_ativa ? 'Entra no saldo' : 'Não entra no saldo (assinatura não ativa)'"
                   >{{ displayBRL(c.valor_comissao) }}</span>
-                  <div v-if="aLiberarPorEmpresa.has(c.empresa_id)" class="mt-1 flex justify-end">
-                    <span
-                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20 whitespace-nowrap"
-                      :title="`${displayBRL(aLiberarPorEmpresa.get(c.empresa_id)!.valor)} entram no saldo liberado em ${formatDateStr(aLiberarPorEmpresa.get(c.empresa_id)!.data)}`"
-                    >
-                      <i class="fa-solid fa-hourglass-half text-[8px]" aria-hidden="true" />
-                      A liberar {{ formatDateStr(aLiberarPorEmpresa.get(c.empresa_id)!.data) }}
-                    </span>
-                  </div>
+                </td>
+
+                <!-- A liberar (md+) -->
+                <td class="hidden md:table-cell px-5 py-3 text-center">
+                  <span
+                    v-if="aLiberarPorEmpresa.has(c.empresa_id)"
+                    class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20 whitespace-nowrap"
+                    :title="`${displayBRL(aLiberarPorEmpresa.get(c.empresa_id)!.valor)} entram no saldo liberado em ${formatDateStr(aLiberarPorEmpresa.get(c.empresa_id)!.data)}`"
+                  >
+                    <i class="fa-solid fa-hourglass-half text-[10px]" aria-hidden="true" />
+                    {{ formatDateStr(aLiberarPorEmpresa.get(c.empresa_id)!.data) }}
+                  </span>
+                  <span v-else class="text-xs text-slate-300 dark:text-slate-700">—</span>
                 </td>
               </tr>
             </tbody>

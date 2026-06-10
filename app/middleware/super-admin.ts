@@ -14,7 +14,8 @@ export default defineNuxtRouteMiddleware(async () => {
       .eq('auth_user_id', user.id)
       .single()
 
-    if (error || !usuario || usuario.role !== 'superAdmin') {
+    const role = (usuario as { role?: string } | null)?.role
+    if (error || role !== 'superAdmin') {
       // Parceiro ativo é redirecionado para o portal dele em vez de ser deslogado.
       // No SSR isso evita renderizar o painel admin antes do redirect.
       const { data: parceiro } = await supabase

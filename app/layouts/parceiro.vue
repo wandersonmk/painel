@@ -1,6 +1,6 @@
 <script setup lang="ts">
 const { signOut } = useAuth()
-const { isDark, init: initTheme, toggle: toggleTheme } = useTheme()
+const { isDark, toggle: toggleTheme, set: setTheme } = useTheme()
 const { isCollapsed, init: initSidebar, openMobile } = useSidebar()
 const { bloqueado } = useContaBloqueada()
 
@@ -33,7 +33,8 @@ function aoVoltarParaAba() {
 }
 
 onMounted(() => {
-  initTheme()
+  // Portal do parceiro sempre nasce em modo claro; o toggle continua disponível
+  setTheme(false)
   initSidebar()
   verificadorBloqueio = setInterval(verificarBloqueio, 15000)
   document.addEventListener('visibilitychange', aoVoltarParaAba)

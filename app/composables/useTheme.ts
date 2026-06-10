@@ -27,6 +27,12 @@ export function useTheme() {
     apply()
   }
 
+  /** Define o tema diretamente, ignorando a preferência salva (usado pelo portal do parceiro). */
+  function set(dark: boolean) {
+    isDark.value = dark
+    apply()
+  }
+
   // computed garante reatividade correta no template
-  return { isDark: computed(() => isDark.value), init, toggle }
+  return { isDark: computed(() => isDark.value), init, toggle, set }
 }

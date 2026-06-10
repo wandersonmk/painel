@@ -1,9 +1,12 @@
 export default defineNuxtRouteMiddleware(async () => {
-  if (import.meta.server) return
   try {
     const supabase = useSupabaseClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return navigateTo('/login')
+    if (!user) {
+      // No SSR não redireciona em caso de sessão incompleta — o client revalida
+      if (import.meta.server) return
+      return navigateTo('/login')
+    }
 
     const { data: usuario, error } = await supabase
       .from('usuarios')
@@ -12,10 +15,29 @@ export default defineNuxtRouteMiddleware(async () => {
       .single()
 
     if (error || !usuario || usuario.role !== 'superAdmin') {
+      // Parceiro ativo é redirecionado para o portal dele em vez de ser deslogado.
+      // No SSR isso evita renderizar o painel admin antes do redirect.
+      const { data: parceiro } = await supabase
+        .from('parceiros')
+        .select('id, ativo')
+        .eq('auth_user_id', user.id)
+        .maybeSingle()
+      const p = parceiro as { id: string; ativo: boolean } | null
+      if (p?.ativo) {
+        return navigateTo('/parceiro')
+      }
+
+      if (import.meta.server) return
+
+      // Parceiro bloqueado: desloga e mostra o modal de conta bloqueada
+      if (p) {
+        useState<boolean>('conta_bloqueada').value = true
+      }
       await supabase.auth.signOut()
       return navigateTo('/login')
     }
   } catch {
+    if (import.meta.server) return
     return navigateTo('/login')
   }
 })

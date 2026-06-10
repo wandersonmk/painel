@@ -18,6 +18,8 @@ export interface AdminCliente {
   max_agentes?: number
   max_webhooks_entrada?: number
   cancel_at_period_end?: boolean
+  parceiro_nome?: string | null
+  parceiro_comissao?: number | null
 }
 
 export interface AdminStats {

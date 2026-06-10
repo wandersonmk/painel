@@ -24,6 +24,10 @@ const showEditarModal = ref(false)
 const showDesativarModal = ref(false)
 const showReativarModal = ref(false)
 const showLimiteInstanciasModal = ref(false)
+const showAtribuirParceiroModal = ref(false)
+const showSinalizarPagamentoModal = ref(false)
+const clienteParaSinalizar = ref<any>(null)
+const showTornarParceiroModal = ref(false)
 
 const selectedCliente = ref<{ id: string; nome: string } | null>(null)
 const clienteParaEditar = ref<any>(null)
@@ -177,6 +181,48 @@ async function confirmExcluir() {
     toast?.success('Cliente excluído')
   } catch { toast?.error('Erro ao excluir cliente') }
   showExcluirModal.value = false
+  selectedCliente.value = null
+}
+
+function handleAtribuirParceiro(id: string) {
+  const c = clientes.value.find(x => x.id === id)
+  if (c) { selectedCliente.value = { id: c.id, nome: c.nome }; showAtribuirParceiroModal.value = true }
+}
+
+function handleSinalizarPagamento(id: string) {
+  const c = clientes.value.find(x => x.id === id)
+  if (c) { clienteParaSinalizar.value = c; showSinalizarPagamentoModal.value = true }
+}
+
+function handleTornarParceiro(id: string) {
+  const c = clientes.value.find(x => x.id === id)
+  if (c) { selectedCliente.value = { id: c.id, nome: c.nome }; showTornarParceiroModal.value = true }
+}
+
+async function confirmTornarParceiro() {
+  if (!selectedCliente.value) return
+  try {
+    const resp = await $fetch<{
+      success: boolean
+      data?: { jaEra: boolean; reativado: boolean; nome: string }
+      error?: string
+    }>('/api/admin/tornar-parceiro', {
+      method: 'POST',
+      body: { empresaId: selectedCliente.value.id },
+      headers: await useAdminAuthHeaders(),
+    })
+    if (!resp.success || !resp.data) throw new Error(resp.error || 'Erro')
+    if (resp.data.reativado) {
+      toast?.success(`${resp.data.nome} já era parceiro e foi desbloqueado!`)
+    } else if (resp.data.jaEra) {
+      toast?.warning(`${resp.data.nome} já é parceiro — nada foi alterado.`)
+    } else {
+      toast?.success(`${resp.data.nome} agora é parceiro! Ele já consegue acessar o portal com o login que usa no Agzap.`)
+    }
+  } catch (err: any) {
+    toast?.error(err?.data?.statusMessage || err?.message || 'Erro ao tornar parceiro')
+  }
+  showTornarParceiroModal.value = false
   selectedCliente.value = null
 }
 
@@ -384,6 +430,9 @@ async function confirmLimiteInstancias(limites: { maxInstancias: number; maxAgen
         @editar="handleEditar"
         @excluir="handleExcluir"
         @limite-instancias="handleLimiteInstancias"
+        @atribuir-parceiro="handleAtribuirParceiro"
+        @sinalizar-pagamento="handleSinalizarPagamento"
+        @tornar-parceiro="handleTornarParceiro"
       />
 
       <AdminEditarClienteModal
@@ -427,6 +476,31 @@ async function confirmLimiteInstancias(limites: { maxInstancias: number; maxAgen
         :cliente-nome="selectedCliente?.nome || ''"
         @close="showExcluirModal = false; selectedCliente = null"
         @confirm="confirmExcluir"
+      />
+
+      <AdminAtribuirParceiroModal
+        :show="showAtribuirParceiroModal"
+        :cliente-id="selectedCliente?.id || ''"
+        :cliente-nome="selectedCliente?.nome || ''"
+        @close="showAtribuirParceiroModal = false; selectedCliente = null"
+        @saved="loadClientes()"
+      />
+
+      <AdminSinalizarPagamentoModal
+        :show="showSinalizarPagamentoModal"
+        :cliente="clienteParaSinalizar"
+        @close="showSinalizarPagamentoModal = false; clienteParaSinalizar = null"
+      />
+
+      <AdminConfirmacaoModal
+        :show="showTornarParceiroModal"
+        title="Tornar empresa parceira"
+        message="O dono desta empresa vai poder acessar o portal do parceiro com o mesmo login que já usa no Agzap (o acesso ao aplicativo continua normal). Deseja tornar parceira a empresa"
+        :cliente-nome="selectedCliente?.nome"
+        confirm-label="Tornar parceira"
+        variant="info"
+        @close="showTornarParceiroModal = false; selectedCliente = null"
+        @confirm="confirmTornarParceiro"
       />
 
       <AdminLimiteInstanciasModal

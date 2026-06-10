@@ -11,13 +11,16 @@ const emit = defineEmits<{
   editar: [clienteId: string]
   excluir: [clienteId: string]
   'limite-instancias': [clienteId: string]
+  'atribuir-parceiro': [clienteId: string]
+  'sinalizar-pagamento': [clienteId: string]
+  'tornar-parceiro': [clienteId: string]
 }>()
 
-// Bottom sheet de ações (mobile)
+// Menu de ações (bottom sheet no mobile, painel central no desktop)
 const menuCliente = ref<AdminCliente | null>(null)
 function openMenu(c: AdminCliente) { menuCliente.value = c }
 function closeMenu() { menuCliente.value = null }
-function emitAction(action: 'editar' | 'limite-instancias' | 'renovar' | 'desativar' | 'reativar' | 'excluir', id: string) {
+function emitAction(action: 'editar' | 'limite-instancias' | 'renovar' | 'desativar' | 'reativar' | 'excluir' | 'atribuir-parceiro' | 'sinalizar-pagamento' | 'tornar-parceiro', id: string) {
   emit(action as any, id)
   closeMenu()
 }
@@ -146,6 +149,14 @@ function cancelamentoBadge(c: AdminCliente): { text: string; title: string; cls:
                       <i class="fa-solid fa-ban" aria-hidden="true" />
                       {{ cancelamentoBadge(c)!.text }}
                     </span>
+                    <span
+                      v-if="c.parceiro_nome"
+                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-400"
+                      :title="`Atribuído ao parceiro ${c.parceiro_nome}${c.parceiro_comissao != null ? ` · ${c.parceiro_comissao}% de comissão` : ''}`"
+                    >
+                      <i class="fa-solid fa-handshake" aria-hidden="true" />
+                      <span class="truncate max-w-[110px]">{{ c.parceiro_nome }}</span>
+                    </span>
                   </div>
                   <p class="hidden md:block text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                     {{ c.email }}<template v-if="formatPhone(c.whatsapp)"> · {{ formatPhone(c.whatsapp) }} <a
@@ -219,83 +230,17 @@ function cancelamentoBadge(c: AdminCliente): { text: string; title: string; cls:
               </span>
             </td>
 
-            <!-- Ações -->
+            <!-- Ações: menu de três pontinhos (todas as telas) -->
             <td class="px-2 sm:px-5 py-3 sm:py-4">
-              <!-- Mobile: kebab menu -->
-              <div class="sm:hidden flex justify-end">
+              <div class="flex justify-end">
                 <button
                   @click="openMenu(c)"
                   class="w-8 h-8 flex items-center justify-center rounded text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                  aria-label="Mais ações"
+                  title="Ações"
+                  aria-label="Abrir ações do cliente"
                   type="button"
                 >
                   <i class="fa-solid fa-ellipsis-vertical text-sm" aria-hidden="true" />
-                </button>
-              </div>
-
-              <!-- Desktop: ícones inline -->
-              <div class="hidden sm:flex items-center justify-end gap-1">
-                <button
-                  @click="$emit('editar', c.id)"
-                  class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded hover:bg-blue-50 dark:hover:bg-blue-500/10 text-blue-600 dark:text-blue-400 transition-colors"
-                  title="Editar cliente"
-                  aria-label="Editar cliente"
-                  type="button"
-                >
-                  <i class="fa-solid fa-pen-to-square text-sm" aria-hidden="true" />
-                </button>
-
-                <button
-                  @click="$emit('limite-instancias', c.id)"
-                  class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded hover:bg-purple-50 dark:hover:bg-purple-500/10 text-purple-600 dark:text-purple-400 transition-colors"
-                  :title="`Canais: ${c.max_instancias ?? 1}`"
-                  aria-label="Gerenciar canais"
-                  type="button"
-                >
-                  <i class="fa-solid fa-mobile-screen text-sm" aria-hidden="true" />
-                </button>
-
-                <button
-                  @click="$emit('renovar', c.id)"
-                  class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 transition-colors"
-                  title="Renovar Assinatura"
-                  aria-label="Renovar assinatura"
-                  type="button"
-                >
-                  <i class="fa-solid fa-calendar-check text-sm" aria-hidden="true" />
-                </button>
-
-                <button
-                  v-if="c.ativo && c.role !== 'superAdmin'"
-                  @click="$emit('desativar', c.id)"
-                  class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded hover:bg-amber-50 dark:hover:bg-amber-500/10 text-amber-600 dark:text-amber-400 transition-colors"
-                  title="Desativar Cliente"
-                  aria-label="Desativar cliente"
-                  type="button"
-                >
-                  <i class="fa-solid fa-circle-xmark text-sm" aria-hidden="true" />
-                </button>
-
-                <button
-                  v-if="!c.ativo && c.role !== 'superAdmin'"
-                  @click="$emit('reativar', c.id)"
-                  class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 transition-colors"
-                  title="Reativar Cliente"
-                  aria-label="Reativar cliente"
-                  type="button"
-                >
-                  <i class="fa-solid fa-circle-check text-sm" aria-hidden="true" />
-                </button>
-
-                <button
-                  v-if="c.role !== 'superAdmin'"
-                  @click="$emit('excluir', c.id)"
-                  class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded hover:bg-red-50 dark:hover:bg-red-500/10 text-red-500 dark:text-red-400 transition-colors"
-                  title="Excluir Cliente"
-                  aria-label="Excluir cliente"
-                  type="button"
-                >
-                  <i class="fa-solid fa-trash text-sm" aria-hidden="true" />
                 </button>
               </div>
             </td>
@@ -307,15 +252,16 @@ function cancelamentoBadge(c: AdminCliente): { text: string; title: string; cls:
     <!-- Bottom sheet de ações (mobile) -->
     <Teleport to="body">
       <Transition name="sheet">
-        <div v-if="menuCliente" class="sm:hidden fixed inset-0 z-50 flex flex-col justify-end" role="dialog" aria-modal="true">
+        <div v-if="menuCliente" class="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center sm:p-4" role="dialog" aria-modal="true">
           <!-- Backdrop -->
-          <div class="absolute inset-0 bg-black/60" @click="closeMenu" aria-hidden="true" />
-          <!-- Sheet -->
-          <div class="relative bg-white dark:bg-slate-900 rounded-t-2xl border-t border-slate-200 dark:border-slate-800 shadow-2xl pb-[max(env(safe-area-inset-bottom),1rem)] animate-slide-up">
-            <!-- Drag handle -->
-            <div class="flex justify-center py-2">
+          <div class="absolute inset-0 bg-black/60 sm:backdrop-blur-sm" @click="closeMenu" aria-hidden="true" />
+          <!-- Sheet (mobile) / painel central (desktop) -->
+          <div class="relative bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-2xl border-t sm:border border-slate-200 dark:border-slate-800 shadow-2xl pb-[max(env(safe-area-inset-bottom),1rem)] sm:pb-2 animate-slide-up sm:w-full sm:max-w-sm">
+            <!-- Drag handle (mobile) -->
+            <div class="flex justify-center py-2 sm:hidden">
               <div class="w-10 h-1 rounded-full bg-slate-300 dark:bg-slate-700" />
             </div>
+            <div class="hidden sm:block pt-3" />
             <!-- Header -->
             <div class="px-5 pb-3 border-b border-slate-100 dark:border-slate-800">
               <div class="flex items-center gap-3">
@@ -333,6 +279,13 @@ function cancelamentoBadge(c: AdminCliente): { text: string; title: string; cls:
                     >
                       <i class="fa-solid fa-ban" aria-hidden="true" />
                       {{ cancelamentoBadge(menuCliente)!.text }}
+                    </span>
+                    <span
+                      v-if="menuCliente.parceiro_nome"
+                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-400"
+                    >
+                      <i class="fa-solid fa-handshake" aria-hidden="true" />
+                      <span class="truncate max-w-[110px]">{{ menuCliente.parceiro_nome }}</span>
                     </span>
                   </div>
                   <p class="text-xs text-slate-500 dark:text-slate-400 truncate">{{ getPlanLabel(menuCliente.subscription_plan) }} · {{ diasRestantesText(menuCliente) }}</p>
@@ -367,6 +320,37 @@ function cancelamentoBadge(c: AdminCliente): { text: string; title: string; cls:
               >
                 <i class="fa-solid fa-calendar-check text-emerald-600 dark:text-emerald-400 w-5" aria-hidden="true" />
                 <span class="text-sm font-medium text-slate-800 dark:text-slate-200">Renovar assinatura</span>
+              </button>
+
+              <button
+                v-if="menuCliente.role !== 'superAdmin'"
+                @click="emitAction('sinalizar-pagamento', menuCliente.id)"
+                class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                type="button"
+              >
+                <i class="fa-solid fa-money-check-dollar text-emerald-600 dark:text-emerald-400 w-5" aria-hidden="true" />
+                <span class="text-sm font-medium text-slate-800 dark:text-slate-200">Sinalizar pagamento</span>
+                <span v-if="menuCliente.parceiro_nome" class="ml-auto text-xs text-slate-500 truncate max-w-[100px]">{{ menuCliente.parceiro_nome }}</span>
+              </button>
+
+              <button
+                v-if="menuCliente.role !== 'superAdmin'"
+                @click="emitAction('atribuir-parceiro', menuCliente.id)"
+                class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                type="button"
+              >
+                <i class="fa-solid fa-handshake text-teal-600 dark:text-teal-400 w-5" aria-hidden="true" />
+                <span class="text-sm font-medium text-slate-800 dark:text-slate-200">Atribuir a parceiro</span>
+              </button>
+
+              <button
+                v-if="menuCliente.role !== 'superAdmin'"
+                @click="emitAction('tornar-parceiro', menuCliente.id)"
+                class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                type="button"
+              >
+                <i class="fa-solid fa-user-tie text-indigo-600 dark:text-indigo-400 w-5" aria-hidden="true" />
+                <span class="text-sm font-medium text-slate-800 dark:text-slate-200">Tornar empresa parceira</span>
               </button>
 
               <button

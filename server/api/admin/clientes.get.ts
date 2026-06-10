@@ -11,12 +11,21 @@ export default defineEventHandler(async (event) => {
       .order('created_at', { ascending: false })
     if (error) throw error
 
+    // Vínculos de parceiro (1 por empresa) para exibir na lista
+    const { data: vinculos } = await supabase
+      .from('parceiro_empresas')
+      .select('empresa_id, comissao_percentual, ativo, parceiros ( nome )')
+    const vinculoPorEmpresa = new Map(
+      (vinculos || []).map((v: any) => [v.empresa_id, v]),
+    )
+
     const clientesComRole = await Promise.all((empresas || []).map(async (emp) => {
       let userRole = 'user'
       if (emp.auth_user_id) {
         const { data: u } = await supabase.from('usuarios').select('role').eq('auth_user_id', emp.auth_user_id).single()
         if (u) userRole = u.role
       }
+      const vinculo = vinculoPorEmpresa.get(emp.id)
       return {
         id: emp.id,
         nome: emp.nome,
@@ -35,6 +44,8 @@ export default defineEventHandler(async (event) => {
         max_agentes: emp.max_agentes ?? 1,
         max_webhooks_entrada: emp.max_webhooks_entrada ?? 5,
         cancel_at_period_end: emp.cancel_at_period_end || false,
+        parceiro_nome: vinculo?.parceiros?.nome ?? null,
+        parceiro_comissao: vinculo ? Number(vinculo.comissao_percentual) : null,
       }
     }))
 

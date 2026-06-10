@@ -38,6 +38,31 @@ async function handleLogin() {
     // Verifica se o usuário é super administrador
     await checkUserRole()
     if (!isSuperAdmin.value) {
+      // Parceiro ativo entra no portal somente leitura dele
+      const supabase = useSupabaseClient()
+      const { data: parceiro } = await supabase
+        .from('parceiros')
+        .select('id, ativo')
+        .eq('auth_user_id', result.id)
+        .maybeSingle()
+
+      const p = parceiro as { id: string; ativo: boolean } | null
+      if (p?.ativo) {
+        if (user.value?.email) {
+          localStorage.setItem('user_email', user.value.email)
+        }
+        toast?.success('Login realizado com sucesso!')
+        await navigateTo('/parceiro')
+        return
+      }
+
+      // Parceiro bloqueado: mostra o modal explicativo com o contato
+      if (p) {
+        useContaBloqueada().bloqueado.value = true
+        await signOut()
+        return
+      }
+
       await signOut()
       toast?.error('Acesso negado. Esta área é restrita a super administradores.')
       return

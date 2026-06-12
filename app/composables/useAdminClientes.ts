@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 export interface AdminCliente {
   id: string
   nome: string
+  nome_cliente?: string | null
   email: string
   whatsapp: string | null
   subscription_status: 'trial' | 'active' | 'canceled' | 'expired'

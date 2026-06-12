@@ -64,6 +64,7 @@ const filteredClientes = computed(() => {
     const q = searchQuery.value.toLowerCase()
     filtered = filtered.filter(c =>
       c.nome.toLowerCase().includes(q) ||
+      c.nome_cliente?.toLowerCase().includes(q) ||
       c.email.toLowerCase().includes(q) ||
       c.whatsapp?.includes(q),
     )

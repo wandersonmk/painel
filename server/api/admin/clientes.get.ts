@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   try {
     const { data: empresas, error } = await supabase
       .from('empresas')
-      .select('id, nome, email, whatsapp, subscription_status, subscription_plan, subscription_period, trial_ends_at, subscription_renews_at, subscription_price, ativo, created_at, auth_user_id, max_instancias, max_agentes, max_webhooks_entrada, cancel_at_period_end, roteamento_habilitado, transporte_habilitado')
+      .select('id, nome, nome_cliente, email, whatsapp, subscription_status, subscription_plan, subscription_period, trial_ends_at, subscription_renews_at, subscription_price, ativo, created_at, auth_user_id, max_instancias, max_agentes, max_webhooks_entrada, cancel_at_period_end, roteamento_habilitado, transporte_habilitado')
       .order('created_at', { ascending: false })
     if (error) throw error
 
@@ -29,6 +29,7 @@ export default defineEventHandler(async (event) => {
       return {
         id: emp.id,
         nome: emp.nome,
+        nome_cliente: emp.nome_cliente?.trim() || null,
         email: emp.email || '',
         whatsapp: emp.whatsapp,
         subscription_status: emp.subscription_status || 'trial',

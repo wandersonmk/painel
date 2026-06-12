@@ -50,6 +50,15 @@ export function formatPhone(phone: string | null | undefined): string | null {
   const match = detectCountry(d)
   if (match) return `+${match.c.ddi} ${formatNational(match.c.flag, match.national)}`
 
+  // Número que começa com 55 mas não fecha como BR completo (13/12 dígitos):
+  // foi gravado com o DDI dentro da máscara nacional — ex.: "(55) 21981-0810".
+  // Mostrar o 55 como DDI e o que vem depois como DDD + número (possivelmente
+  // truncado na origem), em vez de exibir "(55)" como se fosse DDD.
+  if (d.startsWith('55') && d.length > 4) {
+    const rest = d.slice(2)
+    return `+55 (${rest.slice(0, 2)}) ${rest.slice(2)}`
+  }
+
   if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`
   if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`
   return `+${d}`
@@ -59,7 +68,10 @@ export function whatsappLink(phone: string | null | undefined): string | null {
   if (!phone) return null
   const d = phone.replace(/\D/g, '')
   if (!d) return null
-  const withDdi = detectCountry(d) ? d : (d.length === 10 || d.length === 11 ? `55${d}` : d)
+  // Se já começa com 55, nunca prefixar de novo (evita wa.me/5555…)
+  const withDdi = detectCountry(d) || d.startsWith('55')
+    ? d
+    : (d.length === 10 || d.length === 11 ? `55${d}` : d)
   return `https://wa.me/${withDdi}`
 }
 

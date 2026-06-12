@@ -160,7 +160,7 @@ function cancelamentoBadge(c: AdminCliente): { text: string; title: string; cls:
                     </span>
                   </div>
                   <p class="hidden md:block text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                    {{ c.email }}<template v-if="formatPhone(c.whatsapp)"> · {{ formatPhone(c.whatsapp) }} <a
+                    <template v-if="c.nome_cliente"><i class="fa-solid fa-user text-[10px] text-slate-400 dark:text-slate-500" aria-hidden="true" /> <span class="font-medium text-slate-600 dark:text-slate-300">{{ c.nome_cliente }}</span> · </template>{{ c.email }}<template v-if="formatPhone(c.whatsapp)"> · {{ formatPhone(c.whatsapp) }} <a
                       :href="whatsappLink(c.whatsapp) ?? '#'"
                       target="_blank"
                       rel="noopener noreferrer"
@@ -169,6 +169,10 @@ function cancelamentoBadge(c: AdminCliente): { text: string; title: string; cls:
                       aria-label="Abrir WhatsApp"
                       @click.stop
                     ><i class="fa-brands fa-whatsapp text-[11px]" aria-hidden="true" /></a></template>
+                  </p>
+                  <!-- Mobile: nome do cliente (a linha de email/fone é md+) -->
+                  <p v-if="c.nome_cliente" class="md:hidden text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                    <i class="fa-solid fa-user text-[9px]" aria-hidden="true" /> {{ c.nome_cliente }}
                   </p>
                   <!-- Mobile: dias restantes inline + status quando o status pill estiver escondido -->
                   <div class="md:hidden mt-1 flex items-center gap-1.5 flex-wrap">
@@ -289,7 +293,9 @@ function cancelamentoBadge(c: AdminCliente): { text: string; title: string; cls:
                       <span class="truncate max-w-[110px]">{{ menuCliente.parceiro_nome }}</span>
                     </span>
                   </div>
-                  <p class="text-xs text-slate-500 dark:text-slate-400 truncate">{{ getPlanLabel(menuCliente.subscription_plan) }} · {{ diasRestantesText(menuCliente) }}</p>
+                  <p class="text-xs text-slate-500 dark:text-slate-400 truncate">
+                    <template v-if="menuCliente.nome_cliente">{{ menuCliente.nome_cliente }} · </template>{{ getPlanLabel(menuCliente.subscription_plan) }} · {{ diasRestantesText(menuCliente) }}
+                  </p>
                 </div>
               </div>
             </div>

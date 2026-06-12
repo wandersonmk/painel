@@ -14,13 +14,14 @@ const emit = defineEmits<{
   'atribuir-parceiro': [clienteId: string]
   'sinalizar-pagamento': [clienteId: string]
   'tornar-parceiro': [clienteId: string]
+  modulos: [clienteId: string]
 }>()
 
 // Menu de ações (bottom sheet no mobile, painel central no desktop)
 const menuCliente = ref<AdminCliente | null>(null)
 function openMenu(c: AdminCliente) { menuCliente.value = c }
 function closeMenu() { menuCliente.value = null }
-function emitAction(action: 'editar' | 'limite-instancias' | 'renovar' | 'desativar' | 'reativar' | 'excluir' | 'atribuir-parceiro' | 'sinalizar-pagamento' | 'tornar-parceiro', id: string) {
+function emitAction(action: 'editar' | 'limite-instancias' | 'renovar' | 'desativar' | 'reativar' | 'excluir' | 'atribuir-parceiro' | 'sinalizar-pagamento' | 'tornar-parceiro' | 'modulos', id: string) {
   emit(action as any, id)
   closeMenu()
 }
@@ -311,6 +312,19 @@ function cancelamentoBadge(c: AdminCliente): { text: string; title: string; cls:
                 <i class="fa-solid fa-mobile-screen text-purple-600 dark:text-purple-400 w-5" aria-hidden="true" />
                 <span class="text-sm font-medium text-slate-800 dark:text-slate-200">Canais WhatsApp</span>
                 <span class="ml-auto text-xs text-slate-500">{{ menuCliente.max_instancias ?? 1 }}</span>
+              </button>
+
+              <button
+                @click="emitAction('modulos', menuCliente.id)"
+                class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                type="button"
+              >
+                <i class="fa-solid fa-puzzle-piece text-violet-600 dark:text-violet-400 w-5" aria-hidden="true" />
+                <span class="text-sm font-medium text-slate-800 dark:text-slate-200">Módulos do app</span>
+                <span
+                  v-if="menuCliente.roteamento_habilitado === false || menuCliente.transporte_habilitado === false"
+                  class="ml-auto text-xs text-amber-600 dark:text-amber-400 font-semibold"
+                >Restrito</span>
               </button>
 
               <button

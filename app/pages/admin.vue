@@ -38,6 +38,13 @@ const clienteLimiteInstancias = ref<{
   max_agentes: number
   max_webhooks_entrada: number
 } | null>(null)
+const showModulosModal = ref(false)
+const clienteModulos = ref<{
+  id: string
+  nome: string
+  roteamento_habilitado: boolean
+  transporte_habilitado: boolean
+} | null>(null)
 
 const searchQuery = ref('')
 const filterStatus = ref('all')
@@ -264,6 +271,42 @@ async function confirmLimiteInstancias(limites: { maxInstancias: number; maxAgen
   showLimiteInstanciasModal.value = false
   clienteLimiteInstancias.value = null
 }
+
+function handleModulos(id: string) {
+  const c = clientes.value.find(x => x.id === id)
+  if (c) {
+    clienteModulos.value = {
+      id: c.id,
+      nome: c.nome,
+      roteamento_habilitado: c.roteamento_habilitado ?? true,
+      transporte_habilitado: c.transporte_habilitado ?? true,
+    }
+    showModulosModal.value = true
+  }
+}
+async function confirmModulos(modulos: { roteamentoHabilitado: boolean; transporteHabilitado: boolean }) {
+  if (!clienteModulos.value) return
+  try {
+    const resp = await $fetch<{ success: boolean; error?: string }>('/api/admin/modulos', {
+      method: 'POST',
+      body: {
+        clienteId: clienteModulos.value.id,
+        roteamentoHabilitado: modulos.roteamentoHabilitado,
+        transporteHabilitado: modulos.transporteHabilitado,
+      },
+      headers: await useAdminAuthHeaders(),
+    })
+    if (!resp.success) throw new Error(resp.error)
+    const c = clientes.value.find(x => x.id === clienteModulos.value!.id)
+    if (c) {
+      c.roteamento_habilitado = modulos.roteamentoHabilitado
+      c.transporte_habilitado = modulos.transporteHabilitado
+    }
+    toast?.success('Módulos atualizados')
+  } catch { toast?.error('Erro ao atualizar módulos') }
+  showModulosModal.value = false
+  clienteModulos.value = null
+}
 </script>
 
 <template>
@@ -433,6 +476,7 @@ async function confirmLimiteInstancias(limites: { maxInstancias: number; maxAgen
         @atribuir-parceiro="handleAtribuirParceiro"
         @sinalizar-pagamento="handleSinalizarPagamento"
         @tornar-parceiro="handleTornarParceiro"
+        @modulos="handleModulos"
       />
 
       <AdminEditarClienteModal
@@ -512,6 +556,15 @@ async function confirmLimiteInstancias(limites: { maxInstancias: number; maxAgen
         :webhooks-atual="clienteLimiteInstancias?.max_webhooks_entrada ?? 5"
         @close="showLimiteInstanciasModal = false; clienteLimiteInstancias = null"
         @confirm="confirmLimiteInstancias"
+      />
+
+      <AdminModulosModal
+        :show="showModulosModal"
+        :cliente-nome="clienteModulos?.nome || ''"
+        :roteamento-atual="clienteModulos?.roteamento_habilitado ?? true"
+        :transporte-atual="clienteModulos?.transporte_habilitado ?? true"
+        @close="showModulosModal = false; clienteModulos = null"
+        @confirm="confirmModulos"
       />
     </div>
   </div>

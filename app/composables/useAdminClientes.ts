@@ -20,6 +20,8 @@ export interface AdminCliente {
   cancel_at_period_end?: boolean
   parceiro_nome?: string | null
   parceiro_comissao?: number | null
+  roteamento_habilitado?: boolean
+  transporte_habilitado?: boolean
 }
 
 export interface AdminStats {

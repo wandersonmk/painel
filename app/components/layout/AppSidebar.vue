@@ -8,6 +8,7 @@ const navItems = [
   { label: 'Clientes', icon: 'fa-users', to: '/admin' },
   { label: 'Parceiros', icon: 'fa-handshake', to: '/parceiros' },
   { label: 'Financeiro', icon: 'fa-wallet', to: '/financeiro' },
+  { label: 'Aulas do App', icon: 'fa-circle-play', to: '/aulas-app' },
 ]
 
 function isActive(to: string) {

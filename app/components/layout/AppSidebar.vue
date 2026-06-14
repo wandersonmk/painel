@@ -9,6 +9,7 @@ const navItems = [
   { label: 'Parceiros', icon: 'fa-handshake', to: '/parceiros' },
   { label: 'Financeiro', icon: 'fa-wallet', to: '/financeiro' },
   { label: 'Aulas do App', icon: 'fa-circle-play', to: '/aulas-app' },
+  { label: 'Modelos de Assistente', icon: 'fa-wand-magic-sparkles', to: '/assistentes-app' },
 ]
 
 function isActive(to: string) {

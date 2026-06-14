@@ -157,8 +157,8 @@ const labelCls = 'block text-xs font-semibold text-slate-700 dark:text-slate-300
       </div>
 
       <div>
-        <label for="sa-desc" :class="labelCls">Descrição <span class="font-normal text-slate-400">(opcional)</span></label>
-        <textarea id="sa-desc" v-model="descricao" rows="2" placeholder="O que o cliente vai aprender nesta aula" :class="[inputCls, 'resize-none']" />
+        <label :class="labelCls">Descrição <span class="font-normal text-slate-400">(opcional)</span></label>
+        <AppRichTextEditor v-model="descricao" placeholder="O que o cliente vai aprender nesta aula" />
       </div>
 
       <!-- Link do vídeo + preview -->

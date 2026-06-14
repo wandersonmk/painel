@@ -85,6 +85,18 @@ function formatDuracao(s: number) {
   return `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
 }
 
+// Tira a marcação (**negrito**, __sublinhado__, [texto](url)) pra mostrar a
+// descrição limpa no preview da lista.
+function descricaoLimpa(md: string | null) {
+  if (!md) return ''
+  return md
+    .replace(/\[([^\]]+)\]\((?:https?:\/\/[^\s)]+)\)/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function aulasDaTrilha(trilhaId: string) {
   return aulas.value
     .filter(a => a.trilha_id === trilhaId)
@@ -356,7 +368,7 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
 
               <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium text-slate-800 dark:text-white truncate">{{ a.titulo }}</p>
-                <p class="text-xs text-slate-500 truncate">{{ a.descricao || a.video_url || 'Sem descrição' }}</p>
+                <p class="text-xs text-slate-500 truncate">{{ descricaoLimpa(a.descricao) || a.video_url || 'Sem descrição' }}</p>
               </div>
 
               <span

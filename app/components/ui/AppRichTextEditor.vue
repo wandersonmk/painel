@@ -103,34 +103,88 @@ function aplicar(comando: 'bold' | 'underline') {
   emitir()
 }
 
-// ───────── Modal de link (no lugar do window.prompt feio do navegador) ─────────
+// ───────── Tooltip: mostra o link embutido ao passar o mouse ─────────
+const tooltipVisivel = ref(false)
+const tooltipTexto = ref('')
+const tooltipX = ref(0)
+const tooltipY = ref(0)
+
+function aoMover(e: MouseEvent) {
+  const alvo = (e.target as HTMLElement | null)?.closest?.('a') as HTMLAnchorElement | null
+  if (alvo && editorEl.value?.contains(alvo)) {
+    tooltipTexto.value = alvo.getAttribute('href') || ''
+    tooltipX.value = e.clientX
+    tooltipY.value = e.clientY
+    tooltipVisivel.value = true
+  } else if (tooltipVisivel.value) {
+    tooltipVisivel.value = false
+  }
+}
+function esconderTooltip() { tooltipVisivel.value = false }
+
+// ───────── Modal de link (criar / editar / orientar a selecionar) ─────────
+type LinkModo = 'criar' | 'editar' | 'selecione'
 const linkModalAberto = ref(false)
-const linkTexto = ref('')
+const linkModo = ref<LinkModo>('criar')
+const linkTextoPreview = ref('')
 const linkUrl = ref('')
 const linkErro = ref('')
 const urlInputEl = ref<HTMLInputElement | null>(null)
-const textoInputEl = ref<HTMLInputElement | null>(null)
 let rangeSalvo: Range | null = null
+let anchorEdit: HTMLAnchorElement | null = null
+
+// Acha um <a> que envolve a seleção/cursor (pra editar um link já existente).
+function anchorDaSelecao(sel: Selection | null): HTMLAnchorElement | null {
+  if (!sel || !sel.anchorNode || !editorEl.value) return null
+  let el: HTMLElement | null = sel.anchorNode.nodeType === Node.TEXT_NODE
+    ? sel.anchorNode.parentElement
+    : (sel.anchorNode as HTMLElement)
+  while (el && el !== editorEl.value) {
+    if (el.tagName === 'A') return el as HTMLAnchorElement
+    el = el.parentElement
+  }
+  return null
+}
 
 function abrirLink() {
   const sel = window.getSelection()
   rangeSalvo = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null
-  linkTexto.value = sel ? sel.toString().trim() : ''
-  linkUrl.value = ''
+  const anchor = anchorDaSelecao(sel)
+  const selecionado = sel ? sel.toString().trim() : ''
   linkErro.value = ''
+  esconderTooltip()
+
+  if (anchor) {
+    // Já existe link no trecho → abre pra editar mostrando a URL atual.
+    linkModo.value = 'editar'
+    anchorEdit = anchor
+    linkTextoPreview.value = anchor.textContent || ''
+    linkUrl.value = anchor.getAttribute('href') || ''
+  } else if (selecionado) {
+    // Texto selecionado, sem link → criar.
+    linkModo.value = 'criar'
+    anchorEdit = null
+    linkTextoPreview.value = selecionado
+    linkUrl.value = ''
+  } else {
+    // Nada selecionado → orienta a selecionar primeiro.
+    linkModo.value = 'selecione'
+    anchorEdit = null
+  }
   linkModalAberto.value = true
 }
 
 watch(linkModalAberto, async (aberto) => {
   if (!aberto) return
   await nextTick()
-  // Sem texto selecionado → começa pelo texto; senão já pula pra URL.
-  ;(linkTexto.value ? urlInputEl.value : textoInputEl.value)?.focus()
+  urlInputEl.value?.focus()
+  urlInputEl.value?.select()
 })
 
 function fecharLink() {
   linkModalAberto.value = false
   rangeSalvo = null
+  anchorEdit = null
 }
 
 function confirmarLink() {
@@ -142,19 +196,31 @@ function confirmarLink() {
   }
   // Aceita colar sem protocolo: vira https:// automaticamente.
   if (!/^https?:\/\//i.test(url)) url = `https://${url.replace(/^\/+/, '')}`
-  const texto = linkTexto.value.trim() || url
 
-  editorEl.value?.focus()
-  if (rangeSalvo) {
-    const sel = window.getSelection()
-    sel?.removeAllRanges()
-    sel?.addRange(rangeSalvo)
+  if (linkModo.value === 'editar' && anchorEdit) {
+    anchorEdit.setAttribute('href', url)
+  } else if (linkModo.value === 'criar') {
+    editorEl.value?.focus()
+    if (rangeSalvo) {
+      const sel = window.getSelection()
+      sel?.removeAllRanges()
+      sel?.addRange(rangeSalvo)
+    }
+    prepararComandos()
+    document.execCommand('createLink', false, url)
   }
-  prepararComandos()
-  document.execCommand('insertHTML', false, `<a href="${escapeHtml(url)}">${escapeHtml(texto)}</a>`)
+  fecharLink()
+  emitir()
+}
 
-  linkModalAberto.value = false
-  rangeSalvo = null
+// Remove o link mantendo o texto (modo editar).
+function removerLink() {
+  if (anchorEdit?.parentNode) {
+    const pai = anchorEdit.parentNode
+    while (anchorEdit.firstChild) pai.insertBefore(anchorEdit.firstChild, anchorEdit)
+    pai.removeChild(anchorEdit)
+  }
+  fecharLink()
   emitir()
 }
 
@@ -228,6 +294,8 @@ const modalInputCls = 'w-full px-3 py-2 bg-white dark:bg-slate-900 border border
           @input="emitir"
           @blur="emitir"
           @paste="aoColar"
+          @mousemove="aoMover"
+          @mouseleave="esconderTooltip"
         />
       </div>
 
@@ -238,7 +306,18 @@ const modalInputCls = 'w-full px-3 py-2 bg-white dark:bg-slate-900 border border
     </div>
   </Teleport>
 
-  <!-- Modal de inserir link (estilo do painel, no lugar do prompt do navegador) -->
+  <!-- Tooltip do link embutido (aparece ao passar o mouse sobre um link) -->
+  <Teleport to="body">
+    <div
+      v-if="tooltipVisivel && tooltipTexto"
+      class="fixed z-[85] pointer-events-none max-w-xs truncate px-2 py-1 rounded-md bg-slate-900 text-white text-[11px] shadow-lg ring-1 ring-white/10"
+      :style="{ left: `${tooltipX + 12}px`, top: `${tooltipY + 18}px` }"
+    >
+      <i class="fa-solid fa-link mr-1 text-purple-300" aria-hidden="true" />{{ tooltipTexto }}
+    </div>
+  </Teleport>
+
+  <!-- Modal de inserir / editar link (estilo do painel) -->
   <Teleport to="body">
     <Transition
       enter-active-class="transition duration-150"
@@ -254,59 +333,93 @@ const modalInputCls = 'w-full px-3 py-2 bg-white dark:bg-slate-900 border border
         <div class="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
           <div class="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 dark:border-slate-800">
             <h3 class="text-base font-bold text-slate-900 dark:text-white inline-flex items-center gap-2">
-              <i class="fa-solid fa-link text-purple-500 text-sm" aria-hidden="true" /> Inserir link
+              <i
+                class="text-sm"
+                :class="linkModo === 'selecione' ? 'fa-solid fa-circle-info text-amber-500' : 'fa-solid fa-link text-purple-500'"
+                aria-hidden="true"
+              />
+              {{ linkModo === 'editar' ? 'Editar link' : linkModo === 'selecione' ? 'Selecione um texto' : 'Inserir link' }}
             </h3>
             <button type="button" @click="fecharLink" class="p-2 -mr-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500" aria-label="Fechar">
               <i class="fa-solid fa-xmark" aria-hidden="true" />
             </button>
           </div>
 
-          <div class="p-5 space-y-3">
-            <div>
-              <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Texto que aparece</label>
-              <input
-                ref="textoInputEl"
-                v-model="linkTexto"
-                type="text"
-                placeholder="Ex.: clique aqui"
-                :class="modalInputCls"
-                @keyup.enter="confirmarLink"
-                @keyup.esc="fecharLink"
-              />
+          <!-- Sem texto selecionado: orienta a selecionar primeiro -->
+          <template v-if="linkModo === 'selecione'">
+            <div class="p-5">
+              <div class="flex items-start gap-3 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 p-3.5">
+                <i class="fa-solid fa-arrow-pointer text-amber-500 mt-0.5" aria-hidden="true" />
+                <p class="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                  Para incorporar um link, <strong>selecione primeiro o texto</strong> que vai virar link
+                  — por exemplo <em>"clique aqui"</em> — e então clique de novo no botão
+                  <i class="fa-solid fa-link text-xs text-purple-500" aria-hidden="true" />.
+                </p>
+              </div>
             </div>
-            <div>
-              <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Endereço do link</label>
-              <input
-                ref="urlInputEl"
-                v-model="linkUrl"
-                type="url"
-                inputmode="url"
-                placeholder="https://..."
-                :class="[modalInputCls, linkErro ? '!border-red-400 focus:!ring-red-500' : '']"
-                @input="linkErro = ''"
-                @keyup.enter="confirmarLink"
-                @keyup.esc="fecharLink"
-              />
-              <p v-if="linkErro" class="text-[11px] mt-1 text-red-500">{{ linkErro }}</p>
+            <div class="flex px-5 pb-5">
+              <button
+                type="button"
+                @click="fecharLink"
+                class="flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm bg-purple-600 hover:bg-purple-700 text-white transition-colors"
+              >
+                Entendi
+              </button>
             </div>
-          </div>
+          </template>
 
-          <div class="flex gap-2 px-5 pb-5">
-            <button
-              type="button"
-              @click="fecharLink"
-              class="flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              @click="confirmarLink"
-              class="flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm bg-purple-600 hover:bg-purple-700 text-white transition-colors inline-flex items-center justify-center gap-2"
-            >
-              <i class="fa-solid fa-link text-xs" aria-hidden="true" /> Inserir
-            </button>
-          </div>
+          <!-- Criar / editar link -->
+          <template v-else>
+            <div class="p-5 space-y-3">
+              <div>
+                <span class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Texto do link</span>
+                <div class="px-3 py-2 rounded bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm text-slate-700 dark:text-slate-200 truncate">
+                  {{ linkTextoPreview || '—' }}
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Endereço do link</label>
+                <input
+                  ref="urlInputEl"
+                  v-model="linkUrl"
+                  type="url"
+                  inputmode="url"
+                  placeholder="https://..."
+                  :class="[modalInputCls, linkErro ? '!border-red-400 focus:!ring-red-500' : '']"
+                  @input="linkErro = ''"
+                  @keyup.enter="confirmarLink"
+                  @keyup.esc="fecharLink"
+                />
+                <p v-if="linkErro" class="text-[11px] mt-1 text-red-500">{{ linkErro }}</p>
+              </div>
+            </div>
+
+            <div class="flex gap-2 px-5 pb-5">
+              <button
+                v-if="linkModo === 'editar'"
+                type="button"
+                @click="removerLink"
+                title="Remover o link (mantém o texto)"
+                class="px-3 py-2.5 rounded-lg font-semibold text-sm border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors inline-flex items-center gap-2"
+              >
+                <i class="fa-solid fa-link-slash text-xs" aria-hidden="true" /> Remover
+              </button>
+              <button
+                type="button"
+                @click="fecharLink"
+                class="flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                @click="confirmarLink"
+                class="flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm bg-purple-600 hover:bg-purple-700 text-white transition-colors inline-flex items-center justify-center gap-2"
+              >
+                <i class="fa-solid fa-check text-xs" aria-hidden="true" /> {{ linkModo === 'editar' ? 'Salvar' : 'Inserir' }}
+              </button>
+            </div>
+          </template>
         </div>
       </div>
     </Transition>

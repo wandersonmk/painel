@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 
 /**
  * Editor de texto rico (WYSIWYG) que guarda o conteúdo no formato que o app
@@ -103,29 +103,58 @@ function aplicar(comando: 'bold' | 'underline') {
   emitir()
 }
 
-function inserirLink() {
-  editorEl.value?.focus()
-  const sel = window.getSelection()
-  const range = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null
-  const selecionado = sel ? sel.toString().trim() : ''
+// ───────── Modal de link (no lugar do window.prompt feio do navegador) ─────────
+const linkModalAberto = ref(false)
+const linkTexto = ref('')
+const linkUrl = ref('')
+const linkErro = ref('')
+const urlInputEl = ref<HTMLInputElement | null>(null)
+const textoInputEl = ref<HTMLInputElement | null>(null)
+let rangeSalvo: Range | null = null
 
-  const url = window.prompt('Cole o endereço do link (começando com https://):', 'https://')?.trim()
-  if (!url) return
-  if (!/^https?:\/\//i.test(url)) {
-    window.alert('O link precisa começar com http:// ou https://')
+function abrirLink() {
+  const sel = window.getSelection()
+  rangeSalvo = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null
+  linkTexto.value = sel ? sel.toString().trim() : ''
+  linkUrl.value = ''
+  linkErro.value = ''
+  linkModalAberto.value = true
+}
+
+watch(linkModalAberto, async (aberto) => {
+  if (!aberto) return
+  await nextTick()
+  // Sem texto selecionado → começa pelo texto; senão já pula pra URL.
+  ;(linkTexto.value ? urlInputEl.value : textoInputEl.value)?.focus()
+})
+
+function fecharLink() {
+  linkModalAberto.value = false
+  rangeSalvo = null
+}
+
+function confirmarLink() {
+  let url = linkUrl.value.trim()
+  if (!url) {
+    linkErro.value = 'Informe o endereço do link.'
+    urlInputEl.value?.focus()
     return
   }
+  // Aceita colar sem protocolo: vira https:// automaticamente.
+  if (!/^https?:\/\//i.test(url)) url = `https://${url.replace(/^\/+/, '')}`
+  const texto = linkTexto.value.trim() || url
 
   editorEl.value?.focus()
-  if (range && sel) { sel.removeAllRanges(); sel.addRange(range) }
-  prepararComandos()
-
-  if (selecionado) {
-    document.execCommand('createLink', false, url)
-  } else {
-    const texto = window.prompt('Texto que vai aparecer no link (ex.: clique aqui):', 'clique aqui')?.trim() || url
-    document.execCommand('insertHTML', false, `<a href="${url}">${escapeHtml(texto)}</a>`)
+  if (rangeSalvo) {
+    const sel = window.getSelection()
+    sel?.removeAllRanges()
+    sel?.addRange(rangeSalvo)
   }
+  prepararComandos()
+  document.execCommand('insertHTML', false, `<a href="${escapeHtml(url)}">${escapeHtml(texto)}</a>`)
+
+  linkModalAberto.value = false
+  rangeSalvo = null
   emitir()
 }
 
@@ -138,6 +167,7 @@ function aoColar(e: ClipboardEvent) {
 }
 
 const btnCls = 'w-8 h-8 rounded-md inline-flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors'
+const modalInputCls = 'w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500'
 </script>
 
 <template>
@@ -168,7 +198,7 @@ const btnCls = 'w-8 h-8 rounded-md inline-flex items-center justify-center text-
           <button type="button" :class="btnCls" title="Sublinhado" @mousedown.prevent @click="aplicar('underline')">
             <i class="fa-solid fa-underline text-xs" aria-hidden="true" />
           </button>
-          <button type="button" :class="btnCls" title="Inserir link em um texto" @mousedown.prevent @click="inserirLink">
+          <button type="button" :class="btnCls" title="Inserir link em um texto" @mousedown.prevent @click="abrirLink">
             <i class="fa-solid fa-link text-xs" aria-hidden="true" />
           </button>
 
@@ -206,6 +236,80 @@ const btnCls = 'w-8 h-8 rounded-md inline-flex items-center justify-center text-
         <i class="fa-solid fa-link" /> link. Clique em <i class="fa-solid fa-expand" /> para a tela cheia.
       </p>
     </div>
+  </Teleport>
+
+  <!-- Modal de inserir link (estilo do painel, no lugar do prompt do navegador) -->
+  <Teleport to="body">
+    <Transition
+      enter-active-class="transition duration-150"
+      enter-from-class="opacity-0"
+      leave-active-class="transition duration-100"
+      leave-to-class="opacity-0"
+    >
+      <div
+        v-if="linkModalAberto"
+        class="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+        @click.self="fecharLink"
+      >
+        <div class="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+          <div class="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 dark:border-slate-800">
+            <h3 class="text-base font-bold text-slate-900 dark:text-white inline-flex items-center gap-2">
+              <i class="fa-solid fa-link text-purple-500 text-sm" aria-hidden="true" /> Inserir link
+            </h3>
+            <button type="button" @click="fecharLink" class="p-2 -mr-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500" aria-label="Fechar">
+              <i class="fa-solid fa-xmark" aria-hidden="true" />
+            </button>
+          </div>
+
+          <div class="p-5 space-y-3">
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Texto que aparece</label>
+              <input
+                ref="textoInputEl"
+                v-model="linkTexto"
+                type="text"
+                placeholder="Ex.: clique aqui"
+                :class="modalInputCls"
+                @keyup.enter="confirmarLink"
+                @keyup.esc="fecharLink"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Endereço do link</label>
+              <input
+                ref="urlInputEl"
+                v-model="linkUrl"
+                type="url"
+                inputmode="url"
+                placeholder="https://..."
+                :class="[modalInputCls, linkErro ? '!border-red-400 focus:!ring-red-500' : '']"
+                @input="linkErro = ''"
+                @keyup.enter="confirmarLink"
+                @keyup.esc="fecharLink"
+              />
+              <p v-if="linkErro" class="text-[11px] mt-1 text-red-500">{{ linkErro }}</p>
+            </div>
+          </div>
+
+          <div class="flex gap-2 px-5 pb-5">
+            <button
+              type="button"
+              @click="fecharLink"
+              class="flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              @click="confirmarLink"
+              class="flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm bg-purple-600 hover:bg-purple-700 text-white transition-colors inline-flex items-center justify-center gap-2"
+            >
+              <i class="fa-solid fa-link text-xs" aria-hidden="true" /> Inserir
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </Teleport>
 </template>
 

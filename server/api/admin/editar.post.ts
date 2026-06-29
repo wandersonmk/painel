@@ -8,14 +8,27 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'clienteId obrigatório' })
   }
 
+  const nome = (body.nome ?? '').trim()
+  if (!nome || nome.length > 200) {
+    throw createError({ statusCode: 400, statusMessage: 'Nome inválido' })
+  }
+  const email = (body.email ?? '').trim()
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw createError({ statusCode: 400, statusMessage: 'E-mail inválido' })
+  }
+  const price = body.subscription_price
+  if (price != null && (!Number.isFinite(price) || price < 0 || price > 1_000_000)) {
+    throw createError({ statusCode: 400, statusMessage: 'Preço inválido' })
+  }
+
   const supabase = getServiceClient()
   const { error } = await supabase
     .from('empresas')
     .update({
-      nome: body.nome,
-      email: body.email,
+      nome,
+      email,
       whatsapp: body.whatsapp,
-      subscription_price: body.subscription_price,
+      subscription_price: price,
       updated_at: new Date().toISOString(),
     })
     .eq('id', body.clienteId)

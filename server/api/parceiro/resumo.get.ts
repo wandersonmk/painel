@@ -1,5 +1,6 @@
 import { requireParceiro } from '~~/server/utils/requireParceiro'
 import { getServiceClient } from '~~/server/utils/requireSuperAdmin'
+import { failPublic } from '~~/server/utils/apiError'
 import { syncStripeComissoes, computeSaldos, statusExibicao, type ComissaoLancamento } from '~~/server/utils/parceiroComissoes'
 
 export default defineEventHandler(async (event) => {
@@ -15,7 +16,7 @@ export default defineEventHandler(async (event) => {
     .eq('parceiro_id', parceiro.id)
     .order('pago_em', { ascending: false })
     .limit(100)
-  if (error) return { success: false, error: error.message }
+  if (error) return failPublic(error, 'parceiro/resumo', 'Não foi possível carregar o extrato.')
 
   const agora = new Date()
   const lancamentos = (rows || []).map((r: any) => ({

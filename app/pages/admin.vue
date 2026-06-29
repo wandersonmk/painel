@@ -43,7 +43,6 @@ const clienteModulos = ref<{
   id: string
   nome: string
   roteamento_habilitado: boolean
-  transporte_habilitado: boolean
 } | null>(null)
 
 const searchQuery = ref('')
@@ -280,12 +279,11 @@ function handleModulos(id: string) {
       id: c.id,
       nome: c.nome,
       roteamento_habilitado: c.roteamento_habilitado ?? true,
-      transporte_habilitado: c.transporte_habilitado ?? true,
     }
     showModulosModal.value = true
   }
 }
-async function confirmModulos(modulos: { roteamentoHabilitado: boolean; transporteHabilitado: boolean }) {
+async function confirmModulos(modulos: { roteamentoHabilitado: boolean }) {
   if (!clienteModulos.value) return
   try {
     const resp = await $fetch<{ success: boolean; error?: string }>('/api/admin/modulos', {
@@ -293,7 +291,6 @@ async function confirmModulos(modulos: { roteamentoHabilitado: boolean; transpor
       body: {
         clienteId: clienteModulos.value.id,
         roteamentoHabilitado: modulos.roteamentoHabilitado,
-        transporteHabilitado: modulos.transporteHabilitado,
       },
       headers: await useAdminAuthHeaders(),
     })
@@ -301,7 +298,6 @@ async function confirmModulos(modulos: { roteamentoHabilitado: boolean; transpor
     const c = clientes.value.find(x => x.id === clienteModulos.value!.id)
     if (c) {
       c.roteamento_habilitado = modulos.roteamentoHabilitado
-      c.transporte_habilitado = modulos.transporteHabilitado
     }
     toast?.success('Módulos atualizados')
   } catch { toast?.error('Erro ao atualizar módulos') }
@@ -563,7 +559,6 @@ async function confirmModulos(modulos: { roteamentoHabilitado: boolean; transpor
         :show="showModulosModal"
         :cliente-nome="clienteModulos?.nome || ''"
         :roteamento-atual="clienteModulos?.roteamento_habilitado ?? true"
-        :transporte-atual="clienteModulos?.transporte_habilitado ?? true"
         @close="showModulosModal = false; clienteModulos = null"
         @confirm="confirmModulos"
       />

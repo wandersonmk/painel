@@ -1,5 +1,6 @@
 import { requireParceiro } from '~~/server/utils/requireParceiro'
 import { getServiceClient } from '~~/server/utils/requireSuperAdmin'
+import { failPublic } from '~~/server/utils/apiError'
 
 export const TERMOS_VERSAO = '1.0'
 
@@ -20,7 +21,7 @@ export default defineEventHandler(async (event) => {
     .from('parceiros')
     .update({ dados_split: dadosSplit, updated_at: new Date().toISOString() })
     .eq('id', parceiro.id)
-  if (error) return { success: false, error: error.message }
+  if (error) return failPublic(error, 'parceiro/aceitar-termos', 'Não foi possível registrar o aceite.')
 
   return { success: true }
 })

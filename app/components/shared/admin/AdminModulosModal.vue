@@ -8,20 +8,17 @@ const props = defineProps<{
   show: boolean
   clienteNome: string
   roteamentoAtual: boolean
-  transporteAtual: boolean
 }>()
 const emit = defineEmits<{
   close: []
-  confirm: [modulos: { roteamentoHabilitado: boolean; transporteHabilitado: boolean }]
+  confirm: [modulos: { roteamentoHabilitado: boolean }]
 }>()
 
 const roteamento = ref(true)
-const transporte = ref(true)
 
 watch(() => props.show, (open) => {
   if (open) {
     roteamento.value = props.roteamentoAtual
-    transporte.value = props.transporteAtual
   }
 })
 
@@ -33,16 +30,9 @@ const MODULOS = [
     iconCls: 'text-violet-500',
     descricao: 'Página de Roteamento de Leads no menu lateral do app',
   },
-  {
-    key: 'transporte' as const,
-    label: 'Transporte',
-    icon: 'fa-bus',
-    iconCls: 'text-blue-500',
-    descricao: 'Módulo de Transporte (viagens, reservas e link público)',
-  },
 ]
 
-const valores = { roteamento, transporte }
+const valores = { roteamento }
 </script>
 
 <template>
@@ -59,7 +49,7 @@ const valores = { roteamento, transporte }
       </div>
     </div>
 
-    <form @submit.prevent="$emit('confirm', { roteamentoHabilitado: roteamento, transporteHabilitado: transporte })" class="space-y-4">
+    <form @submit.prevent="$emit('confirm', { roteamentoHabilitado: roteamento })" class="space-y-4">
       <div class="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 divide-y divide-slate-200 dark:divide-slate-800">
         <div
           v-for="m in MODULOS"

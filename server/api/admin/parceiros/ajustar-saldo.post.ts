@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
   if (!parceiroId) {
     throw createError({ statusCode: 400, statusMessage: 'parceiroId obrigatório' })
   }
-  if (!Number.isFinite(valor) || valor === 0) {
+  if (!Number.isFinite(valor) || valor === 0 || Math.abs(valor) > 1_000_000) {
     throw createError({ statusCode: 400, statusMessage: 'Valor do ajuste inválido' })
   }
 

@@ -13,9 +13,11 @@ export const RETENCAO_DIAS = 30
  * Ex.: pagou 15/05 a qualquer hora → libera 14/06 às 00:00 BRT.
  */
 export function calcularLiberarEm(pagoEm: Date): Date {
-  const brt = new Date(pagoEm.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
-  // 00:00 em Brasília = 03:00 UTC (BRT é UTC-3 fixo)
-  return new Date(Date.UTC(brt.getFullYear(), brt.getMonth(), brt.getDate() + RETENCAO_DIAS, 3, 0, 0))
+  // BRT é UTC-3 fixo (Brasil sem horário de verão desde 2019). Desloca -3h e lê
+  // o dia-calendário via getters UTC — não depende do fuso local do servidor.
+  const brt = new Date(pagoEm.getTime() - 3 * 60 * 60 * 1000)
+  // 00:00 em Brasília = 03:00 UTC
+  return new Date(Date.UTC(brt.getUTCFullYear(), brt.getUTCMonth(), brt.getUTCDate() + RETENCAO_DIAS, 3, 0, 0))
 }
 
 export interface ComissaoLancamento {
@@ -41,20 +43,21 @@ export function statusExibicao(l: ComissaoLancamento, agora = new Date()): Statu
 }
 
 export function computeSaldos(lancamentos: ComissaoLancamento[], agora = new Date()) {
-  const saldos = { aLiberar: 0, liberado: 0, repassado: 0, estornado: 0 }
+  // Acumula em centavos inteiros para evitar drift de ponto flutuante (0.1 + 0.2…).
+  const cents = { aLiberar: 0, liberado: 0, repassado: 0, estornado: 0 }
   for (const l of lancamentos) {
-    const v = Number(l.valor_comissao) || 0
+    const v = Math.round((Number(l.valor_comissao) || 0) * 100)
     const st = statusExibicao(l, agora)
-    if (st === 'a_liberar') saldos.aLiberar += v
-    else if (st === 'liberado') saldos.liberado += v
-    else if (st === 'repassado') saldos.repassado += v
-    else saldos.estornado += v
+    if (st === 'a_liberar') cents.aLiberar += v
+    else if (st === 'liberado') cents.liberado += v
+    else if (st === 'repassado') cents.repassado += v
+    else cents.estornado += v
   }
   return {
-    aLiberar: Math.round(saldos.aLiberar * 100) / 100,
-    liberado: Math.round(saldos.liberado * 100) / 100,
-    repassado: Math.round(saldos.repassado * 100) / 100,
-    estornado: Math.round(saldos.estornado * 100) / 100,
+    aLiberar: cents.aLiberar / 100,
+    liberado: cents.liberado / 100,
+    repassado: cents.repassado / 100,
+    estornado: cents.estornado / 100,
   }
 }
 

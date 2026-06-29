@@ -4,6 +4,7 @@ const PERIOD_DAYS: Record<string, number> = {
   trial1d: 1, trial2d: 2, trial3d: 3, trial5d: 5, trial: 7,
   '1month': 30, '6months': 180, '12months': 365,
 }
+const PLANS_VALIDOS = ['free', 'basic', 'pro', 'enterprise']
 
 export default defineEventHandler(async (event) => {
   await requireSuperAdmin(event)
@@ -11,6 +12,9 @@ export default defineEventHandler(async (event) => {
 
   if (!body?.clienteId || !body.plan || !body.period) {
     throw createError({ statusCode: 400, statusMessage: 'Dados incompletos' })
+  }
+  if (!PLANS_VALIDOS.includes(body.plan)) {
+    throw createError({ statusCode: 400, statusMessage: 'Plano inválido' })
   }
 
   const days = PERIOD_DAYS[body.period]

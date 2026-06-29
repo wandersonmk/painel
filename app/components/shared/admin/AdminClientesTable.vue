@@ -328,7 +328,7 @@ function cancelamentoBadge(c: AdminCliente): { text: string; title: string; cls:
                 <i class="fa-solid fa-puzzle-piece text-violet-600 dark:text-violet-400 w-5" aria-hidden="true" />
                 <span class="text-sm font-medium text-slate-800 dark:text-slate-200">Módulos do app</span>
                 <span
-                  v-if="menuCliente.roteamento_habilitado === false || menuCliente.transporte_habilitado === false"
+                  v-if="menuCliente.roteamento_habilitado === false"
                   class="ml-auto text-xs text-amber-600 dark:text-amber-400 font-semibold"
                 >Restrito</span>
               </button>

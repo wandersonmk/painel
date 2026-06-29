@@ -1,5 +1,18 @@
 import { ref, computed } from 'vue'
 
+// Dia-calendário no fuso de São Paulo, sem round-trip por Date local (que dava
+// resultado errado em servidores/navegadores fora de BRT, ex.: Vercel em UTC).
+const fmtDiaSP = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
+})
+const diaSP = (d: Date): number => {
+  const partes = fmtDiaSP.format(d).split('-')
+  const y = Number(partes[0])
+  const m = Number(partes[1])
+  const dd = Number(partes[2])
+  return Date.UTC(y, m - 1, dd)
+}
+
 export interface AdminCliente {
   id: string
   nome: string
@@ -52,12 +65,7 @@ export const useAdminClientes = () => {
     else if (c.subscription_renews_at) dataVenc = new Date(c.subscription_renews_at)
     if (!dataVenc) return Number.POSITIVE_INFINITY
 
-    const hoje = new Date()
-    const hojeBR = new Date(hoje.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
-    hojeBR.setHours(0, 0, 0, 0)
-    const vencBR = new Date(dataVenc.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
-    vencBR.setHours(0, 0, 0, 0)
-    return Math.round((vencBR.getTime() - hojeBR.getTime()) / (1000 * 60 * 60 * 24))
+    return Math.round((diaSP(dataVenc) - diaSP(new Date())) / 86_400_000)
   }
 
   const stats = computed<AdminStats>(() => {

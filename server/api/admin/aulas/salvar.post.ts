@@ -1,5 +1,15 @@
 import { requireSuperAdmin, getServiceClient } from '~~/server/utils/requireSuperAdmin'
 
+const HOSTS_YOUTUBE = ['youtube.com', 'm.youtube.com', 'youtu.be', 'youtube-nocookie.com']
+function isYoutubeUrl(u: string): boolean {
+  try {
+    const host = new URL(u.trim()).hostname.replace(/^www\./, '').toLowerCase()
+    return HOSTS_YOUTUBE.includes(host)
+  } catch {
+    return false
+  }
+}
+
 export default defineEventHandler(async (event) => {
   await requireSuperAdmin(event)
   const { id, titulo, descricao, youtubeUrl, ordem, ativo, categoriaId } = await readBody<{
@@ -15,7 +25,7 @@ export default defineEventHandler(async (event) => {
   if (!titulo?.trim()) {
     throw createError({ statusCode: 400, statusMessage: 'Título obrigatório' })
   }
-  if (!youtubeUrl?.trim() || !/youtu\.?be/i.test(youtubeUrl)) {
+  if (!youtubeUrl?.trim() || !isYoutubeUrl(youtubeUrl)) {
     throw createError({ statusCode: 400, statusMessage: 'Link do YouTube inválido' })
   }
 

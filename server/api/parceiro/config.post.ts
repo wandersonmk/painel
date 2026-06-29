@@ -1,5 +1,6 @@
 import { requireParceiro } from '~~/server/utils/requireParceiro'
 import { getServiceClient } from '~~/server/utils/requireSuperAdmin'
+import { failPublic } from '~~/server/utils/apiError'
 import { validarCpfCnpj } from '~~/shared/utils/documento'
 
 const TIPOS_PIX = ['cpf', 'cnpj', 'celular', 'email', 'aleatoria']
@@ -16,11 +17,13 @@ export default defineEventHandler(async (event) => {
   if (!TIPOS_PIX.includes(pixTipo)) {
     throw createError({ statusCode: 400, statusMessage: 'Tipo de chave PIX inválido' })
   }
-  if (!pixChave?.trim() || pixChave.trim().length < 5) {
+  const chave = (pixChave || '').trim()
+  if (chave.length < 5 || chave.length > 140) {
     throw createError({ statusCode: 400, statusMessage: 'Chave PIX inválida' })
   }
-  if (!titularNome?.trim() || titularNome.trim().length < 3) {
-    throw createError({ statusCode: 400, statusMessage: 'Nome do titular obrigatório' })
+  const nome = (titularNome || '').trim()
+  if (nome.length < 3 || nome.length > 120) {
+    throw createError({ statusCode: 400, statusMessage: 'Nome do titular inválido' })
   }
   const docDigitos = (titularDocumento || '').replace(/\D/g, '')
   if (!validarCpfCnpj(docDigitos)) {
@@ -32,9 +35,10 @@ export default defineEventHandler(async (event) => {
     ...(parceiro.dados_split || {}),
     pix: {
       tipo: pixTipo,
-      chave: pixChave.trim(),
-      titular_nome: titularNome.trim(),
-      titular_documento: titularDocumento?.trim() || null,
+      chave,
+      titular_nome: nome,
+      // Armazena só os dígitos validados (não o input cru/com máscara).
+      titular_documento: docDigitos,
       atualizado_em: new Date().toISOString(),
     },
   }
@@ -43,7 +47,7 @@ export default defineEventHandler(async (event) => {
     .from('parceiros')
     .update({ dados_split: dadosSplit, updated_at: new Date().toISOString() })
     .eq('id', parceiro.id)
-  if (error) return { success: false, error: error.message }
+  if (error) return failPublic(error, 'parceiro/config', 'Não foi possível salvar seus dados.')
 
   return { success: true }
 })

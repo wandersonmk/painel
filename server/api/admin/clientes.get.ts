@@ -19,12 +19,20 @@ export default defineEventHandler(async (event) => {
       (vinculos || []).map((v: any) => [v.empresa_id, v]),
     )
 
-    const clientesComRole = await Promise.all((empresas || []).map(async (emp) => {
-      let userRole = 'user'
-      if (emp.auth_user_id) {
-        const { data: u } = await supabase.from('usuarios').select('role').eq('auth_user_id', emp.auth_user_id).single()
-        if (u) userRole = u.role
-      }
+    // Papéis em uma única query (evita N+1 e o default silencioso de '.single()',
+    // que escondia papel ausente/duplicado e podia exibir ações destrutivas indevidas).
+    const authIds = (empresas || []).map(e => e.auth_user_id).filter(Boolean) as string[]
+    const rolePorAuthId = new Map<string, string>()
+    if (authIds.length) {
+      const { data: usuarios } = await supabase
+        .from('usuarios')
+        .select('auth_user_id, role')
+        .in('auth_user_id', authIds)
+      for (const u of (usuarios || []) as any[]) rolePorAuthId.set(u.auth_user_id, u.role)
+    }
+
+    const clientesComRole = (empresas || []).map((emp) => {
+      const userRole = emp.auth_user_id ? (rolePorAuthId.get(emp.auth_user_id) || 'user') : 'user'
       const vinculo = vinculoPorEmpresa.get(emp.id)
       return {
         id: emp.id,
@@ -50,7 +58,7 @@ export default defineEventHandler(async (event) => {
         parceiro_nome: vinculo?.parceiros?.nome ?? null,
         parceiro_comissao: vinculo ? Number(vinculo.comissao_percentual) : null,
       }
-    }))
+    })
 
     return { success: true, data: clientesComRole }
   } catch (err: any) {

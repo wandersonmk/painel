@@ -4,10 +4,9 @@ import { requireSuperAdmin, getServiceClient } from '~~/server/utils/requireSupe
 // Não mexe em `transporte_ativo` (toggle da própria empresa no app).
 export default defineEventHandler(async (event) => {
   await requireSuperAdmin(event)
-  const { clienteId, roteamentoHabilitado, transporteHabilitado } = await readBody<{
+  const { clienteId, roteamentoHabilitado } = await readBody<{
     clienteId: string
     roteamentoHabilitado?: boolean
-    transporteHabilitado?: boolean
   }>(event)
 
   if (!clienteId) {
@@ -21,12 +20,6 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 400, statusMessage: 'roteamentoHabilitado deve ser boolean' })
     }
     update.roteamento_habilitado = roteamentoHabilitado
-  }
-  if (transporteHabilitado !== undefined) {
-    if (typeof transporteHabilitado !== 'boolean') {
-      throw createError({ statusCode: 400, statusMessage: 'transporteHabilitado deve ser boolean' })
-    }
-    update.transporte_habilitado = transporteHabilitado
   }
 
   if (Object.keys(update).length === 1) {

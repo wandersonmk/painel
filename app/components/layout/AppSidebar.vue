@@ -10,6 +10,7 @@ const navItems = [
   { label: 'Financeiro', icon: 'fa-wallet', to: '/financeiro' },
   { label: 'Aulas do App', icon: 'fa-circle-play', to: '/aulas-app' },
   { label: 'Modelos de Assistente', icon: 'fa-wand-magic-sparkles', to: '/assistentes-app' },
+  { label: 'Configurações', icon: 'fa-gear', to: '/configuracoes' },
 ]
 
 function isActive(to: string) {

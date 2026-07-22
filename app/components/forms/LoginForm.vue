@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 
 const email = ref('')
 const password = ref('')
+const showPassword = ref(false)
 
 let toast: Awaited<ReturnType<typeof useToastSafe>> | null = null
 onMounted(async () => {
@@ -112,15 +113,28 @@ async function handleLogin() {
 
           <div>
             <label for="login-password" class="sr-only">Senha</label>
-            <AppInput
-              id="login-password"
-              v-model="password"
-              type="password"
-              placeholder="Senha"
-              autocomplete="current-password"
-              required
-              :valid="!!password"
-            />
+            <div class="relative">
+              <AppInput
+                id="login-password"
+                v-model="password"
+                :type="showPassword ? 'text' : 'password'"
+                placeholder="Senha"
+                autocomplete="current-password"
+                required
+                :valid="!!password"
+                class="!pr-11"
+              />
+              <button
+                type="button"
+                @click="showPassword = !showPassword"
+                tabindex="-1"
+                class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded text-gray-400 hover:text-white transition-colors"
+                :aria-label="showPassword ? 'Ocultar senha' : 'Mostrar senha'"
+                :title="showPassword ? 'Ocultar senha' : 'Mostrar senha'"
+              >
+                <i class="fa-solid text-sm" :class="showPassword ? 'fa-eye-slash' : 'fa-eye'" aria-hidden="true" />
+              </button>
+            </div>
           </div>
 
           <AppButton

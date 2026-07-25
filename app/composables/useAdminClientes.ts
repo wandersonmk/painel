@@ -31,11 +31,21 @@ export interface AdminCliente {
   max_instancias?: number
   max_agentes?: number
   max_webhooks_entrada?: number
+  max_webhooks_saida?: number
+  max_profissionais?: number
+  max_clientes?: number
   cancel_at_period_end?: boolean
   parceiro_nome?: string | null
   parceiro_comissao?: number | null
+  // Gates de módulo do app (Painel Admin). Ausente = true (permissivo).
+  // CRM Kanban não tem gate: fica sempre liberado.
   roteamento_habilitado?: boolean
   transporte_habilitado?: boolean
+  agendamentos_habilitado?: boolean
+  pagina_agendamento_habilitada?: boolean
+  api_assistente_habilitada?: boolean
+  webhooks_habilitado?: boolean
+  documentacao_habilitada?: boolean
 }
 
 export interface AdminStats {

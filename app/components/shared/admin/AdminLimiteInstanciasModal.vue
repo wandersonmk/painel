@@ -17,19 +17,22 @@ const props = defineProps<{
   valorAtual: number
   agentesAtual: number
   webhooksAtual: number
+  webhooksSaidaAtual: number
 }>()
 const emit = defineEmits<{
   close: []
-  confirm: [limites: { maxInstancias: number; maxAgentes: number; maxWebhooksEntrada: number }]
+  confirm: [limites: { maxInstancias: number; maxAgentes: number; maxWebhooksEntrada: number; maxWebhooksSaida: number }]
 }>()
 
 const quantidade = ref(1)
 const qtdAgentes = ref(1)
 const qtdWebhooks = ref(5)
+const qtdWebhooksSaida = ref(5)
 const instancias = ref<Instancia[]>([])
 const loadingInstancias = ref(false)
 const usoAssistentes = ref(0)
 const usoWebhooks = ref(0)
+const usoWebhooksSaida = ref(0)
 const loadingUso = ref(false)
 const idExpandido = ref<string | null>(null)
 const idCopiado = ref<string | null>(null)
@@ -44,6 +47,7 @@ watch(() => props.show, async (open) => {
     quantidade.value = props.valorAtual || 1
     qtdAgentes.value = props.agentesAtual || 1
     qtdWebhooks.value = props.webhooksAtual ?? 5
+    qtdWebhooksSaida.value = props.webhooksSaidaAtual ?? 5
     abaAtiva.value = 'instancias'
     toast = await useToastSafe()
     await Promise.all([carregarInstancias(), carregarUso()])
@@ -51,6 +55,7 @@ watch(() => props.show, async (open) => {
     instancias.value = []
     usoAssistentes.value = 0
     usoWebhooks.value = 0
+    usoWebhooksSaida.value = 0
     idExpandido.value = null
     idCopiado.value = null
     acaoConfirmacao.value = null
@@ -61,17 +66,19 @@ async function carregarUso() {
   if (!props.clienteId) return
   loadingUso.value = true
   try {
-    const resp = await $fetch<{ success: boolean; data?: { assistentes: number; webhooks: number } }>('/api/admin/empresa-uso', {
+    const resp = await $fetch<{ success: boolean; data?: { assistentes: number; webhooks: number; webhooksSaida: number } }>('/api/admin/empresa-uso', {
       query: { empresaId: props.clienteId },
       headers: await useAdminAuthHeaders(),
     })
     if (resp.success && resp.data) {
       usoAssistentes.value = resp.data.assistentes
       usoWebhooks.value = resp.data.webhooks
+      usoWebhooksSaida.value = resp.data.webhooksSaida ?? 0
     }
   } catch {
     usoAssistentes.value = 0
     usoWebhooks.value = 0
+    usoWebhooksSaida.value = 0
   } finally {
     loadingUso.value = false
   }
@@ -367,7 +374,7 @@ const canaisUsados = computed(() => instancias.value.length)
     <!-- Limites da empresa -->
     <section v-show="abaAtiva === 'limites'" class="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 p-4">
       <form
-        @submit.prevent="$emit('confirm', { maxInstancias: quantidade, maxAgentes: qtdAgentes, maxWebhooksEntrada: qtdWebhooks })"
+        @submit.prevent="$emit('confirm', { maxInstancias: quantidade, maxAgentes: qtdAgentes, maxWebhooksEntrada: qtdWebhooks, maxWebhooksSaida: qtdWebhooksSaida })"
         class="space-y-4"
       >
         <!-- Canais -->
@@ -428,6 +435,28 @@ const canaisUsados = computed(() => instancias.value.length)
           <input
             id="max-webhooks"
             v-model.number="qtdWebhooks"
+            type="number"
+            min="0"
+            max="100"
+            required
+            class="w-20 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-sm text-slate-900 dark:text-white tabular-nums text-center font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
+          />
+        </div>
+
+        <!-- Webhooks de saída -->
+        <div class="flex items-start justify-between gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+          <div class="min-w-0 flex-1">
+            <label for="max-webhooks-saida" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <i class="fa-solid fa-arrow-up-right-from-square text-sky-500 text-xs" aria-hidden="true" />
+              Webhooks de saída
+            </label>
+            <p class="text-xs text-slate-400 dark:text-slate-600 mt-0.5">
+              Em uso: <span class="tabular-nums font-semibold text-slate-600 dark:text-slate-400">{{ loadingUso ? '…' : usoWebhooksSaida }}</span> · Destinos que a empresa pode notificar (0 – 100)
+            </p>
+          </div>
+          <input
+            id="max-webhooks-saida"
+            v-model.number="qtdWebhooksSaida"
             type="number"
             min="0"
             max="100"

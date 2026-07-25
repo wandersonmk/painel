@@ -37,12 +37,20 @@ const clienteLimiteInstancias = ref<{
   max_instancias: number
   max_agentes: number
   max_webhooks_entrada: number
+  max_webhooks_saida: number
 } | null>(null)
 const showModulosModal = ref(false)
 const clienteModulos = ref<{
   id: string
   nome: string
   roteamento_habilitado: boolean
+  agendamentos_habilitado: boolean
+  pagina_agendamento_habilitada: boolean
+  api_assistente_habilitada: boolean
+  webhooks_habilitado: boolean
+  documentacao_habilitada: boolean
+  max_profissionais: number
+  max_clientes: number
 } | null>(null)
 
 const searchQuery = ref('')
@@ -242,11 +250,12 @@ function handleLimiteInstancias(id: string) {
       max_instancias: c.max_instancias ?? 1,
       max_agentes: c.max_agentes ?? 1,
       max_webhooks_entrada: c.max_webhooks_entrada ?? 5,
+      max_webhooks_saida: c.max_webhooks_saida ?? 5,
     }
     showLimiteInstanciasModal.value = true
   }
 }
-async function confirmLimiteInstancias(limites: { maxInstancias: number; maxAgentes: number; maxWebhooksEntrada: number }) {
+async function confirmLimiteInstancias(limites: { maxInstancias: number; maxAgentes: number; maxWebhooksEntrada: number; maxWebhooksSaida: number }) {
   if (!clienteLimiteInstancias.value) return
   try {
     const resp = await $fetch<{ success: boolean }>('/api/admin/limite-instancias', {
@@ -256,6 +265,7 @@ async function confirmLimiteInstancias(limites: { maxInstancias: number; maxAgen
         maxInstancias: limites.maxInstancias,
         maxAgentes: limites.maxAgentes,
         maxWebhooksEntrada: limites.maxWebhooksEntrada,
+        maxWebhooksSaida: limites.maxWebhooksSaida,
       },
       headers: await useAdminAuthHeaders(),
     })
@@ -265,6 +275,7 @@ async function confirmLimiteInstancias(limites: { maxInstancias: number; maxAgen
       c.max_instancias = limites.maxInstancias
       c.max_agentes = limites.maxAgentes
       c.max_webhooks_entrada = limites.maxWebhooksEntrada
+      c.max_webhooks_saida = limites.maxWebhooksSaida
     }
     toast?.success('Limites atualizados')
   } catch { toast?.error('Erro ao atualizar limites') }
@@ -279,25 +290,47 @@ function handleModulos(id: string) {
       id: c.id,
       nome: c.nome,
       roteamento_habilitado: c.roteamento_habilitado ?? true,
+      agendamentos_habilitado: c.agendamentos_habilitado ?? true,
+      pagina_agendamento_habilitada: c.pagina_agendamento_habilitada ?? true,
+      api_assistente_habilitada: c.api_assistente_habilitada ?? true,
+      webhooks_habilitado: c.webhooks_habilitado ?? true,
+      documentacao_habilitada: c.documentacao_habilitada ?? true,
+      max_profissionais: c.max_profissionais ?? 20,
+      max_clientes: c.max_clientes ?? 100000,
     }
     showModulosModal.value = true
   }
 }
-async function confirmModulos(modulos: { roteamentoHabilitado: boolean }) {
+// Espelha ModulosEmpresa do AdminModulosModal (tipo declarado aqui em vez de
+// importado do .vue: import de tipo entre SFCs quebra fácil no vue-tsc).
+async function confirmModulos(modulos: {
+  roteamentoHabilitado: boolean
+  agendamentosHabilitado: boolean
+  paginaAgendamentoHabilitada: boolean
+  apiAssistenteHabilitada: boolean
+  webhooksHabilitado: boolean
+  documentacaoHabilitada: boolean
+  maxProfissionais: number
+  maxClientes: number
+}) {
   if (!clienteModulos.value) return
   try {
     const resp = await $fetch<{ success: boolean; error?: string }>('/api/admin/modulos', {
       method: 'POST',
-      body: {
-        clienteId: clienteModulos.value.id,
-        roteamentoHabilitado: modulos.roteamentoHabilitado,
-      },
+      body: { clienteId: clienteModulos.value.id, ...modulos },
       headers: await useAdminAuthHeaders(),
     })
     if (!resp.success) throw new Error(resp.error)
     const c = clientes.value.find(x => x.id === clienteModulos.value!.id)
     if (c) {
       c.roteamento_habilitado = modulos.roteamentoHabilitado
+      c.agendamentos_habilitado = modulos.agendamentosHabilitado
+      c.pagina_agendamento_habilitada = modulos.paginaAgendamentoHabilitada
+      c.api_assistente_habilitada = modulos.apiAssistenteHabilitada
+      c.webhooks_habilitado = modulos.webhooksHabilitado
+      c.documentacao_habilitada = modulos.documentacaoHabilitada
+      c.max_profissionais = modulos.maxProfissionais
+      c.max_clientes = modulos.maxClientes
     }
     toast?.success('Módulos atualizados')
   } catch { toast?.error('Erro ao atualizar módulos') }
@@ -551,14 +584,23 @@ async function confirmModulos(modulos: { roteamentoHabilitado: boolean }) {
         :valor-atual="clienteLimiteInstancias?.max_instancias ?? 1"
         :agentes-atual="clienteLimiteInstancias?.max_agentes ?? 1"
         :webhooks-atual="clienteLimiteInstancias?.max_webhooks_entrada ?? 5"
+        :webhooks-saida-atual="clienteLimiteInstancias?.max_webhooks_saida ?? 5"
         @close="showLimiteInstanciasModal = false; clienteLimiteInstancias = null"
         @confirm="confirmLimiteInstancias"
       />
 
       <AdminModulosModal
         :show="showModulosModal"
+        :cliente-id="clienteModulos?.id || ''"
         :cliente-nome="clienteModulos?.nome || ''"
         :roteamento-atual="clienteModulos?.roteamento_habilitado ?? true"
+        :agendamentos-atual="clienteModulos?.agendamentos_habilitado ?? true"
+        :pagina-agendamento-atual="clienteModulos?.pagina_agendamento_habilitada ?? true"
+        :api-assistente-atual="clienteModulos?.api_assistente_habilitada ?? true"
+        :webhooks-atual="clienteModulos?.webhooks_habilitado ?? true"
+        :documentacao-atual="clienteModulos?.documentacao_habilitada ?? true"
+        :max-profissionais-atual="clienteModulos?.max_profissionais ?? 20"
+        :max-clientes-atual="clienteModulos?.max_clientes ?? 100000"
         @close="showModulosModal = false; clienteModulos = null"
         @confirm="confirmModulos"
       />

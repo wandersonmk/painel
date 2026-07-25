@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   try {
     const { data: empresas, error } = await supabase
       .from('empresas')
-      .select('id, nome, nome_cliente, email, whatsapp, subscription_status, subscription_plan, subscription_period, trial_ends_at, subscription_renews_at, subscription_price, ativo, created_at, auth_user_id, max_instancias, max_agentes, max_webhooks_entrada, cancel_at_period_end, roteamento_habilitado, transporte_habilitado')
+      .select('id, nome, nome_cliente, email, whatsapp, subscription_status, subscription_plan, subscription_period, trial_ends_at, subscription_renews_at, subscription_price, ativo, created_at, auth_user_id, max_instancias, max_agentes, max_webhooks_entrada, max_webhooks_saida, max_profissionais, max_clientes, cancel_at_period_end, roteamento_habilitado, transporte_habilitado, agendamentos_habilitado, pagina_agendamento_habilitada, api_assistente_habilitada, webhooks_habilitado, documentacao_habilitada')
       .order('created_at', { ascending: false })
     if (error) throw error
 
@@ -52,9 +52,17 @@ export default defineEventHandler(async (event) => {
         max_instancias: emp.max_instancias ?? 1,
         max_agentes: emp.max_agentes ?? 1,
         max_webhooks_entrada: emp.max_webhooks_entrada ?? 5,
+        max_webhooks_saida: emp.max_webhooks_saida ?? 5,
+        max_profissionais: emp.max_profissionais ?? 20,
+        max_clientes: emp.max_clientes ?? 100000,
         cancel_at_period_end: emp.cancel_at_period_end || false,
         roteamento_habilitado: emp.roteamento_habilitado ?? true,
         transporte_habilitado: emp.transporte_habilitado ?? true,
+        agendamentos_habilitado: emp.agendamentos_habilitado ?? true,
+        pagina_agendamento_habilitada: emp.pagina_agendamento_habilitada ?? true,
+        api_assistente_habilitada: emp.api_assistente_habilitada ?? true,
+        webhooks_habilitado: emp.webhooks_habilitado ?? true,
+        documentacao_habilitada: emp.documentacao_habilitada ?? true,
         parceiro_nome: vinculo?.parceiros?.nome ?? null,
         parceiro_comissao: vinculo ? Number(vinculo.comissao_percentual) : null,
       }

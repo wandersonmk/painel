@@ -3,12 +3,24 @@ import { ref, onMounted } from 'vue'
 
 const hasToken = ref(false)
 const tokenPreview = ref<string | null>(null)
+// Nasce fechado: chave sensivel nao fica exposta de cara ao abrir a pagina.
+const aberto = ref(false)
 const editing = ref(false)
 const novoToken = ref('')
 const salvando = ref(false)
 const removendo = ref(false)
 
 let toast: Awaited<ReturnType<typeof useToastSafe>> | null = null
+
+// Ao fechar, descarta o que estava sendo digitado — reabrir volta ao estado
+// neutro em vez de mostrar um token colado pela metade.
+function toggle() {
+  aberto.value = !aberto.value
+  if (!aberto.value) {
+    editing.value = false
+    novoToken.value = ''
+  }
+}
 
 async function loadStatus() {
   try {
@@ -77,7 +89,14 @@ onMounted(async () => {
 
 <template>
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
-    <div class="flex items-start justify-between gap-3 mb-3">
+    <button
+      type="button"
+      @click="toggle"
+      :aria-expanded="aberto"
+      aria-controls="token-global-conteudo"
+      class="w-full flex items-start justify-between gap-3 text-left"
+      :class="aberto ? 'mb-3' : ''"
+    >
       <div class="flex items-center gap-3">
         <div class="size-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
           <i class="fa-solid fa-key" aria-hidden="true" />
@@ -87,46 +106,55 @@ onMounted(async () => {
           <p class="text-xs text-slate-500 dark:text-slate-400">Aplicado por padrão a novas empresas que não tenham token próprio.</p>
         </div>
       </div>
-      <span
-        class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold shrink-0"
-        :class="hasToken ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'"
-      >
-        {{ hasToken ? 'Configurado' : 'Não configurado' }}
-      </span>
-    </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <span
+          class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold"
+          :class="hasToken ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'"
+        >
+          {{ hasToken ? 'Configurado' : 'Não configurado' }}
+        </span>
+        <i
+          class="fa-solid fa-chevron-down text-xs text-slate-400 transition-transform duration-200"
+          :class="aberto ? 'rotate-180' : ''"
+          aria-hidden="true"
+        />
+      </div>
+    </button>
 
-    <div v-if="hasToken && !editing" class="space-y-3">
-      <div class="flex items-center gap-2">
-        <code class="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono text-slate-700 dark:text-slate-300 truncate">
-          {{ displayMask(tokenPreview) }}
-        </code>
+    <div v-if="aberto" id="token-global-conteudo">
+      <div v-if="hasToken && !editing" class="space-y-3">
+        <div class="flex items-center gap-2">
+          <code class="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-mono text-slate-700 dark:text-slate-300 truncate">
+            {{ displayMask(tokenPreview) }}
+          </code>
+        </div>
+        <div class="flex gap-2">
+          <button type="button" @click="editing = true; novoToken = ''" class="px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold">
+            Alterar
+          </button>
+          <button type="button" @click="remover" :disabled="removendo" class="px-3 py-2 text-sm rounded-lg bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-950/60 text-red-700 dark:text-red-400 font-semibold disabled:opacity-50">
+            {{ removendo ? 'Removendo...' : 'Remover' }}
+          </button>
+        </div>
       </div>
-      <div class="flex gap-2">
-        <button type="button" @click="editing = true; novoToken = ''" class="px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold">
-          Alterar
-        </button>
-        <button type="button" @click="remover" :disabled="removendo" class="px-3 py-2 text-sm rounded-lg bg-red-50 hover:bg-red-100 dark:bg-red-950/30 dark:hover:bg-red-950/60 text-red-700 dark:text-red-400 font-semibold disabled:opacity-50">
-          {{ removendo ? 'Removendo...' : 'Remover' }}
-        </button>
-      </div>
-    </div>
 
-    <form v-else @submit.prevent="salvar" class="space-y-2">
-      <input
-        v-model="novoToken"
-        type="text"
-        placeholder="sk-..."
-        autocomplete="off"
-        class="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-mono text-slate-900 dark:text-white"
-      />
-      <div class="flex gap-2">
-        <button v-if="editing" type="button" @click="editing = false; novoToken = ''" class="px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold">
-          Cancelar
-        </button>
-        <button type="submit" :disabled="salvando || !novoToken.trim()" class="px-3 py-2 text-sm rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold disabled:opacity-50">
-          {{ salvando ? 'Salvando...' : 'Salvar' }}
-        </button>
-      </div>
-    </form>
+      <form v-else @submit.prevent="salvar" class="space-y-2">
+        <input
+          v-model="novoToken"
+          type="text"
+          placeholder="sk-..."
+          autocomplete="off"
+          class="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-mono text-slate-900 dark:text-white"
+        />
+        <div class="flex gap-2">
+          <button v-if="editing" type="button" @click="editing = false; novoToken = ''" class="px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold">
+            Cancelar
+          </button>
+          <button type="submit" :disabled="salvando || !novoToken.trim()" class="px-3 py-2 text-sm rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold disabled:opacity-50">
+            {{ salvando ? 'Salvando...' : 'Salvar' }}
+          </button>
+        </div>
+      </form>
+    </div>
   </div>
 </template>

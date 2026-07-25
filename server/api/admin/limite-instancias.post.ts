@@ -2,11 +2,12 @@ import { requireSuperAdmin, getServiceClient } from '~~/server/utils/requireSupe
 
 export default defineEventHandler(async (event) => {
   await requireSuperAdmin(event)
-  const { clienteId, maxInstancias, maxAgentes, maxWebhooksEntrada } = await readBody<{
+  const { clienteId, maxInstancias, maxAgentes, maxWebhooksEntrada, maxWebhooksSaida } = await readBody<{
     clienteId: string
     maxInstancias?: number
     maxAgentes?: number
     maxWebhooksEntrada?: number
+    maxWebhooksSaida?: number
   }>(event)
 
   if (!clienteId) {
@@ -32,6 +33,14 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 400, statusMessage: 'maxWebhooksEntrada inválido (0–100)' })
     }
     update.max_webhooks_entrada = maxWebhooksEntrada
+  }
+  // Faixa 0–100 espelha o CHECK da coluna (20260725_webhooks_saida.sql);
+  // fora dela o Postgres recusaria o UPDATE com erro genérico.
+  if (maxWebhooksSaida !== undefined) {
+    if (!Number.isFinite(maxWebhooksSaida) || maxWebhooksSaida < 0 || maxWebhooksSaida > 100) {
+      throw createError({ statusCode: 400, statusMessage: 'maxWebhooksSaida inválido (0–100)' })
+    }
+    update.max_webhooks_saida = maxWebhooksSaida
   }
 
   if (Object.keys(update).length === 1) {

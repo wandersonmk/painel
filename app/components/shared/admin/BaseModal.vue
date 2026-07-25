@@ -12,14 +12,16 @@ defineEmits<{ close: [] }>()
       leave-to-class="opacity-0"
     >
       <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" role="dialog" aria-modal="true">
-        <div class="w-full bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden" :class="maxWidth || 'max-w-md'" @click.stop>
-          <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+        <!-- max-h + flex-col: conteúdo alto rola por dentro em vez de vazar da
+             tela. O cabeçalho fica fixo e só o corpo rola. -->
+        <div class="w-full max-h-[90vh] flex flex-col bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden" :class="maxWidth || 'max-w-md'" @click.stop>
+          <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
             <h2 class="text-lg font-bold text-slate-900 dark:text-white">{{ title }}</h2>
             <button @click="$emit('close')" class="p-2 -mr-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500" aria-label="Fechar" type="button">
               <i class="fa-solid fa-xmark" aria-hidden="true" />
             </button>
           </div>
-          <div class="p-6">
+          <div class="p-6 overflow-y-auto">
             <slot />
           </div>
         </div>

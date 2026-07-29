@@ -9,7 +9,7 @@ definePageMeta({
 const {
   clientes, stats, loading, error,
   loadClientes, desativarCliente, reativarCliente, renovarAssinatura,
-  excluirCliente, editarCliente, diasParaVencimento,
+  excluirCliente, editarCliente, diasParaVencimento, isVencido,
 } = useAdminClientes()
 
 let toast: Awaited<ReturnType<typeof useToastSafe>> | null = null
@@ -59,6 +59,31 @@ const filterPlan = ref('all')
 const statsExpanded = ref(true)
 const isRefreshing = ref(false)
 
+// Vencidos ficam numa aba própria: a lista é ordenada por dias restantes, então
+// eles subiam pro topo e empurravam a carteira em dia (a que se olha no dia a
+// dia) pra baixo. Separar deixa cada leitura com um objetivo só.
+type Aba = 'em-dia' | 'vencidos'
+const abaAtiva = ref<Aba>('em-dia')
+
+const clientesDaAba = computed(() =>
+  clientes.value.filter(c => isVencido(c) === (abaAtiva.value === 'vencidos')),
+)
+
+const abas = computed(() => {
+  const vencidos = clientes.value.filter(c => isVencido(c)).length
+  return [
+    { value: 'em-dia' as Aba, label: 'Em dia', count: clientes.value.length - vencidos, tone: '' },
+    { value: 'vencidos' as Aba, label: 'Vencidos', count: vencidos, tone: 'red' },
+  ]
+})
+
+// Os chips valem só dentro da aba, e cada aba tem status diferentes — trocar
+// de aba mantendo o chip anterior daria lista vazia sem explicação.
+function selecionarAba(v: Aba) {
+  abaAtiva.value = v
+  filterStatus.value = 'all'
+}
+
 async function refreshData() {
   isRefreshing.value = true
   await loadClientes()
@@ -66,7 +91,7 @@ async function refreshData() {
 }
 
 const filteredClientes = computed(() => {
-  let filtered = clientes.value
+  let filtered = clientesDaAba.value
   if (searchQuery.value) {
     const q = searchQuery.value.toLowerCase()
     filtered = filtered.filter(c =>
@@ -77,9 +102,7 @@ const filteredClientes = computed(() => {
     )
   }
   if (filterStatus.value !== 'all') {
-    if (filterStatus.value === 'expired') {
-      filtered = filtered.filter(c => c.subscription_status === 'expired' || diasParaVencimento(c) < 0)
-    } else if (filterStatus.value === 'vencendo-hoje') {
+    if (filterStatus.value === 'vencendo-hoje') {
       filtered = filtered.filter(c => diasParaVencimento(c) === 0)
     } else {
       filtered = filtered.filter(c => c.subscription_status === filterStatus.value)
@@ -110,22 +133,23 @@ const planDistribution = computed(() => {
   ]
 })
 
-// Contagem por status para os chips de filtro (mesma lógica do filteredClientes)
-const statusCounts = computed<Record<string, number>>(() => ({
-  all: clientes.value.length,
-  active: clientes.value.filter(c => c.subscription_status === 'active').length,
-  trial: clientes.value.filter(c => c.subscription_status === 'trial').length,
-  'vencendo-hoje': clientes.value.filter(c => diasParaVencimento(c) === 0).length,
-  expired: clientes.value.filter(c => c.subscription_status === 'expired' || diasParaVencimento(c) < 0).length,
-  canceled: clientes.value.filter(c => c.subscription_status === 'canceled').length,
-}))
+// Contagem por status dentro da aba atual (mesma lógica do filteredClientes)
+const statusCounts = computed<Record<string, number>>(() => {
+  const base = clientesDaAba.value
+  return {
+    all: base.length,
+    active: base.filter(c => c.subscription_status === 'active').length,
+    trial: base.filter(c => c.subscription_status === 'trial').length,
+    'vencendo-hoje': base.filter(c => diasParaVencimento(c) === 0).length,
+    canceled: base.filter(c => c.subscription_status === 'canceled').length,
+  }
+})
 
 const statusChips = [
   { value: 'all', label: 'Todos' },
   { value: 'active', label: 'Ativos' },
   { value: 'trial', label: 'Trial' },
   { value: 'vencendo-hoje', label: 'Vencendo hoje', tone: 'orange' },
-  { value: 'expired', label: 'Vencidos', tone: 'red' },
   { value: 'canceled', label: 'Cancelados' },
 ] as const
 
@@ -424,6 +448,34 @@ async function confirmModulos(modulos: {
 
       <AdminTokenGlobalCard />
 
+      <!-- Abas: carteira em dia x vencidos (listas com objetivos diferentes) -->
+      <div class="border-b border-slate-200 dark:border-slate-800">
+        <nav class="-mb-px flex gap-6" role="tablist" aria-label="Situação da assinatura">
+          <button
+            v-for="aba in abas"
+            :key="aba.value"
+            type="button"
+            role="tab"
+            :aria-selected="abaAtiva === aba.value"
+            @click="selecionarAba(aba.value)"
+            class="inline-flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-semibold transition-colors"
+            :class="abaAtiva === aba.value
+              ? 'border-purple-600 text-purple-700 dark:text-purple-400'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700'"
+          >
+            {{ aba.label }}
+            <span
+              class="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full text-[10px] font-bold tabular-nums"
+              :class="(aba.tone === 'red' && aba.count > 0)
+                ? 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400'
+                : abaAtiva === aba.value
+                  ? 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300'
+                  : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'"
+            >{{ aba.count }}</span>
+          </button>
+        </nav>
+      </div>
+
       <!-- Filtros -->
       <div class="space-y-4">
         <!-- Busca + plano + contagem -->
@@ -459,13 +511,14 @@ async function confirmModulos(modulos: {
             <div class="hidden sm:flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 pb-2.5 whitespace-nowrap">
               <span class="font-semibold text-slate-900 dark:text-white tabular-nums">{{ filteredClientes.length }}</span>
               de
-              <span class="font-semibold text-slate-900 dark:text-white tabular-nums">{{ clientes.length }}</span>
+              <span class="font-semibold text-slate-900 dark:text-white tabular-nums">{{ clientesDaAba.length }}</span>
             </div>
           </div>
         </div>
 
-        <!-- Chips de status (substituem o select) -->
-        <div class="flex flex-wrap gap-2" role="group" aria-label="Filtrar por status">
+        <!-- Chips de status. Só na aba "Em dia": a lista de vencidos é curta e
+             serve pra cobrar, não pra fatiar por status. -->
+        <div v-if="abaAtiva === 'em-dia'" class="flex flex-wrap gap-2" role="group" aria-label="Filtrar por status">
           <button
             v-for="chip in statusChips"
             :key="chip.value"
@@ -482,7 +535,6 @@ async function confirmModulos(modulos: {
               class="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full text-[10px] font-bold tabular-nums"
               :class="filterStatus === chip.value
                 ? 'bg-white/25 text-white'
-                : (chip.tone === 'red' && statusCounts[chip.value] > 0) ? 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400'
                 : (chip.tone === 'orange' && statusCounts[chip.value] > 0) ? 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400'
                 : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'"
             >{{ statusCounts[chip.value] }}</span>

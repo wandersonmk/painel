@@ -1,7 +1,6 @@
 import { requireSuperAdmin, getServiceClient } from '~~/server/utils/requireSuperAdmin'
 
 // Habilita/desabilita módulos do app por empresa (gates de admin).
-// Não mexe em `transporte_ativo` (toggle da própria empresa no app).
 //
 // Todos os campos são opcionais: o body só carrega o que mudou, e cada coluna
 // nasce TRUE no banco — quem não é informado fica como está.

@@ -40,7 +40,6 @@ export interface AdminCliente {
   // Gates de módulo do app (Painel Admin). Ausente = true (permissivo).
   // CRM Kanban não tem gate: fica sempre liberado.
   roteamento_habilitado?: boolean
-  transporte_habilitado?: boolean
   agendamentos_habilitado?: boolean
   pagina_agendamento_habilitada?: boolean
   api_assistente_habilitada?: boolean

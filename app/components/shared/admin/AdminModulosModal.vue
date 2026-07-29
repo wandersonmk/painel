@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 
-// Habilita/desabilita módulos do app por empresa (gate de admin).
-// Não confundir com `transporte_ativo`: aquele é o toggle da própria
-// empresa dentro do app — aqui o admin decide se ela PODE usar o módulo.
+// Habilita/desabilita módulos do app por empresa (gate de admin):
+// o admin decide se a empresa PODE usar cada módulo.
 //
 // Módulo desligado NÃO some do app: o item aparece com cadeado e o clique
 // abre um convite pra contratar. Some só se o usuário não tiver a permissão.

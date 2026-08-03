@@ -14,6 +14,8 @@ export interface ModulosEmpresa {
   apiAssistenteHabilitada: boolean
   webhooksHabilitado: boolean
   documentacaoHabilitada: boolean
+  enviosHabilitado: boolean
+  maxEnviosMes: number
   maxProfissionais: number
   maxClientes: number
 }
@@ -28,6 +30,8 @@ const props = defineProps<{
   apiAssistenteAtual: boolean
   webhooksAtual: boolean
   documentacaoAtual: boolean
+  enviosAtual: boolean
+  maxEnviosMesAtual: number
   maxProfissionaisAtual: number
   maxClientesAtual: number
 }>()
@@ -42,8 +46,18 @@ const paginaAgendamento = ref(true)
 const apiAssistente = ref(true)
 const webhooks = ref(true)
 const documentacao = ref(true)
+// Envios é add-on pago: nasce desligado, ao contrário dos gates acima.
+const envios = ref(false)
+const maxEnviosMes = ref(0)
 const maxProfissionais = ref(20)
 const maxClientes = ref(100000)
+
+// Faixas vendidas hoje. Valor em R$ não aparece aqui de propósito: quem
+// contrata fala com a gente no WhatsApp e recebe a tabela na hora, então o
+// painel não fixa preço que possa ficar desatualizado.
+const FAIXAS_ENVIO = [1000, 5000, 15000]
+const FAIXA_PADRAO = 1000
+const fmtMil = new Intl.NumberFormat('pt-BR')
 
 // Quanto a empresa já usa — evita salvar um teto abaixo do consumo atual sem
 // perceber (nada é removido, mas ela ficaria travada pra cadastrar).
@@ -62,6 +76,8 @@ watch(() => props.show, async (open) => {
   apiAssistente.value = props.apiAssistenteAtual
   webhooks.value = props.webhooksAtual
   documentacao.value = props.documentacaoAtual
+  envios.value = props.enviosAtual
+  maxEnviosMes.value = props.maxEnviosMesAtual ?? 0
   maxProfissionais.value = props.maxProfissionaisAtual ?? 20
   maxClientes.value = props.maxClientesAtual ?? 100000
 
@@ -168,8 +184,21 @@ const LIMITES = [
   },
 ]
 
+// Ligar o add-on já deixa a menor faixa marcada (nunca "ligado sem plano");
+// desligar zera a faixa, porque plano sem gate não significa nada.
+function alternarEnvios() {
+  envios.value = !envios.value
+  if (envios.value) {
+    if (!FAIXAS_ENVIO.includes(maxEnviosMes.value)) maxEnviosMes.value = FAIXA_PADRAO
+  } else {
+    maxEnviosMes.value = 0
+  }
+}
+
 function submeter() {
   emit('confirm', {
+    enviosHabilitado: envios.value,
+    maxEnviosMes: envios.value ? maxEnviosMes.value : 0,
     roteamentoHabilitado: roteamento.value,
     agendamentosHabilitado: agendamentos.value,
     paginaAgendamentoHabilitada: paginaAgendamento.value,
@@ -224,6 +253,62 @@ function submeter() {
               :class="valores[m.key].value ? 'translate-x-[18px]' : 'translate-x-0.5'"
             />
           </button>
+        </div>
+
+        <!-- Envios: fica na mesma lista, mas com selo, porque é o único módulo
+             que nasce bloqueado e só abre depois da contratação. -->
+        <div class="px-3 py-2.5">
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <p class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 flex-wrap">
+                <i class="fa-solid fa-paper-plane text-fuchsia-500 text-[10px]" aria-hidden="true" />
+                Envios (régua de cobrança)
+                <span class="px-1.5 py-px rounded-full bg-fuchsia-100 dark:bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300 text-[9px] font-bold uppercase tracking-wide">Add-on</span>
+              </p>
+              <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
+                Módulo pago. Nasce bloqueado: só ligue depois que a empresa contratar.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              :aria-checked="envios"
+              :aria-label="`${envios ? 'Bloquear' : 'Liberar'} módulo de Envios`"
+              @click="alternarEnvios"
+              class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+              :class="envios ? 'bg-fuchsia-500' : 'bg-slate-300 dark:bg-slate-700'"
+            >
+              <span
+                class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
+                :class="envios ? 'translate-x-[18px]' : 'translate-x-0.5'"
+              />
+            </button>
+          </div>
+
+          <!-- Faixa contratada: só existe com o gate ligado. -->
+          <div v-if="envios" class="mt-2.5">
+            <p id="faixa-envios-label" class="text-[11px] font-semibold text-slate-600 dark:text-slate-400">Faixa contratada</p>
+            <div role="radiogroup" aria-labelledby="faixa-envios-label" class="grid grid-cols-3 gap-1.5 mt-1.5">
+              <button
+                v-for="f in FAIXAS_ENVIO"
+                :key="f"
+                type="button"
+                role="radio"
+                :aria-checked="maxEnviosMes === f"
+                @click="maxEnviosMes = f"
+                class="rounded border px-2 py-1.5 text-center transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500"
+                :class="maxEnviosMes === f
+                  ? 'border-fuchsia-500 bg-fuchsia-50 dark:bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300'
+                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'"
+              >
+                <span class="block text-[13px] font-bold tabular-nums leading-tight">{{ fmtMil.format(f) }}</span>
+                <span class="block text-[9px] uppercase tracking-wide opacity-70">msg/mês</span>
+              </button>
+            </div>
+            <p class="text-[10px] leading-snug text-slate-400 dark:text-slate-600 mt-1.5">
+              Teto de mensagens por mês. Os valores de cada faixa são passados no WhatsApp na contratação.
+            </p>
+          </div>
         </div>
 
         <!-- Limites: moram aqui e não em "Canais WhatsApp" porque na venda são

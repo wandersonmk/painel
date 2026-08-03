@@ -49,6 +49,8 @@ const clienteModulos = ref<{
   api_assistente_habilitada: boolean
   webhooks_habilitado: boolean
   documentacao_habilitada: boolean
+  envios_habilitado: boolean
+  max_envios_mes: number
   max_profissionais: number
   max_clientes: number
 } | null>(null)
@@ -319,6 +321,9 @@ function handleModulos(id: string) {
       api_assistente_habilitada: c.api_assistente_habilitada ?? true,
       webhooks_habilitado: c.webhooks_habilitado ?? true,
       documentacao_habilitada: c.documentacao_habilitada ?? true,
+      // Add-on pago: ausente = bloqueado (os outros gates são permissivos).
+      envios_habilitado: c.envios_habilitado ?? false,
+      max_envios_mes: c.max_envios_mes ?? 0,
       max_profissionais: c.max_profissionais ?? 20,
       max_clientes: c.max_clientes ?? 100000,
     }
@@ -334,6 +339,8 @@ async function confirmModulos(modulos: {
   apiAssistenteHabilitada: boolean
   webhooksHabilitado: boolean
   documentacaoHabilitada: boolean
+  enviosHabilitado: boolean
+  maxEnviosMes: number
   maxProfissionais: number
   maxClientes: number
 }) {
@@ -353,6 +360,8 @@ async function confirmModulos(modulos: {
       c.api_assistente_habilitada = modulos.apiAssistenteHabilitada
       c.webhooks_habilitado = modulos.webhooksHabilitado
       c.documentacao_habilitada = modulos.documentacaoHabilitada
+      c.envios_habilitado = modulos.enviosHabilitado
+      c.max_envios_mes = modulos.maxEnviosMes
       c.max_profissionais = modulos.maxProfissionais
       c.max_clientes = modulos.maxClientes
     }
@@ -651,6 +660,8 @@ async function confirmModulos(modulos: {
         :api-assistente-atual="clienteModulos?.api_assistente_habilitada ?? true"
         :webhooks-atual="clienteModulos?.webhooks_habilitado ?? true"
         :documentacao-atual="clienteModulos?.documentacao_habilitada ?? true"
+        :envios-atual="clienteModulos?.envios_habilitado ?? false"
+        :max-envios-mes-atual="clienteModulos?.max_envios_mes ?? 0"
         :max-profissionais-atual="clienteModulos?.max_profissionais ?? 20"
         :max-clientes-atual="clienteModulos?.max_clientes ?? 100000"
         @close="showModulosModal = false; clienteModulos = null"

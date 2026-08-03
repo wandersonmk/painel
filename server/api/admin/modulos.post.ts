@@ -2,8 +2,10 @@ import { requireSuperAdmin, getServiceClient } from '~~/server/utils/requireSupe
 
 // Habilita/desabilita módulos do app por empresa (gates de admin).
 //
-// Todos os campos são opcionais: o body só carrega o que mudou, e cada coluna
-// nasce TRUE no banco — quem não é informado fica como está.
+// Todos os campos são opcionais: o body só carrega o que mudou, e quem não é
+// informado fica como está. Os gates nascem TRUE no banco — exceto
+// envios_habilitado, add-on pago que nasce FALSE (só liberado após contato
+// comercial).
 
 // key do body -> coluna em `empresas`
 const FLAGS: Record<string, string> = {
@@ -13,6 +15,7 @@ const FLAGS: Record<string, string> = {
   apiAssistenteHabilitada: 'api_assistente_habilitada',
   webhooksHabilitado: 'webhooks_habilitado',
   documentacaoHabilitada: 'documentacao_habilitada',
+  enviosHabilitado: 'envios_habilitado',
 }
 
 export default defineEventHandler(async (event) => {
@@ -41,6 +44,9 @@ export default defineEventHandler(async (event) => {
   const LIMITES: Record<string, { coluna: string; min: number; max: number }> = {
     maxProfissionais: { coluna: 'max_profissionais', min: 1, max: 500 },
     maxClientes: { coluna: 'max_clientes', min: 1, max: 1_000_000 },
+    // 0 = sem plano de envios. O teto espelha o CHECK da coluna, folgado de
+    // propósito pra caber faixas maiores que as três vendidas hoje.
+    maxEnviosMes: { coluna: 'max_envios_mes', min: 0, max: 200_000 },
   }
 
   for (const [campo, regra] of Object.entries(LIMITES)) {
@@ -51,6 +57,10 @@ export default defineEventHandler(async (event) => {
     }
     update[regra.coluna] = valor
   }
+
+  // Gate desligado nunca convive com faixa contratada: zera aqui também, e não
+  // só na tela, pra não sobrar plano fantasma se a chamada vier de outro lugar.
+  if (update.envios_habilitado === false) update.max_envios_mes = 0
 
   if (Object.keys(update).length === 1) {
     throw createError({ statusCode: 400, statusMessage: 'Nenhum módulo informado' })

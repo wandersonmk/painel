@@ -45,6 +45,9 @@ export interface AdminCliente {
   api_assistente_habilitada?: boolean
   webhooks_habilitado?: boolean
   documentacao_habilitada?: boolean
+  // Envios é add-on pago: ausente = false (bloqueado), nunca liberado por omissão.
+  envios_habilitado?: boolean
+  max_envios_mes?: number
 }
 
 export interface AdminStats {

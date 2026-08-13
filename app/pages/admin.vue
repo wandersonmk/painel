@@ -25,8 +25,6 @@ const showDesativarModal = ref(false)
 const showReativarModal = ref(false)
 const showLimiteInstanciasModal = ref(false)
 const showAtribuirParceiroModal = ref(false)
-const showSinalizarPagamentoModal = ref(false)
-const clienteParaSinalizar = ref<any>(null)
 const showTornarParceiroModal = ref(false)
 
 const selectedCliente = ref<{ id: string; nome: string } | null>(null)
@@ -230,9 +228,42 @@ function handleAtribuirParceiro(id: string) {
   if (c) { selectedCliente.value = { id: c.id, nome: c.nome }; showAtribuirParceiroModal.value = true }
 }
 
-function handleSinalizarPagamento(id: string) {
+// ───────── Remover o cliente do parceiro ─────────
+const showRemoverParceiroModal = ref(false)
+const parceiroDoCliente = ref<string | null>(null)
+
+function handleRemoverParceiro(id: string) {
   const c = clientes.value.find(x => x.id === id)
-  if (c) { clienteParaSinalizar.value = c; showSinalizarPagamentoModal.value = true }
+  if (!c) return
+  selectedCliente.value = { id: c.id, nome: c.nome }
+  parceiroDoCliente.value = (c as any).parceiro_nome ?? null
+  showRemoverParceiroModal.value = true
+}
+
+async function confirmRemoverParceiro() {
+  if (!selectedCliente.value) return
+  try {
+    const resp = await $fetch<{
+      success: boolean
+      error?: string
+      data?: { parceiroNome: string | null; clienteSegueBloqueado: boolean }
+    }>('/api/admin/remover-parceiro', {
+      method: 'POST',
+      body: { empresaId: selectedCliente.value.id },
+      headers: await useAdminAuthHeaders(),
+    })
+    if (!resp.success) throw new Error(resp.error || 'Erro')
+    toast?.success('Cliente desvinculado do parceiro')
+    if (resp.data?.clienteSegueBloqueado) {
+      toast?.warning('O cliente continua bloqueado — reative por "Reativar cliente" se for o caso')
+    }
+    await loadClientes()
+  } catch (e: any) {
+    toast?.error(e?.data?.statusMessage || e?.message || 'Erro ao remover a atribuição')
+  }
+  showRemoverParceiroModal.value = false
+  selectedCliente.value = null
+  parceiroDoCliente.value = null
 }
 
 function handleTornarParceiro(id: string) {
@@ -565,7 +596,7 @@ async function confirmModulos(modulos: {
         @excluir="handleExcluir"
         @limite-instancias="handleLimiteInstancias"
         @atribuir-parceiro="handleAtribuirParceiro"
-        @sinalizar-pagamento="handleSinalizarPagamento"
+        @remover-parceiro="handleRemoverParceiro"
         @tornar-parceiro="handleTornarParceiro"
         @modulos="handleModulos"
       />
@@ -621,11 +652,17 @@ async function confirmModulos(modulos: {
         @saved="loadClientes()"
       />
 
-      <AdminSinalizarPagamentoModal
-        :show="showSinalizarPagamentoModal"
-        :cliente="clienteParaSinalizar"
-        @close="showSinalizarPagamentoModal = false; clienteParaSinalizar = null"
+      <AdminConfirmacaoModal
+        :show="showRemoverParceiroModal"
+        title="Remover do parceiro"
+        :message="`Deseja desvincular do parceiro ${parceiroDoCliente || ''} o cliente`"
+        :cliente-nome="selectedCliente?.nome"
+        confirm-label="Remover atribuição"
+        variant="warning"
+        @close="showRemoverParceiroModal = false; selectedCliente = null; parceiroDoCliente = null"
+        @confirm="confirmRemoverParceiro"
       />
+
 
       <AdminConfirmacaoModal
         :show="showTornarParceiroModal"

@@ -2,13 +2,12 @@
 const route = useRoute()
 const { isCollapsed, isMobileOpen, toggle, closeMobile } = useSidebar()
 const { user } = useAuth()
-
 const navItems = [
   { label: 'Dashboard', icon: 'fa-gauge-high', to: '/parceiro' },
-  { label: 'Extratos', icon: 'fa-receipt', to: '/parceiro/extratos' },
+  { label: 'Clientes', icon: 'fa-users', to: '/parceiro/clientes' },
+  { label: 'Créditos', icon: 'fa-coins', to: '/parceiro/creditos' },
   { label: 'Aulas', icon: 'fa-graduation-cap', to: '/parceiro/aulas' },
   { label: 'Materiais', icon: 'fa-box-open', to: '/parceiro/materiais' },
-  { label: 'Configurações', icon: 'fa-gear', to: '/parceiro/configuracoes' },
   { label: 'Termos', icon: 'fa-file-contract', to: '/parceiro/termos' },
 ]
 

@@ -19,11 +19,21 @@ onMounted(async () => {
       .select('dados_split')
       .eq('auth_user_id', user.id)
       .maybeSingle()
-    aceitoEm.value = (data as any)?.dados_split?.termos?.aceito_em ?? null
+    const termos = (data as any)?.dados_split?.termos
+    // Só conta quem já aceitou o termo de licenças (2.0). A 1.0 (comissão)
+    // foi descontinuada e não vale mais como aceite.
+    aceitoEm.value = termos?.versao === '2.0' ? (termos?.aceito_em ?? null) : null
   } finally {
     loading.value = false
   }
 })
+
+const resumo = [
+  { icone: 'fa-coins', cor: 'text-emerald-500', titulo: 'Licença pré-paga', texto: 'Você compra créditos da Agzap antes de ativar ou renovar um cliente.' },
+  { icone: 'fa-ban', cor: 'text-red-500', titulo: 'Consumo definitivo', texto: 'Crédito usado não volta ao saldo, mesmo se o cliente cancelar ou não pagar.' },
+  { icone: 'fa-file-invoice-dollar', cor: 'text-purple-500', titulo: 'Você cobra seu cliente', texto: 'Preço livre. A cobrança do cliente final é sua, fora da estrutura da Agzap.' },
+  { icone: 'fa-lock', cor: 'text-slate-500', titulo: 'Limites são da Agzap', texto: 'Exclusão, instâncias, números e assistentes só a Agzap altera.' },
+]
 
 function formatDataHora(s: string) {
   return new Date(s).toLocaleString('pt-BR', {
@@ -60,31 +70,16 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
 
     <!-- Resumo rápido (como funciona) -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-      <div :class="['p-4', cardBase]">
-        <i class="fa-solid fa-sack-dollar text-emerald-500 text-lg" aria-hidden="true" />
-        <p class="text-xs font-bold text-slate-800 dark:text-white mt-2">Comissão por pagamento</p>
-        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">Só pagamentos confirmados do cliente geram comissão (cartão ou PIX).</p>
-      </div>
-      <div :class="['p-4', cardBase]">
-        <i class="fa-solid fa-hourglass-half text-amber-500 text-lg" aria-hidden="true" />
-        <p class="text-xs font-bold text-slate-800 dark:text-white mt-2">Liberação em 30 dias</p>
-        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">Cada pagamento fica retido 30 dias como garantia contra estornos.</p>
-      </div>
-      <div :class="['p-4', cardBase]">
-        <i class="fa-solid fa-money-bill-transfer text-purple-500 text-lg" aria-hidden="true" />
-        <p class="text-xs font-bold text-slate-800 dark:text-white mt-2">Saque em até 24h úteis</p>
-        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">Pagamento via PIX no seu nome, processado em dias úteis.</p>
-      </div>
-      <div :class="['p-4', cardBase]">
-        <i class="fa-solid fa-ban text-red-500 text-lg" aria-hidden="true" />
-        <p class="text-xs font-bold text-slate-800 dark:text-white mt-2">Estorno cancela comissão</p>
-        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">Pagamento estornado ou contestado não é liberado.</p>
+      <div v-for="item in resumo" :key="item.titulo" :class="['p-4', cardBase]">
+        <i :class="['fa-solid', item.icone, item.cor, 'text-lg']" aria-hidden="true" />
+        <p class="text-xs font-bold text-slate-800 dark:text-white mt-2">{{ item.titulo }}</p>
+        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{{ item.texto }}</p>
       </div>
     </div>
 
     <!-- Termo completo -->
     <div :class="['p-5 sm:p-7', cardBase]">
-      <ParceiroTermosConteudo />
+      <ParceiroTermosConteudoLicencas />
     </div>
 
   </div>

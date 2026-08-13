@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js'
 import type { H3Event } from 'h3'
 import { getServiceClient } from './requireSuperAdmin'
 
+export type ModeloNegocioParceiro = 'comissao' | 'licenca_prepaga'
+
 export interface ParceiroAutenticado {
   userId: string
   parceiro: {
@@ -11,6 +13,7 @@ export interface ParceiroAutenticado {
     telefone: string | null
     documento: string | null
     dados_split: Record<string, any> | null
+    modelo_negocio: ModeloNegocioParceiro
   }
 }
 
@@ -33,7 +36,7 @@ export async function requireParceiro(event: H3Event): Promise<ParceiroAutentica
   const service = getServiceClient()
   const { data: parceiro, error } = await service
     .from('parceiros')
-    .select('id, nome, email, telefone, documento, ativo, dados_split')
+    .select('id, nome, email, telefone, documento, ativo, dados_split, modelo_negocio')
     .eq('auth_user_id', user.id)
     .maybeSingle()
 
@@ -42,4 +45,20 @@ export async function requireParceiro(event: H3Event): Promise<ParceiroAutentica
   }
 
   return { userId: user.id, parceiro }
+}
+
+/**
+ * Igual ao requireParceiro, mas recusa quem ainda está no modelo de comissão.
+ * Toda ação de crédito/renovação/bloqueio passa por aqui — a checagem é do
+ * servidor, nunca do que a tela mandou.
+ */
+export async function requireParceiroPrepago(event: H3Event): Promise<ParceiroAutenticado> {
+  const autenticado = await requireParceiro(event)
+  if (autenticado.parceiro.modelo_negocio !== 'licenca_prepaga') {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Esta operação está disponível apenas no modelo de licenças pré-pagas',
+    })
+  }
+  return autenticado
 }

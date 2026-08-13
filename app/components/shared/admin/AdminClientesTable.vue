@@ -12,7 +12,7 @@ const emit = defineEmits<{
   excluir: [clienteId: string]
   'limite-instancias': [clienteId: string]
   'atribuir-parceiro': [clienteId: string]
-  'sinalizar-pagamento': [clienteId: string]
+  'remover-parceiro': [clienteId: string]
   'tornar-parceiro': [clienteId: string]
   modulos: [clienteId: string]
 }>()
@@ -21,7 +21,7 @@ const emit = defineEmits<{
 const menuCliente = ref<AdminCliente | null>(null)
 function openMenu(c: AdminCliente) { menuCliente.value = c }
 function closeMenu() { menuCliente.value = null }
-function emitAction(action: 'editar' | 'limite-instancias' | 'renovar' | 'desativar' | 'reativar' | 'excluir' | 'atribuir-parceiro' | 'sinalizar-pagamento' | 'tornar-parceiro' | 'modulos', id: string) {
+function emitAction(action: 'editar' | 'limite-instancias' | 'renovar' | 'desativar' | 'reativar' | 'excluir' | 'atribuir-parceiro' | 'remover-parceiro' | 'tornar-parceiro' | 'modulos', id: string) {
   emit(action as any, id)
   closeMenu()
 }
@@ -342,16 +342,6 @@ function cancelamentoBadge(c: AdminCliente): { text: string; title: string; cls:
                 <span class="text-sm font-medium text-slate-800 dark:text-slate-200">Renovar assinatura</span>
               </button>
 
-              <button
-                v-if="menuCliente.role !== 'superAdmin'"
-                @click="emitAction('sinalizar-pagamento', menuCliente.id)"
-                class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                type="button"
-              >
-                <i class="fa-solid fa-money-check-dollar text-emerald-600 dark:text-emerald-400 w-5" aria-hidden="true" />
-                <span class="text-sm font-medium text-slate-800 dark:text-slate-200">Sinalizar pagamento</span>
-                <span v-if="menuCliente.parceiro_nome" class="ml-auto text-xs text-slate-500 truncate max-w-[100px]">{{ menuCliente.parceiro_nome }}</span>
-              </button>
 
               <button
                 v-if="menuCliente.role !== 'superAdmin'"
@@ -360,7 +350,22 @@ function cancelamentoBadge(c: AdminCliente): { text: string; title: string; cls:
                 type="button"
               >
                 <i class="fa-solid fa-handshake text-teal-600 dark:text-teal-400 w-5" aria-hidden="true" />
-                <span class="text-sm font-medium text-slate-800 dark:text-slate-200">Atribuir a parceiro</span>
+                <span class="text-sm font-medium text-slate-800 dark:text-slate-200">
+                  {{ menuCliente.parceiro_nome ? 'Trocar parceiro' : 'Atribuir a parceiro' }}
+                </span>
+                <span v-if="menuCliente.parceiro_nome" class="ml-auto text-xs text-slate-500 truncate max-w-[100px]">{{ menuCliente.parceiro_nome }}</span>
+              </button>
+
+              <!-- Só faz sentido quando existe vínculo -->
+              <button
+                v-if="menuCliente.parceiro_nome && menuCliente.role !== 'superAdmin'"
+                @click="emitAction('remover-parceiro', menuCliente.id)"
+                class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                type="button"
+              >
+                <i class="fa-solid fa-link-slash text-orange-600 dark:text-orange-400 w-5" aria-hidden="true" />
+                <span class="text-sm font-medium text-slate-800 dark:text-slate-200">Remover do parceiro</span>
+                <span class="ml-auto text-xs text-slate-500 truncate max-w-[100px]">{{ menuCliente.parceiro_nome }}</span>
               </button>
 
               <button

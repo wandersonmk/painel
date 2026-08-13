@@ -34,8 +34,7 @@ const removing = ref(false)
 const confirmandoRemocao = ref(false)
 
 const parceiroId = ref('')
-const comissao = ref<number | null>(null)
-const valorBase = ref<number | null>(null)
+const motivo = ref('')
 
 let toast: Awaited<ReturnType<typeof useToastSafe>> | null = null
 
@@ -47,8 +46,7 @@ watch(() => props.show, async (open) => {
     parceiros.value = []
     vinculo.value = null
     parceiroId.value = ''
-    comissao.value = null
-    valorBase.value = null
+    motivo.value = ''
     confirmandoRemocao.value = false
   }
 })
@@ -68,13 +66,7 @@ async function carregar() {
     if (!resp.success || !resp.data) throw new Error(resp.error || 'Erro')
     parceiros.value = resp.data.parceiros
     vinculo.value = resp.data.vinculo
-    if (vinculo.value) {
-      parceiroId.value = vinculo.value.parceiro_id
-      comissao.value = Number(vinculo.value.comissao_percentual)
-      valorBase.value = vinculo.value.valor_base_override !== null
-        ? Number(vinculo.value.valor_base_override)
-        : null
-    }
+    if (vinculo.value) parceiroId.value = vinculo.value.parceiro_id
   } catch {
     toast?.error('Erro ao carregar parceiros')
   } finally {
@@ -88,12 +80,16 @@ const parceiroAtual = computed(() =>
   vinculo.value ? parceiros.value.find(p => p.id === vinculo.value!.parceiro_id) : null,
 )
 
+/**
+ * No modelo de licenças não existe comissão: basta escolher o parceiro.
+ * Vincular NÃO consome crédito — o crédito só é usado na renovação.
+ */
 const podeSalvar = computed(() =>
-  !!parceiroId.value
-  && comissao.value !== null
-  && Number.isFinite(comissao.value)
-  && comissao.value >= 0
-  && comissao.value <= 100,
+  !!parceiroId.value && parceiroId.value !== vinculo.value?.parceiro_id,
+)
+
+const eTransferencia = computed(() =>
+  !!vinculo.value && !!parceiroId.value && parceiroId.value !== vinculo.value.parceiro_id,
 )
 
 async function salvar() {
@@ -105,8 +101,7 @@ async function salvar() {
       body: {
         empresaId: props.clienteId,
         parceiroId: parceiroId.value,
-        comissaoPercentual: comissao.value,
-        valorBaseOverride: valorBase.value ?? null,
+        motivo: motivo.value.trim() || undefined,
       },
       headers: await useAdminAuthHeaders(),
     })
@@ -199,45 +194,31 @@ async function remover() {
         </select>
       </div>
 
-      <!-- Comissão -->
-      <div>
-        <label for="comissao-input" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
-          <i class="fa-solid fa-percent text-emerald-500 text-xs" aria-hidden="true" />
-          Comissão (%)
+      <!-- Motivo (só quando é troca de parceiro) -->
+      <div v-if="eTransferencia">
+        <label for="motivo-input" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+          <i class="fa-solid fa-right-left text-amber-500 text-xs" aria-hidden="true" />
+          Motivo da transferência
         </label>
         <input
-          id="comissao-input"
-          v-model.number="comissao"
-          type="number"
-          min="0"
-          max="100"
-          step="0.01"
-          required
-          placeholder="Ex.: 20"
-          class="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-sm text-slate-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-purple-500"
+          id="motivo-input"
+          v-model="motivo"
+          type="text"
+          maxlength="300"
+          placeholder="Fica registrado no histórico"
+          class="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
         />
-        <p class="text-xs text-slate-400 dark:text-slate-600 mt-1">
-          Percentual sobre o valor da assinatura do cliente (0 – 100).
+        <p class="text-xs text-amber-600 dark:text-amber-500 mt-1">
+          O vínculo com <strong>{{ parceiroAtual?.nome }}</strong> será encerrado. Créditos já consumidos por ele não voltam.
         </p>
       </div>
 
-      <!-- Valor base override (opcional) -->
-      <div>
-        <label for="valor-base-input" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
-          <i class="fa-solid fa-coins text-amber-500 text-xs" aria-hidden="true" />
-          Valor base (opcional)
-        </label>
-        <input
-          id="valor-base-input"
-          v-model.number="valorBase"
-          type="number"
-          min="0"
-          step="0.01"
-          placeholder="Vazio = valor real da assinatura"
-          class="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-sm text-slate-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-purple-500"
-        />
-        <p class="text-xs text-slate-400 dark:text-slate-600 mt-1">
-          Se preenchido, a comissão é calculada sobre este valor em vez do valor da assinatura.
+      <!-- Vincular não custa crédito: deixa isso explícito -->
+      <div v-else class="rounded-md bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 p-3 flex items-start gap-2.5">
+        <i class="fa-solid fa-circle-info text-slate-400 text-sm mt-0.5" aria-hidden="true" />
+        <p class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+          Atribuir <strong>não consome crédito</strong> nem altera o vencimento do cliente.
+          O crédito do parceiro só é usado quando ele renovar.
         </p>
       </div>
 
@@ -257,7 +238,7 @@ async function remover() {
           class="flex-1 px-4 py-2.5 rounded font-semibold text-sm bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors flex items-center justify-center gap-2"
         >
           <i v-if="saving" class="fa-solid fa-circle-notch animate-spin text-xs" aria-hidden="true" />
-          {{ saving ? 'Salvando…' : (vinculo ? 'Atualizar' : 'Atribuir') }}
+          {{ saving ? 'Salvando…' : (eTransferencia ? 'Transferir' : 'Atribuir') }}
         </button>
       </div>
 
@@ -275,7 +256,7 @@ async function remover() {
         </div>
         <div v-else class="rounded-md bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 p-3 space-y-2">
           <p class="text-xs text-red-700 dark:text-red-300">
-            O parceiro <strong>{{ parceiroAtual?.nome }}</strong> deixará de ver este cliente e a comissão dele sairá do saldo. Confirmar?
+            O parceiro <strong>{{ parceiroAtual?.nome }}</strong> deixará de ver este cliente. Créditos que ele já consumiu não voltam ao saldo. Confirmar?
           </p>
           <div class="flex gap-2">
             <button

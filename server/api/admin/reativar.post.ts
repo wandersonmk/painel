@@ -1,4 +1,5 @@
 import { requireSuperAdmin, getServiceClient } from '~~/server/utils/requireSuperAdmin'
+import { calcularStatusReativacao } from '~~/server/utils/acessoCliente'
 
 export default defineEventHandler(async (event) => {
   await requireSuperAdmin(event)
@@ -13,18 +14,7 @@ export default defineEventHandler(async (event) => {
     .eq('id', clienteId)
     .single()
 
-  const agora = new Date()
-  const isTrial = emp?.subscription_plan === 'free' || emp?.subscription_period === 'trial' || (emp?.subscription_period?.startsWith('trial') ?? false)
-
-  let novoStatus: 'active' | 'trial' | 'expired' = 'expired'
-
-  if (isTrial) {
-    const trial = emp?.trial_ends_at ? new Date(emp.trial_ends_at) : null
-    novoStatus = trial && trial >= agora ? 'trial' : 'expired'
-  } else {
-    const renew = emp?.subscription_renews_at ? new Date(emp.subscription_renews_at) : null
-    novoStatus = renew && renew >= agora ? 'active' : 'expired'
-  }
+  const novoStatus = calcularStatusReativacao(emp)
 
   const { error } = await supabase
     .from('empresas')
@@ -36,5 +26,14 @@ export default defineEventHandler(async (event) => {
     .eq('id', clienteId)
 
   if (error) return { success: false, error: error.message }
+
+  // Reativar pela Agzap limpa qualquer bloqueio registrado no vínculo — inclusive
+  // o comercial do parceiro, já que o admin pode sobrescrever a ação dele.
+  await supabase
+    .from('parceiro_empresas')
+    .update({ bloqueio_origem: null, bloqueado_em: null, bloqueado_por: null, updated_at: new Date().toISOString() })
+    .eq('empresa_id', clienteId)
+    .eq('ativo', true)
+
   return { success: true, subscription_status: novoStatus }
 })

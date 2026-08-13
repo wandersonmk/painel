@@ -2,6 +2,7 @@
 import { nextTick, onMounted, ref } from 'vue'
 
 const mostrar = ref(false)
+
 const leuTudo = ref(false)
 const aceitouCheckbox = ref(false)
 const salvando = ref(false)
@@ -23,7 +24,9 @@ onMounted(async () => {
       .maybeSingle()
 
     const termos = (data as any)?.dados_split?.termos
-    if (!termos?.aceito_em) {
+    // Pede aceite no primeiro acesso e sempre que a versão do termo mudar.
+    // Quem só tinha aceito a 1.0 (comissão) precisa ler o termo de licenças.
+    if (!termos?.aceito_em || termos?.versao !== '2.0') {
       mostrar.value = true
       await nextTick()
       checarScroll()
@@ -88,7 +91,7 @@ async function aceitar() {
           @scroll="checarScroll"
           class="flex-1 overflow-y-auto px-5 sm:px-6 py-4 min-h-0"
         >
-          <ParceiroTermosConteudo />
+          <ParceiroTermosConteudoLicencas />
         </div>
 
         <!-- Footer -->
@@ -114,7 +117,7 @@ async function aceitar() {
               class="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-purple-600 focus:ring-purple-500 disabled:cursor-not-allowed"
             />
             <span class="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-              Li e <strong>aceito o Termo de Responsabilidade</strong> do Programa de Parceria da Agzap Systems, incluindo as regras de comissão, prazos de liberação e penalidades.
+              Li e <strong>aceito o Termo de Responsabilidade</strong> do Programa de Parceria da Agzap Systems, incluindo a irreversibilidade do consumo de crédito, a responsabilidade pela cobrança do cliente final e as penalidades.
             </span>
           </label>
 

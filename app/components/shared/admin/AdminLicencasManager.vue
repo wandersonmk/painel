@@ -414,17 +414,26 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
               <li
                 v-for="m in movsDoParceiro(p.id)"
                 :key="m.id"
-                class="flex items-center gap-2 text-xs py-1.5 border-b border-slate-100 dark:border-white/5 last:border-0"
+                class="text-xs py-1.5 border-b border-slate-100 dark:border-white/5 last:border-0"
               >
-                <span
-                  class="font-bold tabular-nums w-8 shrink-0"
-                  :class="m.quantidade > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-600 dark:text-slate-300'"
-                >{{ m.quantidade > 0 ? '+' : '' }}{{ m.quantidade }}</span>
-                <span class="text-slate-700 dark:text-slate-300 shrink-0">{{ OPERACOES[m.operacao] ?? m.operacao }}</span>
-                <span class="text-slate-400 shrink-0">{{ LABEL_TIPO[m.tipo_credito] }}</span>
-                <span v-if="m.empresa_nome" class="text-slate-500 truncate">· {{ m.empresa_nome }}</span>
-                <span v-if="m.valor_pago" class="text-slate-500 shrink-0">· {{ fmtBRL(m.valor_pago) }}</span>
-                <span class="ml-auto text-slate-400 tabular-nums shrink-0">{{ fmtData(m.created_at) }}</span>
+                <div class="flex items-center gap-2">
+                  <span
+                    class="font-bold tabular-nums w-8 shrink-0"
+                    :class="m.quantidade > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-600 dark:text-slate-300'"
+                  >{{ m.quantidade > 0 ? '+' : '' }}{{ m.quantidade }}</span>
+                  <span class="text-slate-700 dark:text-slate-300 shrink-0">{{ OPERACOES[m.operacao] ?? m.operacao }}</span>
+                  <span class="text-slate-400 shrink-0">{{ LABEL_TIPO[m.tipo_credito] }}</span>
+                  <span v-if="m.empresa_nome" class="text-slate-500 truncate">· {{ m.empresa_nome }}</span>
+                  <span v-if="m.valor_pago" class="text-slate-500 shrink-0">· {{ fmtBRL(m.valor_pago) }}</span>
+                  <span class="ml-auto text-slate-400 tabular-nums shrink-0">{{ fmtData(m.created_at) }}</span>
+                </div>
+                <!-- Justificativa: é obrigatória na correção e some da tela se não
+                     for renderizada — sem ela, um estorno vira número sem motivo. -->
+                <p v-if="m.descricao || m.referencia" class="mt-0.5 pl-10 text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+                  <i class="fa-solid fa-quote-left text-[8px] text-slate-300 dark:text-slate-600 mr-1" aria-hidden="true" />
+                  <span v-if="m.descricao">{{ m.descricao }}</span>
+                  <span v-if="m.referencia" class="text-slate-400"><template v-if="m.descricao"> · </template>ref: {{ m.referencia }}</span>
+                </p>
               </li>
             </ul>
           </div>

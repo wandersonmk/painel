@@ -22,10 +22,13 @@ onMounted(async () => {
   await carregar()
 })
 
+// O botão Atualizar recarrega as duas fontes da página: lançamentos manuais e
+// o bloco de créditos de parceiros (que busca em endpoint próprio).
+const creditosParceirosRef = ref<{ carregar: () => Promise<void> } | null>(null)
 const isRefreshing = ref(false)
 async function refresh() {
   isRefreshing.value = true
-  await carregar()
+  await Promise.all([carregar(), creditosParceirosRef.value?.carregar()])
   isRefreshing.value = false
 }
 
@@ -161,7 +164,7 @@ const mesAtualLabel = computed(() => {
         <div class="space-y-1 min-w-0">
           <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Financeiro</h1>
           <p class="text-slate-500 dark:text-slate-400 text-xs sm:text-sm">
-            Controle de receitas e despesas · <span class="capitalize">{{ mesAtualLabel }}</span>
+            Receitas, despesas e créditos de parceiros · <span class="capitalize">{{ mesAtualLabel }}</span>
           </p>
         </div>
         <div class="flex items-center gap-2 w-full sm:w-auto">
@@ -230,6 +233,20 @@ const mesAtualLabel = computed(() => {
           color="red"
           :highlighted="stats.vencidosCount > 0"
         />
+      </div>
+
+      <!-- Créditos de parceiros: venda, estorno, consumo e passivo do programa -->
+      <FinanceiroCreditosParceiros ref="creditosParceirosRef" />
+
+      <!-- Lançamentos manuais -->
+      <div class="flex items-center gap-2.5 pt-2">
+        <div class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+          <i class="fa-solid fa-receipt text-slate-500 text-sm" aria-hidden="true" />
+        </div>
+        <div>
+          <h2 class="text-sm font-bold text-slate-900 dark:text-white">Lançamentos manuais</h2>
+          <p class="text-[11px] text-slate-500 dark:text-slate-400">Receitas e despesas cadastradas à mão</p>
+        </div>
       </div>
 
       <!-- Filtros -->

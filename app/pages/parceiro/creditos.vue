@@ -198,6 +198,11 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
                       </p>
                       <p class="text-[11px] text-slate-400 tabular-nums">{{ fmtDataHora(m.created_at) }}</p>
                       <p v-if="m.empresa_nome" class="md:hidden text-[11px] text-slate-500 truncate">{{ m.empresa_nome }}</p>
+                      <!-- Motivo do lançamento: correção/estorno sem justificativa
+                           visível vira número inexplicado no extrato do parceiro. -->
+                      <p v-if="m.descricao" class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5 whitespace-normal">
+                        <i class="fa-solid fa-quote-left text-[8px] text-slate-300 dark:text-slate-600 mr-1" aria-hidden="true" />{{ m.descricao }}
+                      </p>
                     </div>
                   </div>
                 </td>

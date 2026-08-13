@@ -2,9 +2,12 @@ import { requireParceiro } from '~~/server/utils/requireParceiro'
 import { getServiceClient } from '~~/server/utils/requireSuperAdmin'
 import { failPublic } from '~~/server/utils/apiError'
 
-/** 1.0 = termo de comissão. 2.0 = termo de licenças pré-pagas. */
+/**
+ * 1.0 = termo de comissão. 2.x = termo de licenças pré-pagas.
+ * 2.1 = condutas proibidas e responsabilização civil/criminal detalhadas.
+ */
 export const TERMOS_VERSAO = '1.0'
-export const TERMOS_VERSAO_LICENCAS = '2.0'
+export const TERMOS_VERSAO_LICENCAS = '2.1'
 
 export function versaoTermos(modelo?: string) {
   return modelo === 'licenca_prepaga' ? TERMOS_VERSAO_LICENCAS : TERMOS_VERSAO

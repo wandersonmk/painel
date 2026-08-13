@@ -1,6 +1,8 @@
 <script setup lang="ts">
-// Termo do modelo de LICENÇAS PRÉ-PAGAS (versão 2.0). O termo de comissão
+// Termo do modelo de LICENÇAS PRÉ-PAGAS (versão 2.1). O termo de comissão
 // (versão 1.0) continua em ParceiroTermosConteudo.vue para quem não migrou.
+// Ao mexer no texto, subir a versão aqui, em aceitar-termos.post.ts e na
+// comparação do ParceiroTermosModal — senão ninguém reaceita.
 const secaoTitulo = 'text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mt-6 first:mt-0'
 const paragrafo = 'text-sm text-slate-600 dark:text-slate-400 leading-relaxed mt-2'
 const lista = 'mt-2 space-y-1.5 text-sm text-slate-600 dark:text-slate-400 leading-relaxed list-disc pl-5'
@@ -8,7 +10,7 @@ const lista = 'mt-2 space-y-1.5 text-sm text-slate-600 dark:text-slate-400 leadi
 
 <template>
   <div>
-    <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider font-semibold">Agzap Systems · Programa de Parceria · Versão 2.0</p>
+    <p class="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider font-semibold">Agzap Systems · Programa de Parceria · Versão 2.1</p>
     <h2 class="text-lg font-bold text-slate-900 dark:text-white mt-1">Termo de Revenda por Licenças Pré-pagas</h2>
 
     <p :class="paragrafo">
@@ -132,24 +134,56 @@ const lista = 'mt-2 space-y-1.5 text-sm text-slate-600 dark:text-slate-400 leadi
       É <strong>expressamente proibido</strong> ao Parceiro, sob pena de suspensão imediata e demais sanções:
     </p>
     <ul :class="lista">
-      <li><strong>Tentar burlar, manipular ou explorar falhas</strong> do sistema, do painel, das APIs ou do banco de dados da Agzap, incluindo qualquer tentativa de gerar crédito, alterar saldo ou mover vencimento fora do fluxo oficial;</li>
+      <li><strong>Tentar burlar, manipular ou explorar falhas</strong> do sistema, do painel, das APIs ou do banco de dados da Agzap, incluindo qualquer tentativa de gerar crédito, alterar saldo, mover vencimento, liberar módulo, ampliar limite ou ativar cliente fora do fluxo oficial do painel;</li>
+      <li>Criar, ativar, renovar ou modificar contas de cliente por <strong>requisição direta à API, ao banco de dados, a scripts ou a automações</strong> não fornecidos oficialmente pela Agzap para essa finalidade;</li>
+      <li><strong>Explorar uma falha encontrada</strong> em vez de comunicá-la imediatamente à Agzap — encontrar um erro que gere vantagem e usá-lo é conduta dolosa, não descuido;</li>
+      <li>Contornar, remover ou neutralizar mecanismos de licenciamento, autenticação ou controle de acesso da plataforma, bem como praticar engenharia reversa não autorizada;</li>
       <li>Tentar acessar clientes, saldos ou dados de outro parceiro, ou áreas administrativas da Agzap;</li>
-      <li>Compartilhar suas credenciais de acesso com terceiros;</li>
+      <li>Compartilhar suas credenciais de acesso com terceiros, ou usar credenciais de terceiros;</li>
       <li>Usar indevidamente dados pessoais de clientes, em desacordo com a LGPD (Lei nº 13.709/2018);</li>
       <li>Praticar spam, publicidade enganosa ou abordagens abusivas em nome da Agzap.</li>
     </ul>
+    <p :class="paragrafo">
+      <strong>Tudo é registrado.</strong> Cada operação no portal grava autoria, data, hora, endereço IP e o estado
+      anterior e posterior do dado em trilha de auditoria permanente, e os registros de acesso são mantidos nos termos
+      do art. 15 da Lei nº 12.965/2014 (Marco Civil da Internet). Divergências entre saldo, consumo e renovações são
+      conferidas periodicamente pela Agzap.
+    </p>
 
     <!-- 9 -->
     <h3 :class="secaoTitulo">
       <i class="fa-solid fa-gavel text-red-500 text-xs" aria-hidden="true" />
-      9. Penalidades
+      9. Penalidades e responsabilização
     </h3>
+    <p :class="paragrafo">
+      O descumprimento de qualquer regra deste termo poderá resultar em <strong>suspensão ou desligamento do programa,
+      sem aviso prévio</strong>. Comprovada tentativa de burlar o sistema, aplicam-se cumulativamente:
+    </p>
     <ul :class="lista">
-      <li>O descumprimento de qualquer regra deste termo poderá resultar em <strong>suspensão ou desligamento do programa, sem aviso prévio</strong>;</li>
-      <li>Em caso de fraude comprovada, os créditos vinculados à conduta fraudulenta serão <strong>cancelados</strong>;</li>
-      <li>O Parceiro poderá <strong>responder a processo administrativo e judicial</strong>, nas esferas cível e criminal, conforme a legislação brasileira;</li>
-      <li>A Agzap pode suspender preventivamente o acesso e as operações do Parceiro durante a apuração de qualquer suspeita ou divergência contábil.</li>
+      <li><strong>Banimento definitivo do Programa de Parceria</strong>, com encerramento imediato do acesso ao portal e sem direito a indenização;</li>
+      <li><strong>Cancelamento dos créditos</strong> e reversão das ativações e renovações originadas da conduta — os clientes envolvidos voltam ao estado anterior;</li>
+      <li><strong>Cobrança do valor de tabela</strong> de todas as licenças obtidas sem o devido pagamento, acrescida de perdas e danos e lucros cessantes;</li>
+      <li><strong>Suspensão preventiva</strong> do acesso e das operações durante a apuração de qualquer suspeita ou divergência contábil, em processo administrativo interno com direito de manifestação;</li>
+      <li><strong>Responsabilização civil e criminal</strong>, com uso dos registros de auditoria e de acesso como prova, e comunicação às autoridades competentes.</li>
     </ul>
+    <p :class="paragrafo">
+      A título de esclarecimento — e sem prejuízo de outros dispositivos aplicáveis ao caso concreto —, condutas de
+      manipulação de sistema informático podem caracterizar, na legislação brasileira:
+    </p>
+    <ul :class="lista">
+      <li><strong>Invasão de dispositivo informático</strong> — art. 154-A do Código Penal (Lei nº 12.737/2012, com redação da Lei nº 14.155/2021): reclusão de 1 a 4 anos e multa, com pena maior se houver prejuízo econômico ou obtenção de segredo comercial;</li>
+      <li><strong>Estelionato e fraude eletrônica</strong> — art. 171, <em>caput</em> e § 2º-A do Código Penal (Lei nº 14.155/2021): reclusão de 4 a 8 anos e multa quando a vantagem ilícita é obtida por meio de dispositivo eletrônico ou informação fraudulenta;</li>
+      <li><strong>Furto mediante fraude por meio eletrônico</strong> — art. 155, § 4º-B do Código Penal: reclusão de 4 a 8 anos e multa;</li>
+      <li><strong>Falsidade ideológica</strong> — art. 299 do Código Penal, quando houver inserção ou alteração de declaração falsa em registro do sistema;</li>
+      <li><strong>Violação de direito autoral de programa de computador</strong> — art. 12 da Lei nº 9.609/1998, inclusive quanto a burlar mecanismo de licenciamento, com pena agravada quando praticada com intuito de lucro;</li>
+      <li><strong>Responsabilidade civil e enriquecimento sem causa</strong> — arts. 186, 187, 402, 403, 884 e 927 do Código Civil, com dever de reparar o dano e devolver o proveito obtido sem causa;</li>
+      <li><strong>Sanções de proteção de dados</strong> — Lei nº 13.709/2018 (LGPD), se a conduta envolver dados pessoais de clientes.</li>
+    </ul>
+    <p :class="paragrafo">
+      A responsabilidade alcança o Parceiro pessoa física ou jurídica, seus sócios, prepostos e qualquer terceiro que
+      atue a seu mando ou com suas credenciais. Fica eleito o foro da comarca da sede da Agzap Systems para dirimir
+      questões oriundas deste termo, com renúncia a qualquer outro.
+    </p>
 
     <!-- 10 -->
     <h3 :class="secaoTitulo">

@@ -26,7 +26,9 @@ onMounted(async () => {
     const termos = (data as any)?.dados_split?.termos
     // Pede aceite no primeiro acesso e sempre que a versão do termo mudar.
     // Quem só tinha aceito a 1.0 (comissão) precisa ler o termo de licenças.
-    if (!termos?.aceito_em || termos?.versao !== '2.0') {
+    // 2.1 detalhou as condutas proibidas e a responsabilização — cláusula nova
+    // só vale contra quem aceitou, então todo mundo aceita de novo.
+    if (!termos?.aceito_em || termos?.versao !== '2.1') {
       mostrar.value = true
       await nextTick()
       checarScroll()

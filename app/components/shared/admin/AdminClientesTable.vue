@@ -62,13 +62,27 @@ function rowAccent(c: AdminCliente): string {
   return 'border-transparent'
 }
 
-function cancelamentoBadge(c: AdminCliente): { text: string; title: string; cls: string } | null {
+function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: string; icon: string } | null {
+  // O bloqueio comercial do parceiro vem antes do rótulo de cancelamento: o
+  // cliente não cancelou nada no Stripe, quem derrubou o acesso foi o parceiro.
+  // Sem isso a lista mostrava só "Cancelado" e o motivo real ficava invisível.
+  if (c.parceiro_bloqueio_origem === 'parceiro') {
+    const quem = c.parceiro_nome ? `pelo parceiro ${c.parceiro_nome}` : 'pelo parceiro'
+    const quando = c.parceiro_bloqueado_em ? ` em ${formatDate(c.parceiro_bloqueado_em)}` : ''
+    return {
+      text: 'Bloqueado pelo parceiro',
+      title: `Acesso bloqueado ${quem}${quando} · bloqueio comercial, não é cancelamento no Stripe`,
+      cls: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400',
+      icon: 'fa-lock',
+    }
+  }
   if (c.cancel_at_period_end) {
     const ate = formatDate(getDataVencimento(c))
     return {
       text: 'Cancelou',
       title: ate ? `Cliente cancelou a assinatura no Stripe · acesso até ${ate}` : 'Cliente cancelou a assinatura no Stripe',
       cls: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400',
+      icon: 'fa-ban',
     }
   }
   if (c.subscription_status === 'canceled') {
@@ -76,6 +90,7 @@ function cancelamentoBadge(c: AdminCliente): { text: string; title: string; cls:
       text: 'Cancelado',
       title: 'Assinatura encerrada no Stripe',
       cls: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400',
+      icon: 'fa-ban',
     }
   }
   return null
@@ -142,13 +157,13 @@ function cancelamentoBadge(c: AdminCliente): { text: string; title: string; cls:
                       <span class="hidden sm:inline">Super Admin</span>
                     </span>
                     <span
-                      v-if="cancelamentoBadge(c)"
-                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold"
-                      :class="cancelamentoBadge(c)!.cls"
-                      :title="cancelamentoBadge(c)!.title"
+                      v-if="situacaoBadge(c)"
+                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap"
+                      :class="situacaoBadge(c)!.cls"
+                      :title="situacaoBadge(c)!.title"
                     >
-                      <i class="fa-solid fa-ban" aria-hidden="true" />
-                      {{ cancelamentoBadge(c)!.text }}
+                      <i class="fa-solid" :class="situacaoBadge(c)!.icon" aria-hidden="true" />
+                      {{ situacaoBadge(c)!.text }}
                     </span>
                     <span
                       v-if="c.parceiro_nome"
@@ -278,12 +293,13 @@ function cancelamentoBadge(c: AdminCliente): { text: string; title: string; cls:
                   <div class="flex items-center gap-2 flex-wrap">
                     <p class="font-semibold text-slate-900 dark:text-white text-sm truncate">{{ menuCliente.nome }}</p>
                     <span
-                      v-if="cancelamentoBadge(menuCliente)"
-                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold"
-                      :class="cancelamentoBadge(menuCliente)!.cls"
+                      v-if="situacaoBadge(menuCliente)"
+                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap"
+                      :class="situacaoBadge(menuCliente)!.cls"
+                      :title="situacaoBadge(menuCliente)!.title"
                     >
-                      <i class="fa-solid fa-ban" aria-hidden="true" />
-                      {{ cancelamentoBadge(menuCliente)!.text }}
+                      <i class="fa-solid" :class="situacaoBadge(menuCliente)!.icon" aria-hidden="true" />
+                      {{ situacaoBadge(menuCliente)!.text }}
                     </span>
                     <span
                       v-if="menuCliente.parceiro_nome"

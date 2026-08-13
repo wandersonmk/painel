@@ -14,10 +14,14 @@ export default defineEventHandler(async (event) => {
     // Vínculos de parceiro (1 por empresa) para exibir na lista
     const { data: vinculos } = await supabase
       .from('parceiro_empresas')
-      .select('empresa_id, comissao_percentual, ativo, parceiros ( nome )')
-    const vinculoPorEmpresa = new Map(
-      (vinculos || []).map((v: any) => [v.empresa_id, v]),
-    )
+      .select('empresa_id, comissao_percentual, ativo, bloqueio_origem, bloqueado_em, parceiros ( nome )')
+    // Vínculo ativo ganha do histórico: sem isso, uma empresa que trocou de
+    // parceiro podia aparecer com o parceiro antigo (e com o bloqueio dele).
+    const vinculoPorEmpresa = new Map<string, any>()
+    for (const v of (vinculos || []) as any[]) {
+      const atual = vinculoPorEmpresa.get(v.empresa_id)
+      if (!atual || (v.ativo && !atual.ativo)) vinculoPorEmpresa.set(v.empresa_id, v)
+    }
 
     // Papéis em uma única query (evita N+1 e o default silencioso de '.single()',
     // que escondia papel ausente/duplicado e podia exibir ações destrutivas indevidas).
@@ -68,6 +72,11 @@ export default defineEventHandler(async (event) => {
         max_envios_mes: emp.max_envios_mes ?? 0,
         parceiro_nome: vinculo?.parceiros?.nome ?? null,
         parceiro_comissao: vinculo ? Number(vinculo.comissao_percentual) : null,
+        // Quem derrubou o acesso: 'parceiro' (bloqueio comercial dele) ou 'admin'
+        // (desativação pela Agzap). Só vale para vínculo ativo — bloqueio de
+        // vínculo antigo é histórico, não situação atual do cliente.
+        parceiro_bloqueio_origem: vinculo?.ativo ? (vinculo.bloqueio_origem ?? null) : null,
+        parceiro_bloqueado_em: vinculo?.ativo ? (vinculo.bloqueado_em ?? null) : null,
       }
     })
 

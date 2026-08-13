@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 /**
  * Bloco de controle do programa de parceiros dentro do /financeiro.
@@ -123,6 +123,26 @@ const vencendoFiltrado = computed(() => {
   const nome = porParceiro.value.find(p => p.id === filtroParceiro.value)?.nome
   return vencendo.value.filter(c => c.parceiro_nome === nome)
 })
+
+// ───────── Paginação ─────────
+// O ledger só cresce; sem isso a aba de consumo vira uma tabela de mil linhas.
+// Paginar em vez de rolar por dentro: a página inteira já rola, e caixa com
+// scroll aninhado esconde o que está embaixo.
+const TAMANHO_PAGINA = 25
+const pagina = ref(1)
+const paginaAjustes = ref(1)
+watch([aba, filtroParceiro], () => { pagina.value = 1; paginaAjustes.value = 1 })
+
+function fatia<T>(lista: T[], p: number): T[] {
+  return lista.slice((p - 1) * TAMANHO_PAGINA, p * TAMANHO_PAGINA)
+}
+
+const vendasPagina = computed(() => fatia(vendasFiltradas.value, pagina.value))
+const estornosPagina = computed(() => fatia(estornosFiltrados.value, pagina.value))
+const ajustesPagina = computed(() => fatia(ajustesFiltrados.value, paginaAjustes.value))
+const concessoesPagina = computed(() => fatia(concessoesFiltradas.value, pagina.value))
+const consumosPagina = computed(() => fatia(consumosFiltrados.value, pagina.value))
+const vencendoPagina = computed(() => fatia(vencendoFiltrado.value, pagina.value))
 
 const ABAS = [
   { id: 'vendas', label: 'Vendas', icone: 'fa-cart-shopping' },
@@ -346,9 +366,10 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
 
         <div class="p-3 sm:p-5">
           <!-- Vendas -->
-          <div v-if="aba === 'vendas'" class="overflow-x-auto">
+          <div v-if="aba === 'vendas'">
             <p v-if="!vendasFiltradas.length" class="text-xs text-slate-400 py-4 text-center">Nenhuma venda de crédito registrada.</p>
-            <table v-else class="w-full text-xs">
+            <div v-else class="overflow-x-auto">
+            <table class="w-full text-xs">
               <thead class="bg-slate-50 dark:bg-slate-950/60">
                 <tr>
                   <th :class="th">Data</th>
@@ -362,7 +383,7 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                <tr v-for="v in vendasFiltradas" :key="v.id">
+                <tr v-for="v in vendasPagina" :key="v.id">
                   <td :class="[td, 'tabular-nums text-slate-400 whitespace-nowrap']">{{ fmtData(v.data) }}</td>
                   <td :class="[td, 'font-medium text-slate-900 dark:text-white']">{{ v.parceiro_nome }}</td>
                   <td :class="[td, 'text-slate-500']">{{ LABEL_TIPO[v.tipo_credito] }}</td>
@@ -376,6 +397,8 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                 </tr>
               </tbody>
             </table>
+            </div>
+            <FinanceiroPaginacao v-model="pagina" :total="vendasFiltradas.length" :tamanho="TAMANHO_PAGINA" />
           </div>
 
           <!-- Estornos e correções -->
@@ -397,7 +420,7 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                    <tr v-for="e in estornosFiltrados" :key="e.id" class="align-top">
+                    <tr v-for="e in estornosPagina" :key="e.id" class="align-top">
                       <td :class="[td, 'tabular-nums text-slate-400 whitespace-nowrap']">{{ fmtData(e.data) }}</td>
                       <td :class="[td, 'font-medium text-slate-900 dark:text-white']">{{ e.parceiro_nome }}</td>
                       <td :class="[td, 'text-slate-500']">{{ LABEL_TIPO[e.tipo_credito] }}</td>
@@ -413,6 +436,7 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                   </tbody>
                 </table>
               </div>
+              <FinanceiroPaginacao v-model="pagina" :total="estornosFiltrados.length" :tamanho="TAMANHO_PAGINA" />
             </div>
 
             <div v-if="ajustesFiltrados.length">
@@ -430,7 +454,7 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                    <tr v-for="a in ajustesFiltrados" :key="a.id" class="align-top">
+                    <tr v-for="a in ajustesPagina" :key="a.id" class="align-top">
                       <td :class="[td, 'tabular-nums text-slate-400 whitespace-nowrap']">{{ fmtData(a.data) }}</td>
                       <td :class="[td, 'font-medium text-slate-900 dark:text-white']">{{ a.parceiro_nome }}</td>
                       <td :class="[td, 'text-slate-500']">{{ LABEL_TIPO[a.tipo_credito] }}</td>
@@ -441,13 +465,15 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                   </tbody>
                 </table>
               </div>
+              <FinanceiroPaginacao v-model="paginaAjustes" :total="ajustesFiltrados.length" :tamanho="TAMANHO_PAGINA" />
             </div>
           </div>
 
           <!-- Cortesias -->
-          <div v-else-if="aba === 'concessoes'" class="overflow-x-auto">
+          <div v-else-if="aba === 'concessoes'">
             <p v-if="!concessoesFiltradas.length" class="text-xs text-slate-400 py-4 text-center">Nenhum crédito de cortesia liberado.</p>
-            <table v-else class="w-full text-xs">
+            <div v-else class="overflow-x-auto">
+            <table class="w-full text-xs">
               <thead class="bg-slate-50 dark:bg-slate-950/60">
                 <tr>
                   <th :class="th">Data</th>
@@ -459,7 +485,7 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                <tr v-for="c in concessoesFiltradas" :key="c.id" class="align-top">
+                <tr v-for="c in concessoesPagina" :key="c.id" class="align-top">
                   <td :class="[td, 'tabular-nums text-slate-400 whitespace-nowrap']">{{ fmtData(c.data) }}</td>
                   <td :class="[td, 'font-medium text-slate-900 dark:text-white']">{{ c.parceiro_nome }}</td>
                   <td :class="[td, 'text-slate-500']">{{ LABEL_TIPO[c.tipo_credito] }}</td>
@@ -472,12 +498,15 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                 </tr>
               </tbody>
             </table>
+            </div>
+            <FinanceiroPaginacao v-model="pagina" :total="concessoesFiltradas.length" :tamanho="TAMANHO_PAGINA" />
           </div>
 
           <!-- Consumo -->
-          <div v-else-if="aba === 'consumo'" class="overflow-x-auto">
+          <div v-else-if="aba === 'consumo'">
             <p v-if="!consumosFiltrados.length" class="text-xs text-slate-400 py-4 text-center">Nenhum consumo de crédito registrado.</p>
-            <table v-else class="w-full text-xs">
+            <div v-else class="overflow-x-auto">
+            <table class="w-full text-xs">
               <thead class="bg-slate-50 dark:bg-slate-950/60">
                 <tr>
                   <th :class="th">Data</th>
@@ -488,7 +517,7 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                <tr v-for="c in consumosFiltrados" :key="c.id">
+                <tr v-for="c in consumosPagina" :key="c.id">
                   <td :class="[td, 'tabular-nums text-slate-400 whitespace-nowrap']">{{ fmtDataHora(c.data) }}</td>
                   <td :class="[td, 'font-medium text-slate-900 dark:text-white']">{{ c.parceiro_nome }}</td>
                   <td :class="[td, 'text-slate-700 dark:text-slate-200']">{{ c.empresa_nome || '—' }}</td>
@@ -497,12 +526,15 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                 </tr>
               </tbody>
             </table>
+            </div>
+            <FinanceiroPaginacao v-model="pagina" :total="consumosFiltrados.length" :tamanho="TAMANHO_PAGINA" />
           </div>
 
           <!-- Vencendo -->
-          <div v-else class="overflow-x-auto">
+          <div v-else>
             <p v-if="!vencendoFiltrado.length" class="text-xs text-slate-400 py-4 text-center">Nenhum cliente de parceiro vencendo nos próximos 7 dias.</p>
-            <table v-else class="w-full text-xs">
+            <div v-else class="overflow-x-auto">
+            <table class="w-full text-xs">
               <thead class="bg-slate-50 dark:bg-slate-950/60">
                 <tr>
                   <th :class="th">Cliente</th>
@@ -514,7 +546,7 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                <tr v-for="c in vencendoFiltrado" :key="`${c.parceiro_nome}-${c.empresa_nome}`">
+                <tr v-for="c in vencendoPagina" :key="`${c.parceiro_nome}-${c.empresa_nome}`">
                   <td :class="[td, 'font-medium text-slate-900 dark:text-white']">{{ c.empresa_nome }}</td>
                   <td :class="[td, 'text-slate-500']">{{ c.parceiro_nome }}</td>
                   <td :class="[td, 'tabular-nums text-slate-500']">{{ fmtData(c.vencimento) }}</td>
@@ -531,6 +563,8 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                 </tr>
               </tbody>
             </table>
+            </div>
+            <FinanceiroPaginacao v-model="pagina" :total="vencendoFiltrado.length" :tamanho="TAMANHO_PAGINA" />
           </div>
         </div>
       </div>

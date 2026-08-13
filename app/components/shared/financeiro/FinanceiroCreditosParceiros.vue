@@ -223,14 +223,14 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
         <AdminStatsCard
           title="Líquido no mês"
           :value="fmtBRL(resumo.liquido_mes)"
-          :subtitle="`Ticket médio ${fmtBRL(resumo.ticket_medio_credito)} por crédito`"
+          :subtitle="`Ticket médio ${fmtBRL(resumo.ticket_medio_credito)}/crédito`"
           icon="fa-scale-balanced"
           :color="resumo.liquido_mes >= 0 ? 'indigo' : 'orange'"
         />
         <AdminStatsCard
           title="Passivo em créditos"
           :value="fmtBRL(resumo.passivo_estimado)"
-          :subtitle="`${resumo.saldo_creditos_aberto} créditos pagos ainda não usados`"
+          :subtitle="`${resumo.saldo_creditos_aberto} créditos pagos, não usados`"
           icon="fa-vault"
           color="amber"
         />

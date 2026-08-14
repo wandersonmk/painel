@@ -464,6 +464,7 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                       <th :class="th">Crédito</th>
                       <th :class="[th, 'text-right']">Qtd.</th>
                       <th :class="[th, 'text-right']">Valor</th>
+                      <th :class="th">Baixa de</th>
                       <th :class="th">Motivo do estorno</th>
                       <th :class="th">Lançado por</th>
                     </tr>
@@ -475,6 +476,15 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                       <td :class="[td, 'text-slate-500']">{{ LABEL_TIPO[e.tipo_credito] }}</td>
                       <td :class="[td, 'text-right tabular-nums font-bold text-red-600 dark:text-red-400']">{{ e.quantidade }}</td>
                       <td :class="[td, 'text-right tabular-nums']">{{ e.valor_pago ? '−' + fmtBRL(e.valor_pago) : '—' }}</td>
+                      <!-- De qual lote o crédito saiu: é o que separa desfazer
+                           uma venda de retirar uma cortesia. -->
+                      <td :class="td">
+                        <span
+                          v-if="origemCredito(e.operacao, e.quantidade, e.valor_pago)"
+                          class="px-1.5 py-0.5 rounded text-[9px] font-bold whitespace-nowrap"
+                          :class="origemCredito(e.operacao, e.quantidade, e.valor_pago)!.cls"
+                        >{{ origemCredito(e.operacao, e.quantidade, e.valor_pago)!.texto }}</span>
+                      </td>
                       <!-- O motivo é obrigatório no lançamento; mostrar inteiro. -->
                       <td :class="[td, 'text-slate-700 dark:text-slate-200 whitespace-normal min-w-[220px]']">
                         {{ e.motivo || '—' }}

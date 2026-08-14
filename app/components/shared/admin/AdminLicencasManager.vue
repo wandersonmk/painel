@@ -475,6 +475,17 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
                     :class="m.quantidade > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-600 dark:text-slate-300'"
                   >{{ m.quantidade > 0 ? '+' : '' }}{{ m.quantidade }}</span>
                   <span class="text-slate-700 dark:text-slate-300 shrink-0">{{ OPERACOES[m.operacao] ?? m.operacao }}</span>
+                  <!-- Pago ou cortesia: sem isso, "+5 Concessão" e "+2 Compra"
+                       ficavam iguais na varredura, e é justamente a diferença
+                       entre dinheiro que entrou e crédito dado. -->
+                  <span
+                    v-if="origemCredito(m.operacao, m.quantidade, m.valor_pago)"
+                    class="px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 inline-flex items-center gap-1 whitespace-nowrap"
+                    :class="origemCredito(m.operacao, m.quantidade, m.valor_pago)!.cls"
+                  >
+                    <i class="fa-solid text-[8px]" :class="origemCredito(m.operacao, m.quantidade, m.valor_pago)!.icone" aria-hidden="true" />
+                    {{ origemCredito(m.operacao, m.quantidade, m.valor_pago)!.texto }}
+                  </span>
                   <span class="text-slate-400 shrink-0">{{ LABEL_TIPO[m.tipo_credito] }}</span>
                   <span v-if="m.empresa_nome" class="text-slate-500 truncate">· {{ m.empresa_nome }}</span>
                   <span v-if="m.valor_pago" class="text-slate-500 shrink-0">· {{ fmtBRL(m.valor_pago) }}</span>

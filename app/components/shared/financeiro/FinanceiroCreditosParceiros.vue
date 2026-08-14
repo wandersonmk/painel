@@ -128,6 +128,47 @@ const vencendoFiltrado = computed(() => {
   return vencendo.value.filter(c => c.parceiro_nome === nome)
 })
 
+// Faixa de métricas: rótulo curto em cima, valor grande, detalhe truncado com
+// o texto inteiro no title. Card com ícone grande não cabia seis lado a lado.
+const metricas = computed(() => {
+  const r = resumo.value
+  if (!r) return []
+  return [
+    {
+      rotulo: 'Vendido no mês', icone: 'fa-cart-shopping', cls: 'text-emerald-600 dark:text-emerald-400',
+      valor: fmtBRL(r.vendido_mes),
+      detalhe: `${r.creditos_vendidos_mes} créditos · ${fmtBRL(r.vendido_total)} no total`,
+    },
+    {
+      rotulo: 'Estornado no mês', icone: 'fa-rotate-left', cls: 'text-red-600 dark:text-red-400',
+      valor: fmtBRL(r.estornado_mes),
+      detalhe: `${r.creditos_estornados_total} créditos estornados no total`,
+      alerta: r.estornado_mes > 0,
+    },
+    {
+      rotulo: 'Líquido no mês', icone: 'fa-scale-balanced', cls: 'text-indigo-600 dark:text-indigo-400',
+      valor: fmtBRL(r.liquido_mes),
+      detalhe: `Ticket médio ${fmtBRL(r.ticket_medio_credito)}/crédito`,
+    },
+    {
+      rotulo: 'Passivo pago', icone: 'fa-vault', cls: 'text-emerald-600 dark:text-emerald-400',
+      valor: fmtBRL(r.passivo_pago),
+      detalhe: `${r.saldo_pago} créditos com dinheiro atrás`,
+    },
+    {
+      rotulo: 'Cortesia a executar', icone: 'fa-gift', cls: 'text-orange-600 dark:text-orange-400',
+      valor: fmtBRL(r.passivo_cortesia),
+      detalhe: `${r.saldo_cortesia} créditos sem dinheiro atrás`,
+      alerta: r.passivo_cortesia > r.passivo_pago,
+    },
+    {
+      rotulo: 'Consumido no mês', icone: 'fa-fire', cls: 'text-purple-600 dark:text-purple-400',
+      valor: String(r.creditos_consumidos_mes),
+      detalhe: `${r.creditos_consumidos_total} no total · ${r.clientes_vencendo_7d} vencendo em 7d`,
+    },
+  ]
+})
+
 // ───────── Paginação ─────────
 // O ledger só cresce; sem isso a aba de consumo vira uma tabela de mil linhas.
 // Paginar em vez de rolar por dentro: a página inteira já rola, e caixa com
@@ -227,52 +268,26 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
     </div>
 
     <template v-else-if="resumo">
-      <!-- Números do mês -->
-      <div class="p-3 sm:p-5 grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-3">
-        <AdminStatsCard
-          title="Vendido no mês"
-          :value="fmtBRL(resumo.vendido_mes)"
-          :subtitle="`${resumo.creditos_vendidos_mes} créditos · ${fmtBRL(resumo.vendido_total)} no total`"
-          icon="fa-cart-shopping"
-          color="emerald"
-        />
-        <AdminStatsCard
-          title="Estornado no mês"
-          :value="fmtBRL(resumo.estornado_mes)"
-          :subtitle="`${resumo.creditos_estornados_total} créditos estornados no total`"
-          icon="fa-rotate-left"
-          color="red"
-          :highlighted="resumo.estornado_mes > 0"
-        />
-        <AdminStatsCard
-          title="Líquido no mês"
-          :value="fmtBRL(resumo.liquido_mes)"
-          :subtitle="`Ticket médio ${fmtBRL(resumo.ticket_medio_credito)}/crédito`"
-          icon="fa-scale-balanced"
-          :color="resumo.liquido_mes >= 0 ? 'indigo' : 'orange'"
-        />
-        <AdminStatsCard
-          title="Passivo pago"
-          :value="fmtBRL(resumo.passivo_pago)"
-          :subtitle="`${resumo.saldo_pago} créditos com dinheiro atrás`"
-          icon="fa-vault"
-          color="emerald"
-        />
-        <AdminStatsCard
-          title="Cortesia a executar"
-          :value="fmtBRL(resumo.passivo_cortesia)"
-          :subtitle="`${resumo.saldo_cortesia} créditos sem dinheiro atrás`"
-          icon="fa-gift"
-          color="orange"
-          :highlighted="resumo.passivo_cortesia > resumo.passivo_pago"
-        />
-        <AdminStatsCard
-          title="Consumido no mês"
-          :value="resumo.creditos_consumidos_mes"
-          :subtitle="`${resumo.creditos_consumidos_total} no total · ${resumo.clientes_vencendo_7d} vencendo em 7d`"
-          icon="fa-fire"
-          color="purple"
-        />
+      <!-- Números do mês: faixa compacta em vez de seis cards.
+           Card com ícone grande roubava largura e truncava o valor. -->
+      <div class="m-3 sm:m-5 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 divide-x divide-y sm:divide-y-0 xl:divide-y-0 divide-slate-200 dark:divide-slate-800">
+          <div
+            v-for="m in metricas"
+            :key="m.rotulo"
+            class="px-3 py-2.5 min-w-0"
+            :class="m.alerta ? 'bg-orange-50/60 dark:bg-orange-500/[0.07]' : ''"
+          >
+            <p class="text-[10px] font-bold uppercase tracking-wider truncate flex items-center gap-1.5" :class="m.cls">
+              <i class="fa-solid text-[9px]" :class="m.icone" aria-hidden="true" />
+              {{ m.rotulo }}
+            </p>
+            <p class="text-lg sm:text-xl font-bold tabular-nums leading-tight mt-0.5 text-slate-900 dark:text-white truncate">
+              {{ m.valor }}
+            </p>
+            <p class="text-[10px] text-slate-400 dark:text-slate-500 truncate" :title="m.detalhe">{{ m.detalhe }}</p>
+          </div>
+        </div>
       </div>
 
       <!-- Avisos de controle -->

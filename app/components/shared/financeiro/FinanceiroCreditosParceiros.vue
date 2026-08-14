@@ -153,14 +153,14 @@ const metricas = computed(() => {
       detalhe: `Ticket médio ${fmtBRL(r.ticket_medio_credito)}/crédito`,
     },
     {
-      rotulo: 'Passivo pago', icone: 'fa-vault', cls: 'text-emerald-600 dark:text-emerald-400',
+      rotulo: 'Pago, ainda não usado', icone: 'fa-vault', cls: 'text-emerald-600 dark:text-emerald-400',
       valor: fmtBRL(r.passivo_pago),
-      detalhe: `${r.saldo_pago} créditos com dinheiro atrás`,
+      detalhe: `${r.saldo_pago} créditos comprados na carteira · você ainda deve entregar`,
     },
     {
-      rotulo: 'Cortesia a executar', icone: 'fa-gift', cls: 'text-orange-600 dark:text-orange-400',
+      rotulo: 'Cortesia não usada', icone: 'fa-gift', cls: 'text-orange-600 dark:text-orange-400',
       valor: fmtBRL(r.passivo_cortesia),
-      detalhe: `${r.saldo_cortesia} créditos sem dinheiro atrás`,
+      detalhe: `${r.saldo_cortesia} créditos dados na carteira · entrega sem receita`,
       alerta: r.passivo_cortesia > r.passivo_pago,
     },
     {
@@ -318,9 +318,10 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
       <p class="text-[11px] text-slate-400 dark:text-slate-500 flex items-start gap-1.5">
         <i class="fa-solid fa-circle-info text-[10px] mt-0.5 shrink-0" aria-hidden="true" />
         <span>
-          O saldo é separado por ordem de entrada (FIFO): crédito comprado sai antes do crédito
-          de cortesia. Entrada com valor lançado conta como <strong>pago</strong>; concessão,
-          migração e correção sem valor contam como <strong>cortesia</strong>, avaliada a preço de tabela.
+          Os dois cartões acima são o que ainda falta entregar: crédito que está na carteira do
+          parceiro e ainda não virou renovação. O <strong>pago</strong> é dinheiro que já entrou e
+          vira obrigação sua; a <strong>cortesia</strong> é serviço prometido sem receita nenhuma.
+          O saldo é separado por ordem de entrada, e a renovação gasta sempre o crédito mais antigo.
         </span>
       </p>
       </div>
@@ -339,8 +340,8 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                 <th :class="[th, 'text-right']">Cortesia</th>
                 <th :class="[th, 'text-right']">Consumidos</th>
                 <th :class="[th, 'text-right']">Saldo</th>
-                <th :class="[th, 'text-right']">Passivo pago</th>
-                <th :class="[th, 'text-right']">Cortesia a executar</th>
+                <th :class="[th, 'text-right']">Pago não usado</th>
+                <th :class="[th, 'text-right']">Cortesia não usada</th>
                 <th :class="[th, 'text-right']">Clientes</th>
                 <th :class="[th, 'text-right']">Último consumo</th>
               </tr>
@@ -369,12 +370,12 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                 <td :class="[td, 'text-right tabular-nums']" :title="`${p.saldo.mensal_30d} de 30 dias · ${p.saldo.anual_12m} de 12 meses`">
                   <span class="font-semibold text-purple-600 dark:text-purple-400">{{ p.saldo_total }}</span>
                 </td>
-                <td :class="[td, 'text-right tabular-nums']" :title="`${p.saldo_pago} créditos com dinheiro atrás`">
+                <td :class="[td, 'text-right tabular-nums']" :title="`${p.saldo_pago} créditos comprados ainda não usados`">
                   <span :class="p.passivo_pago > 0 ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-slate-400'">
                     {{ p.passivo_pago > 0 ? fmtBRL(p.passivo_pago) : '—' }}
                   </span>
                 </td>
-                <td :class="[td, 'text-right tabular-nums']" :title="`${p.saldo_cortesia} créditos sem dinheiro atrás`">
+                <td :class="[td, 'text-right tabular-nums']" :title="`${p.saldo_cortesia} créditos de cortesia ainda não usados`">
                   <span :class="p.passivo_cortesia > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-slate-400'">
                     {{ p.passivo_cortesia > 0 ? fmtBRL(p.passivo_cortesia) : '—' }}
                   </span>

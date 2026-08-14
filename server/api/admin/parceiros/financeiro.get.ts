@@ -79,10 +79,30 @@ export default defineEventHandler(async (event) => {
   interface Lote { origem: 'pago' | 'cortesia'; unitario: number; qtd: number }
   const lotesPorChave = new Map<string, Lote[]>()
 
+  /**
+   * Baixa `quantidade` da fila, começando pelos lotes da origem preferida (do
+   * mais antigo para o mais novo) e caindo no FIFO puro se não bastar — assim
+   * o saldo rateado nunca fica negativo.
+   */
+  function consumirDaFila(fila: Lote[], quantidade: number, preferencia: 'pago' | 'cortesia' | null) {
+    let restante = quantidade
+    const ordens = preferencia ? [preferencia, null] : [null]
+    for (const origem of ordens) {
+      for (const lote of fila) {
+        if (restante <= 0) break
+        if (origem && lote.origem !== origem) continue
+        const usa = Math.min(lote.qtd, restante)
+        lote.qtd -= usa
+        restante -= usa
+      }
+    }
+    return fila.filter(l => l.qtd > 0)
+  }
+
   // O ledger vem do mais novo para o mais velho; o FIFO precisa do contrário.
   for (const l of [...ledger].reverse()) {
     const chave = `${l.parceiro_id}:${l.tipo_credito}`
-    const fila = lotesPorChave.get(chave) ?? []
+    let fila = lotesPorChave.get(chave) ?? []
     const qtd = Number(l.quantidade)
 
     if (qtd > 0) {
@@ -96,14 +116,14 @@ export default defineEventHandler(async (event) => {
       })
     }
     else {
-      let restante = -qtd
-      while (restante > 0 && fila.length) {
-        const lote = fila[0]!
-        const usa = Math.min(lote.qtd, restante)
-        lote.qtd -= usa
-        restante -= usa
-        if (lote.qtd === 0) fila.shift()
-      }
+      // Correção negativa COM valor é estorno de compra: tira do lote pago.
+      // SEM valor é retirada de cortesia. Sem essa distinção o FIFO comia o
+      // crédito comprado ao desfazer uma cortesia, e o passivo pago sumia.
+      // Consumo de verdade (renovação) segue FIFO puro: gasta o mais antigo.
+      const preferencia = l.operacao === 'correcao'
+        ? (valor(l) > 0 ? 'pago' : 'cortesia')
+        : null
+      fila = consumirDaFila(fila, -qtd, preferencia)
     }
     lotesPorChave.set(chave, fila)
   }

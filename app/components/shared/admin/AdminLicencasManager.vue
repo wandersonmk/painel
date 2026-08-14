@@ -155,6 +155,14 @@ const percentualDesconto = computed(() =>
 
 const arred = (v: number) => Number(Math.max(0, v).toFixed(2))
 
+// Trocar de operação zera dinheiro: o valor digitado numa compra não pode
+// vazar escondido para uma correção — e agora o valor da correção decide de
+// qual lote o crédito sai no financeiro.
+watch(formOperacao, () => {
+  formDesconto.value = null
+  formValorPago.value = null
+})
+
 /**
  * Numa compra, o valor já vem preenchido pela tabela comercial — evita erro de
  * digitação. O admin pode sobrescrever se cobrou um valor diferente.
@@ -604,6 +612,24 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
             </p>
           </div>
         </template>
+
+        <!-- Correção negativa: o valor decide de onde o crédito sai no
+             financeiro. Com valor, estorna a compra (baixa do saldo pago);
+             sem valor, retira cortesia. -->
+        <div v-else-if="formOperacao === 'correcao' && (formQuantidade ?? 0) < 0">
+          <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+            Valor estornado <span class="font-medium normal-case text-slate-400">(opcional)</span>
+          </label>
+          <AppCurrencyInput
+            v-model="formValorPago"
+            placeholder="R$ 0,00"
+            class="w-full px-3 py-2 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded text-sm text-slate-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-purple-500"
+          />
+          <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+            <strong class="text-slate-700 dark:text-slate-200">Com valor:</strong> estorna uma compra paga — sai do passivo pago.
+            <strong class="text-slate-700 dark:text-slate-200">Sem valor:</strong> retira um crédito de cortesia.
+          </p>
+        </div>
 
         <div>
           <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">

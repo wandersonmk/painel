@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { LABEL_CREDITO } from '~/composables/useParceiroLicencas'
+import type { MovimentacaoCredito } from '~/composables/useParceiroLicencas'
 
 definePageMeta({
   middleware: ['auth', 'parceiro'],
@@ -27,9 +28,27 @@ const OPERACOES: Record<string, { label: string; icone: string; cls: string }> =
 
 const movimentacoesFiltradas = computed(() => {
   if (filtro.value === 'entradas') return movimentacoes.value.filter(m => m.quantidade > 0)
-  if (filtro.value === 'consumos') return movimentacoes.value.filter(m => m.quantidade < 0)
+  if (filtro.value === 'consumos') return movimentacoes.value.filter(m => m.operacao === 'consumo')
   return movimentacoes.value
 })
+
+function naturezaMovimentacao(m: MovimentacaoCredito) {
+  if (m.operacao === 'compra') return { label: 'Compra paga', cls: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' }
+  if (m.operacao === 'concessao_admin') return { label: 'Cortesia', cls: 'bg-sky-100 dark:bg-sky-500/15 text-sky-700 dark:text-sky-400' }
+  if (m.operacao === 'consumo') return { label: 'Consumo', cls: 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-400' }
+  if (m.operacao === 'migracao') return { label: m.valor_pago ? 'Saldo pago migrado' : 'Saldo inicial', cls: 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400' }
+  if (m.quantidade < 0) {
+    return m.valor_pago
+      ? { label: 'Estorno de compra', cls: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-400' }
+      : { label: 'Retirada sem reembolso', cls: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400' }
+  }
+  return { label: m.valor_pago ? 'Ajuste pago' : 'Ajuste sem cobrança', cls: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400' }
+}
+
+function valorUnitario(m: MovimentacaoCredito) {
+  if (!m.valor_pago || !m.quantidade) return null
+  return m.valor_pago / Math.abs(m.quantidade)
+}
 
 const precosMensais = computed(() => precos.value.filter(p => p.tipo_credito === 'mensal_30d'))
 const precosAnuais = computed(() => precos.value.filter(p => p.tipo_credito === 'anual_12m'))
@@ -280,10 +299,10 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
             <thead class="sticky top-0 z-10">
               <tr class="border-b border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-slate-900">
                 <th class="text-left px-3 sm:px-5 py-3 text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">Movimentação</th>
-                <th class="hidden md:table-cell text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Cliente</th>
-                <th class="hidden lg:table-cell text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Nova validade</th>
+                <th class="hidden md:table-cell text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Origem</th>
                 <th class="hidden sm:table-cell text-center px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Tipo</th>
                 <th class="text-right px-3 sm:px-5 py-3 text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">Qtd.</th>
+                <th class="text-right px-3 sm:px-5 py-3 text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">Valor</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 dark:divide-white/5">
@@ -299,7 +318,16 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
                         {{ OPERACOES[m.operacao]?.label ?? m.operacao }}
                       </p>
                       <p class="text-[11px] text-slate-400 tabular-nums">{{ fmtDataHora(m.created_at) }}</p>
-                      <p v-if="m.empresa_nome" class="md:hidden text-[11px] text-slate-500 truncate">{{ m.empresa_nome }}</p>
+                      <!-- Cliente e validade só pertencem ao consumo. Entradas e
+                           ajustes deixam de ocupar duas colunas cheias de traços. -->
+                      <p v-if="m.operacao === 'consumo' && m.empresa_nome" class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        {{ m.empresa_nome }}
+                        <template v-if="m.nova_validade"> · válido até {{ fmtData(m.nova_validade) }}</template>
+                      </p>
+                      <span
+                        class="md:hidden inline-flex mt-1 px-1.5 py-0.5 rounded text-[9px] font-bold whitespace-nowrap"
+                        :class="naturezaMovimentacao(m).cls"
+                      >{{ naturezaMovimentacao(m).label }}</span>
                       <!-- Motivo do lançamento: correção/estorno sem justificativa
                            visível vira número inexplicado no extrato do parceiro. -->
                       <p v-if="m.descricao" class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5 whitespace-normal">
@@ -308,11 +336,10 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
                     </div>
                   </div>
                 </td>
-                <td class="hidden md:table-cell px-5 py-3 text-xs text-slate-600 dark:text-slate-400 truncate max-w-[200px]">
-                  {{ m.empresa_nome ?? '—' }}
-                </td>
-                <td class="hidden lg:table-cell px-5 py-3 text-xs text-slate-600 dark:text-slate-400 tabular-nums">
-                  {{ fmtData(m.nova_validade) }}
+                <td class="hidden md:table-cell px-5 py-3">
+                  <span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap" :class="naturezaMovimentacao(m).cls">
+                    {{ naturezaMovimentacao(m).label }}
+                  </span>
                 </td>
                 <td class="hidden sm:table-cell px-5 py-3 text-center">
                   <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 whitespace-nowrap">
@@ -324,6 +351,18 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
                     class="font-bold tabular-nums text-sm"
                     :class="m.quantidade > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-600 dark:text-slate-300'"
                   >{{ m.quantidade > 0 ? '+' : '' }}{{ m.quantidade }}</span>
+                </td>
+                <td class="px-3 sm:px-5 py-3 text-right whitespace-nowrap">
+                  <template v-if="m.valor_pago !== null && m.valor_pago > 0">
+                    <p class="font-bold tabular-nums text-sm" :class="m.quantidade < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-800 dark:text-white'">
+                      {{ m.quantidade < 0 ? '− ' : '' }}{{ fmtBRL(m.valor_pago) }}
+                    </p>
+                    <p v-if="Math.abs(m.quantidade) > 1" class="text-[10px] text-slate-400 tabular-nums">
+                      {{ fmtBRL(valorUnitario(m)) }}/crédito
+                    </p>
+                  </template>
+                  <span v-else-if="m.operacao === 'concessao_admin'" class="text-xs font-semibold text-sky-600 dark:text-sky-400">Cortesia</span>
+                  <span v-else class="text-xs text-slate-400">—</span>
                 </td>
               </tr>
             </tbody>

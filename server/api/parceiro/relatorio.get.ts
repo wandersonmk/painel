@@ -7,15 +7,14 @@ import { failPublic } from '~~/server/utils/apiError'
  *
  * A conta que ele quer fazer é simples e ninguém fazia por ele:
  *   receita  = o que cobra de cada cliente × meses vendidos na renovação
- *   custo    = o crédito gasto nessa renovação, ao preço que ele pagou
+ *   custo    = o lote de crédito realmente gasto nessa renovação (FIFO)
  *   lucro    = a diferença
  *
  * Duas honestidades que a tela precisa dizer:
  * 1. A receita usa o valor ATUAL cadastrado do cliente. Se ele mudou o preço
  *    depois da renovação, o passado é recalculado pelo preço novo.
- * 2. O custo do crédito é o preço médio que o parceiro pagou naquele tipo.
- *    Crédito de cortesia custou zero e entra como zero — o lucro fica maior
- *    de propósito, porque foi isso que aconteceu de fato.
+ * 2. Compra de créditos é movimento de caixa/estoque, não custo de uma venda.
+ *    O custo entra no resultado quando o lote é consumido. Cortesia custa zero.
  */
 export default defineEventHandler(async (event) => {
   const { parceiro } = await requireParceiroPrepago(event)
@@ -35,6 +34,24 @@ export default defineEventHandler(async (event) => {
 
   const supabase = getServiceClient()
 
+  // O Data API pode limitar cada resposta a 1.000 linhas. Para reconstruir o
+  // custo FIFO sem perder lotes antigos, o ledger é lido em páginas ordenadas.
+  async function carregarLedger() {
+    const pagina = 1_000
+    const dados: any[] = []
+    for (let inicio = 0; ; inicio += pagina) {
+      const resposta = await supabase.from('parceiro_creditos_ledger')
+        .select('id, tipo_credito, quantidade, operacao, valor_pago, renovacao_id, created_at')
+        .eq('parceiro_id', parceiro.id)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(inicio, inicio + pagina - 1)
+      if (resposta.error) return { data: dados, error: resposta.error }
+      dados.push(...(resposta.data ?? []))
+      if ((resposta.data?.length ?? 0) < pagina) return { data: dados, error: null }
+    }
+  }
+
   const [renovRes, ledgerRes, vinculosRes, precosRes] = await Promise.all([
     supabase.from('parceiro_renovacoes')
       .select('id, empresa_id, empresa_nome, tipo_credito, origem, consumiu_credito, vencimento_novo, executado_em')
@@ -43,12 +60,7 @@ export default defineEventHandler(async (event) => {
       .gte('executado_em', de.toISOString())
       .lte('executado_em', ate.toISOString())
       .order('executado_em', { ascending: false }),
-    // Ledger inteiro: as compras do período são o gasto de caixa, as compras
-    // de todas as épocas dão o preço médio por crédito, e o estorno de compra
-    // devolve dinheiro, então abate do gasto.
-    supabase.from('parceiro_creditos_ledger')
-      .select('tipo_credito, quantidade, operacao, valor_pago, created_at')
-      .eq('parceiro_id', parceiro.id),
+    carregarLedger(),
     supabase.from('parceiro_empresas')
       .select('empresa_id, cobranca_agzap, empresas ( nome, subscription_price, subscription_price_anual )')
       .eq('parceiro_id', parceiro.id)
@@ -58,7 +70,8 @@ export default defineEventHandler(async (event) => {
       .eq('ativo', true)
       .order('tipo_credito').order('quantidade_min'),
   ])
-  if (renovRes.error) return failPublic(renovRes.error, 'parceiro/relatorio', 'Não foi possível montar o relatório.')
+  const erroConsulta = renovRes.error || ledgerRes.error || vinculosRes.error || precosRes.error
+  if (erroConsulta) return failPublic(erroConsulta, 'parceiro/relatorio', 'Não foi possível montar o relatório.')
 
   const renovacoes = (renovRes.data ?? []) as any[]
   const ledger = (ledgerRes.data ?? []) as any[]
@@ -101,7 +114,7 @@ export default defineEventHandler(async (event) => {
     return { valor: precoMensal * 12, origem: 'mensal_x12' as const }
   }
 
-  // Custo por crédito: média do que ele pagou; sem compra, cai na tabela.
+  // Fallback apenas para registros legados sem consumo ligado à renovação.
   const custoPorTipo = (tipo: string): number => {
     const doTipo = compras.filter(c => c.tipo_credito === tipo && Number(c.quantidade) > 0)
     const qtd = doTipo.reduce((acc, c) => acc + Number(c.quantidade), 0)
@@ -113,6 +126,64 @@ export default defineEventHandler(async (event) => {
   const custoMensal = custoPorTipo('mensal_30d')
   const custoAnual = custoPorTipo('anual_12m')
 
+  interface LoteCredito { qtd: number; unitario: number; origem: 'pago' | 'cortesia' }
+  const lotesPorTipo = new Map<string, LoteCredito[]>()
+  const custoPorRenovacao = new Map<string, { custo: number; cortesia: boolean }>()
+
+  /** Consome lotes antigos primeiro e devolve o custo real da saída. */
+  function consumir(fila: LoteCredito[], quantidade: number, preferencia: LoteCredito['origem'] | null) {
+    let restante = quantidade
+    let custo = 0
+    let cortesia = false
+    const ordens: Array<LoteCredito['origem'] | null> = preferencia ? [preferencia, null] : [null]
+    for (const origem of ordens) {
+      for (const lote of fila) {
+        if (restante <= 0) break
+        if (origem && lote.origem !== origem) continue
+        const usa = Math.min(lote.qtd, restante)
+        if (usa <= 0) continue
+        lote.qtd -= usa
+        restante -= usa
+        custo += usa * lote.unitario
+        if (lote.origem === 'cortesia') cortesia = true
+      }
+    }
+    return { fila: fila.filter(l => l.qtd > 0), custo, cortesia, semOrigem: restante }
+  }
+
+  // Reconstrói o estoque por lote. Compra tem o custo efetivamente pago;
+  // concessão, migração e ajuste sem valor são cortesia com custo zero.
+  for (const movimento of ledger) {
+    const tipo = String(movimento.tipo_credito)
+    const qtd = Number(movimento.quantidade) || 0
+    let fila = lotesPorTipo.get(tipo) ?? []
+    if (qtd > 0) {
+      const totalPago = Number(movimento.valor_pago) || 0
+      fila.push({
+        qtd,
+        unitario: totalPago > 0 ? totalPago / qtd : 0,
+        origem: totalPago > 0 ? 'pago' : 'cortesia',
+      })
+    }
+    else if (qtd < 0) {
+      const preferencia = movimento.operacao === 'correcao'
+        ? ((Number(movimento.valor_pago) || 0) > 0 ? 'pago' : null)
+        : null
+      const saida = consumir(fila, -qtd, preferencia)
+      fila = saida.fila
+      if (movimento.operacao === 'consumo' && movimento.renovacao_id) {
+        const fallback = tipo === 'anual_12m' ? custoAnual : custoMensal
+        custoPorRenovacao.set(movimento.renovacao_id, {
+          // Saldo sem origem é legado inconsistente; estimar é mais honesto do
+          // que declarar custo zero e inflar o lucro.
+          custo: saida.custo + saida.semOrigem * fallback,
+          cortesia: saida.cortesia,
+        })
+      }
+    }
+    lotesPorTipo.set(tipo, fila)
+  }
+
   const MESES: Record<string, number> = { mensal_30d: 1, anual_12m: 12 }
 
   const linhas = renovacoes.map((r) => {
@@ -122,7 +193,10 @@ export default defineEventHandler(async (event) => {
     // Renovação da Agzap não é venda do parceiro nem custo dele: entra na
     // lista para explicar o vencimento, mas com receita e custo zerados.
     // Sem isso, um ajuste administrativo de 1 dia virava um mês de receita.
-    const custo = !consumiu ? 0 : (r.tipo_credito === 'anual_12m' ? custoAnual : custoMensal)
+    const custoRegistrado = custoPorRenovacao.get(r.id)
+    const custo = !consumiu
+      ? 0
+      : (custoRegistrado?.custo ?? (r.tipo_credito === 'anual_12m' ? custoAnual : custoMensal))
     const anual = r.tipo_credito === 'anual_12m' ? receitaAnual(r.empresa_id, preco) : null
     const receita = !consumiu ? 0 : (anual ? anual.valor : preco * meses)
     return {
@@ -140,6 +214,7 @@ export default defineEventHandler(async (event) => {
       preco_anual_origem: anual?.origem ?? null,
       receita,
       custo,
+      credito_cortesia: consumiu && custoRegistrado?.cortesia === true && custo === 0,
       resultado: receita - custo,
       vencimento_novo: r.vencimento_novo,
     }
@@ -190,7 +265,9 @@ export default defineEventHandler(async (event) => {
   const estornoValor = estornosNoPeriodo.reduce((acc, l) => acc + (Number(l.valor_pago) || 0), 0)
 
   const gastoCompras = compraValor - estornoValor
-  const lucroBruto = soma(l => l.receita)
+  const receitaBruta = soma(l => l.receita)
+  const custoCreditosUsados = soma(l => l.custo)
+  const lucroLiquido = receitaBruta - custoCreditosUsados
 
   const semPreco = porCliente.filter(c => c.preco_mensal <= 0).length
 
@@ -199,21 +276,21 @@ export default defineEventHandler(async (event) => {
     data: {
       periodo: { de: de.toISOString(), ate: ate.toISOString() },
       resumo: {
-        lucro_bruto: lucroBruto,
-        // Gasto de caixa com a Agzap no período: é o que entra na conta do
-        // lucro líquido, já abatido de estorno de compra.
+        receita_bruta: receitaBruta,
+        // Compatibilidade temporária com consumidores antigos da API. Na tela
+        // o nome correto deste valor é receita bruta, não lucro.
+        lucro_bruto: receitaBruta,
+        // Movimento de caixa/estoque do período; não é descontado novamente do
+        // lucro porque cada crédito entra pelo custo ao ser consumido.
         gasto_compras: gastoCompras,
         compras_valor: compraValor,
         compras_creditos: compraCreditos,
         estornos_valor: estornoValor,
-        // Visão paralela: quanto valeu o crédito consumido nas renovações.
-        // Cortesia entra como zero — não custou nada.
-        custo_creditos_usados: soma(l => l.custo),
+        custo_creditos_usados: custoCreditosUsados,
         creditos_usados: linhas.filter(l => l.consumiu_credito).length,
-        creditos_cortesia_usados: linhas.filter(l => l.consumiu_credito && l.custo === 0).length,
-        // Lucro líquido = bruto − o que saiu do bolso comprando crédito.
-        lucro_liquido: lucroBruto - gastoCompras,
-        margem: lucroBruto > 0 ? ((lucroBruto - gastoCompras) / lucroBruto) * 100 : 0,
+        creditos_cortesia_usados: linhas.filter(l => l.credito_cortesia).length,
+        lucro_liquido: lucroLiquido,
+        margem: receitaBruta > 0 ? (lucroLiquido / receitaBruta) * 100 : 0,
         renovacoes: linhas.filter(l => l.consumiu_credito).length,
         renovacoes_agzap: linhas.filter(l => !l.consumiu_credito).length,
         meses_vendidos: soma(l => l.meses),

@@ -140,20 +140,22 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
                   </div>
                   <div class="min-w-0">
                     <p class="text-sm font-medium text-slate-800 dark:text-white truncate">{{ c.empresa_nome }}</p>
-                    <div class="flex items-center gap-1.5 mt-0.5">
-                      <span v-if="c.responsavel" class="text-xs text-slate-500 truncate max-w-[140px]">{{ c.responsavel }}</span>
-                      <span v-if="c.telefone" class="text-xs text-slate-500 font-mono">{{ formatPhone(c.telefone) }}</span>
-                      <a
-                        v-if="whatsappLink(c.telefone)"
-                        :href="whatsappLink(c.telefone)!"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500 hover:text-white transition-colors"
-                        :title="`Abrir WhatsApp de ${c.empresa_nome}`"
-                        aria-label="Abrir WhatsApp"
-                      >
-                        <i class="fa-brands fa-whatsapp text-[10px]" aria-hidden="true" />
-                      </a>
+                    <div class="mt-0.5 space-y-0.5">
+                      <p v-if="c.responsavel" class="text-xs text-slate-500 truncate max-w-[220px]">{{ c.responsavel }}</p>
+                      <div v-if="c.telefone" class="flex items-center gap-1.5">
+                        <span class="text-xs text-slate-500 tabular-nums whitespace-nowrap">{{ formatPhoneSemDdiBrasil(c.telefone) }}</span>
+                        <a
+                          v-if="whatsappLink(c.telefone)"
+                          :href="whatsappLink(c.telefone)!"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500 hover:text-white transition-colors shrink-0"
+                          :title="`Abrir WhatsApp de ${c.empresa_nome}`"
+                          aria-label="Abrir WhatsApp"
+                        >
+                          <i class="fa-brands fa-whatsapp text-[10px]" aria-hidden="true" />
+                        </a>
+                      </div>
                     </div>
                     <!-- Mobile -->
                     <div class="sm:hidden mt-1 flex items-center gap-1.5 flex-wrap">

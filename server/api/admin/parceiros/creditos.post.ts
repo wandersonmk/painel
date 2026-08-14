@@ -20,6 +20,7 @@ export default defineEventHandler(async (event) => {
     operacao?: string
     referencia?: string
     valorPago?: number | null
+    houveReembolso?: boolean
     descricao?: string
     idempotencyKey?: string
   }>(event)
@@ -47,6 +48,17 @@ export default defineEventHandler(async (event) => {
     : Number(body.valorPago)
   if (valorPago !== null && (!Number.isFinite(valorPago) || valorPago < 0 || valorPago > 1_000_000)) {
     throw createError({ statusCode: 400, statusMessage: 'Valor pago inválido' })
+  }
+  const retirada = operacao === 'correcao' && quantidade < 0
+  const houveReembolso = body?.houveReembolso === true
+  if (retirada && houveReembolso && !(Number(valorPago) > 0)) {
+    throw createError({ statusCode: 400, statusMessage: 'Informe o valor total devolvido ao parceiro' })
+  }
+  if (retirada && !houveReembolso && valorPago !== null) {
+    throw createError({ statusCode: 400, statusMessage: 'Retirada sem reembolso não pode alterar o financeiro' })
+  }
+  if (operacao === 'correcao' && quantidade > 0 && valorPago !== null) {
+    throw createError({ statusCode: 400, statusMessage: 'Ajuste positivo não pode registrar pagamento' })
   }
   if (operacao === 'correcao' && !String(body?.descricao ?? '').trim()) {
     throw createError({ statusCode: 400, statusMessage: 'Correção exige uma justificativa' })

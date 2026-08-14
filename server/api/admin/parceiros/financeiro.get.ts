@@ -20,20 +20,55 @@ export default defineEventHandler(async (event) => {
   await requireSuperAdmin(event)
   const supabase = getServiceClient()
 
+  const query = getQuery(event)
+  const parseData = (valor: unknown, padrao: Date): Date => {
+    const data = new Date(String(valor ?? ''))
+    return Number.isNaN(data.getTime()) ? padrao : data
+  }
+  const agoraData = new Date()
+  const trintaDias = new Date(agoraData.getTime() - 30 * DIA_MS)
+  const de = parseData(query.de, trintaDias)
+  const ate = parseData(query.ate, agoraData)
+  if (de > ate) {
+    throw createError({ statusCode: 400, statusMessage: 'Data inicial maior que a final' })
+  }
+  const noPeriodo = (iso: string | null) => {
+    if (!iso) return false
+    const tempo = new Date(iso).getTime()
+    return tempo >= de.getTime() && tempo <= ate.getTime()
+  }
+
+  // O FIFO e a posição atual dependem do histórico inteiro. Paginar evita que
+  // o limite do Data API corte os lotes antigos silenciosamente.
+  async function carregarTodasAsPaginas(tabela: 'parceiro_creditos_ledger' | 'parceiro_renovacoes', colunas: string, ordem: string) {
+    const tamanho = 1_000
+    const dados: any[] = []
+    for (let inicio = 0; ; inicio += tamanho) {
+      let consulta = supabase.from(tabela).select(colunas)
+        .order(ordem, { ascending: false })
+        .order('id', { ascending: false })
+        .range(inicio, inicio + tamanho - 1)
+      if (tabela === 'parceiro_renovacoes') consulta = consulta.eq('status', 'concluida')
+      const resposta = await consulta
+      if (resposta.error) return { data: dados, error: resposta.error }
+      dados.push(...(resposta.data ?? []))
+      if ((resposta.data?.length ?? 0) < tamanho) return { data: dados, error: null }
+    }
+  }
+
   const [parceirosRes, ledgerRes, saldosRes, renovacoesRes, vinculosRes, precosRes] = await Promise.all([
     supabase.from('parceiros').select('id, nome, email, ativo, modelo_negocio'),
-    // Sem limite artificial: o financeiro precisa do total do ano, não dos
-    // últimos N lançamentos. O ledger cresce devagar (1 linha por operação).
-    supabase.from('parceiro_creditos_ledger')
-      .select('id, parceiro_id, tipo_credito, quantidade, operacao, empresa_id, empresa_nome, renovacao_id, referencia, valor_pago, descricao, criado_por_papel, created_at')
-      .order('created_at', { ascending: false })
-      .limit(2000),
+    carregarTodasAsPaginas(
+      'parceiro_creditos_ledger',
+      'id, parceiro_id, tipo_credito, quantidade, operacao, empresa_id, empresa_nome, renovacao_id, referencia, valor_pago, descricao, criado_por_papel, created_at',
+      'created_at',
+    ),
     supabase.from('parceiro_creditos_saldo').select('parceiro_id, tipo_credito, saldo'),
-    supabase.from('parceiro_renovacoes')
-      .select('id, parceiro_id, empresa_id, empresa_nome, tipo_credito, origem, consumiu_credito, vencimento_anterior, vencimento_novo, status, executado_em')
-      .eq('status', 'concluida')
-      .order('executado_em', { ascending: false })
-      .limit(1000),
+    carregarTodasAsPaginas(
+      'parceiro_renovacoes',
+      'id, parceiro_id, empresa_id, empresa_nome, tipo_credito, origem, consumiu_credito, vencimento_anterior, vencimento_novo, status, executado_em',
+      'executado_em',
+    ),
     supabase.from('parceiro_empresas')
       .select('parceiro_id, empresa_id, ativo, cobranca_agzap, bloqueio_origem, empresas ( nome, ativo, subscription_renews_at, trial_ends_at )')
       .eq('ativo', true),
@@ -43,8 +78,9 @@ export default defineEventHandler(async (event) => {
       .order('tipo_credito').order('quantidade_min'),
   ])
 
-  if (parceirosRes.error) return failPublic(parceirosRes.error, 'admin/parceiros/financeiro', 'Não foi possível carregar o financeiro de parceiros.')
-  if (ledgerRes.error) return failPublic(ledgerRes.error, 'admin/parceiros/financeiro', 'Não foi possível carregar o financeiro de parceiros.')
+  const erroConsulta = parceirosRes.error || ledgerRes.error || saldosRes.error
+    || renovacoesRes.error || vinculosRes.error || precosRes.error
+  if (erroConsulta) return failPublic(erroConsulta, 'admin/parceiros/financeiro', 'Não foi possível carregar o financeiro de parceiros.')
 
   const parceiros = (parceirosRes.data ?? []) as any[]
   const ledger = (ledgerRes.data ?? []) as any[]
@@ -54,13 +90,7 @@ export default defineEventHandler(async (event) => {
 
   const nomePorParceiro = new Map<string, string>(parceiros.map(p => [p.id, p.nome]))
 
-  const agora = Date.now()
-  const inicioMes = new Date()
-  inicioMes.setDate(1)
-  inicioMes.setHours(0, 0, 0, 0)
-  const inicioMesMs = inicioMes.getTime()
-
-  const noMes = (iso: string | null) => !!iso && new Date(iso).getTime() >= inicioMesMs
+  const agora = agoraData.getTime()
   const valor = (l: any) => Number(l.valor_pago ?? 0) || 0
 
   // ───────── Preço de tabela (fallback do passivo quando não há compra) ─────────
@@ -116,12 +146,11 @@ export default defineEventHandler(async (event) => {
       })
     }
     else {
-      // Correção negativa COM valor é estorno de compra: tira do lote pago.
-      // SEM valor é retirada de cortesia. Sem essa distinção o FIFO comia o
-      // crédito comprado ao desfazer uma cortesia, e o passivo pago sumia.
-      // Consumo de verdade (renovação) segue FIFO puro: gasta o mais antigo.
+      // Correção negativa COM valor é reembolso: tira primeiro do lote pago.
+      // Sem reembolso, a retirada apenas baixa o saldo seguindo o FIFO real.
+      // Consumo de verdade (renovação) também gasta o mais antigo.
       const preferencia = l.operacao === 'correcao'
-        ? (valor(l) > 0 ? 'pago' : 'cortesia')
+        ? (valor(l) > 0 ? 'pago' : null)
         : null
       fila = consumirDaFila(fila, -qtd, preferencia)
     }
@@ -181,13 +210,23 @@ export default defineEventHandler(async (event) => {
     criado_por_papel: l.criado_por_papel,
   })
 
-  const vendas = ledger.filter(l => l.operacao === 'compra').map(enriquecer)
-  const concessoes = ledger.filter(l => l.operacao === 'concessao_admin').map(enriquecer)
-  const migracoes = ledger.filter(l => l.operacao === 'migracao').map(enriquecer)
-  const correcoes = ledger.filter(l => l.operacao === 'correcao').map(enriquecer)
-  const estornos = correcoes.filter(l => l.quantidade < 0)
-  const ajustesPositivos = correcoes.filter(l => l.quantidade > 0)
-  const consumos = ledger.filter(l => l.operacao === 'consumo').map(enriquecer)
+  const vendasTodas = ledger.filter(l => l.operacao === 'compra').map(enriquecer)
+  const concessoesTodas = ledger.filter(l => l.operacao === 'concessao_admin').map(enriquecer)
+  const migracoesTodas = ledger.filter(l => l.operacao === 'migracao').map(enriquecer)
+  const correcoesTodas = ledger.filter(l => l.operacao === 'correcao').map(enriquecer)
+  const retiradasTodas = correcoesTodas.filter(l => l.quantidade < 0)
+  const estornosFinanceirosTodos = retiradasTodas.filter(l => valor(l) > 0)
+  const ajustesPositivosTodos = correcoesTodas.filter(l => l.quantidade > 0)
+  const consumosTodos = ledger.filter(l => l.operacao === 'consumo').map(enriquecer)
+
+  // Listas devolvidas à tela e métricas de fluxo obedecem ao período escolhido.
+  const vendas = vendasTodas.filter(l => noPeriodo(l.data))
+  const concessoes = concessoesTodas.filter(l => noPeriodo(l.data))
+  const migracoes = migracoesTodas.filter(l => noPeriodo(l.data))
+  const retiradas = retiradasTodas.filter(l => noPeriodo(l.data))
+  const estornosFinanceiros = estornosFinanceirosTodos.filter(l => noPeriodo(l.data))
+  const ajustesPositivos = ajustesPositivosTodos.filter(l => noPeriodo(l.data))
+  const consumos = consumosTodos.filter(l => noPeriodo(l.data))
 
   // Cada consumo aponta para a SUA renovação (ledger.renovacao_id). Casar por
   // parceiro+empresa faria todas as linhas do cliente herdarem a data da
@@ -210,7 +249,8 @@ export default defineEventHandler(async (event) => {
   const porParceiro = parceiros.map((p) => {
     const doP = (ls: any[]) => ls.filter(l => l.parceiro_id === p.id)
     const vendasP = doP(vendas)
-    const estornosP = doP(estornos)
+    const estornosP = doP(estornosFinanceiros)
+    const retiradasP = doP(retiradas)
     const ajustesP = doP(ajustesPositivos)
     const concessoesP = doP(concessoes)
     const consumosP = doP(consumos)
@@ -238,11 +278,9 @@ export default defineEventHandler(async (event) => {
       ativo: p.ativo,
       modelo_negocio: p.modelo_negocio,
       // Dinheiro
-      vendido_total: soma(vendasP, valor),
-      vendido_mes: soma(vendasP.filter(l => noMes(l.data)), valor),
-      estornado_total: soma(estornosP, valor),
-      estornado_mes: soma(estornosP.filter(l => noMes(l.data)), valor),
-      liquido_total: soma(vendasP, valor) - soma(estornosP, valor),
+      vendido_periodo: soma(vendasP, valor),
+      estornado_periodo: soma(estornosP, valor),
+      liquido_periodo: soma(vendasP, valor) - soma(estornosP, valor),
       // Passivo pago = dinheiro que entrou e ainda não virou entrega.
       // Cortesia = serviço prometido sem nenhum dinheiro atrás. São coisas
       // diferentes; somar as duas num número só engana.
@@ -252,12 +290,12 @@ export default defineEventHandler(async (event) => {
       saldo_pago: rateioMensal.qtdPago + rateioAnual.qtdPago,
       saldo_cortesia: rateioMensal.qtdCortesia + rateioAnual.qtdCortesia,
       // Créditos
-      creditos_comprados: soma(vendasP, l => l.quantidade),
-      creditos_concedidos: soma(concessoesP, l => l.quantidade),
-      creditos_estornados: abs(soma(estornosP, l => l.quantidade)),
-      creditos_ajustados: soma(ajustesP, l => l.quantidade),
-      creditos_consumidos: abs(soma(consumosP, l => l.quantidade)),
-      consumidos_mes: abs(soma(consumosP.filter(l => noMes(l.data)), l => l.quantidade)),
+      creditos_comprados_periodo: soma(vendasP, l => l.quantidade),
+      creditos_concedidos_periodo: soma(concessoesP, l => l.quantidade),
+      creditos_estornados_periodo: abs(soma(estornosP, l => l.quantidade)),
+      creditos_retirados_periodo: abs(soma(retiradasP, l => l.quantidade)),
+      creditos_ajustados_periodo: soma(ajustesP, l => l.quantidade),
+      creditos_consumidos_periodo: abs(soma(consumosP, l => l.quantidade)),
       saldo,
       saldo_total: saldo.mensal_30d + saldo.anual_12m,
       // Carteira
@@ -270,7 +308,7 @@ export default defineEventHandler(async (event) => {
         const d = diasAte(vencimentoDe(v))
         return d !== null && d < 0
       }).length,
-      ultimo_consumo_em: consumosP[0]?.data ?? null,
+      ultimo_consumo_periodo_em: consumosP[0]?.data ?? null,
     }
   })
 
@@ -307,20 +345,16 @@ export default defineEventHandler(async (event) => {
 
   // ───────── Resumo geral ─────────
   const resumo = {
-    vendido_mes: soma(vendas.filter(l => noMes(l.data)), valor),
-    vendido_total: soma(vendas, valor),
-    estornado_mes: soma(estornos.filter(l => noMes(l.data)), valor),
-    estornado_total: soma(estornos, valor),
-    liquido_mes: soma(vendas.filter(l => noMes(l.data)), valor) - soma(estornos.filter(l => noMes(l.data)), valor),
-    liquido_total: soma(vendas, valor) - soma(estornos, valor),
-    creditos_vendidos_mes: soma(vendas.filter(l => noMes(l.data)), l => l.quantidade),
-    creditos_vendidos_total: soma(vendas, l => l.quantidade),
-    creditos_estornados_total: abs(soma(estornos, l => l.quantidade)),
-    creditos_concedidos_total: soma(concessoes, l => l.quantidade),
+    vendido_periodo: soma(vendas, valor),
+    estornado_periodo: soma(estornosFinanceiros, valor),
+    liquido_periodo: soma(vendas, valor) - soma(estornosFinanceiros, valor),
+    creditos_vendidos_periodo: soma(vendas, l => l.quantidade),
+    creditos_estornados_periodo: abs(soma(estornosFinanceiros, l => l.quantidade)),
+    creditos_retirados_periodo: abs(soma(retiradas, l => l.quantidade)),
+    creditos_concedidos_periodo: soma(concessoes, l => l.quantidade),
     // Cortesia tem custo: o que foi dado de graça, avaliado a preço de tabela.
-    concedido_valor_tabela: soma(concessoes, l => l.quantidade * precoTabela(l.tipo_credito)),
-    creditos_consumidos_mes: abs(soma(consumos.filter(l => noMes(l.data)), l => l.quantidade)),
-    creditos_consumidos_total: abs(soma(consumos, l => l.quantidade)),
+    concedido_valor_tabela_periodo: soma(concessoes, l => l.quantidade * precoTabela(l.tipo_credito)),
+    creditos_consumidos_periodo: abs(soma(consumos, l => l.quantidade)),
     ticket_medio_credito: soma(vendas, l => l.quantidade) > 0
       ? soma(vendas, valor) / soma(vendas, l => l.quantidade)
       : 0,
@@ -336,16 +370,19 @@ export default defineEventHandler(async (event) => {
     clientes_vencidos: vencendo.filter(c => (c.dias_restantes ?? 0) < 0).length,
     // Sinal de alerta operacional, não acusação: renovação sem consumo de
     // crédito é sempre a Agzap pagando a conta no lugar do parceiro.
-    renovacoes_sem_credito_mes: renovacoes.filter(r => !r.consumiu_credito && noMes(r.executado_em)).length,
+    renovacoes_sem_credito_periodo: renovacoes.filter(r => !r.consumiu_credito && noPeriodo(r.executado_em)).length,
   }
 
   return {
     success: true,
     data: {
+      periodo: { de: de.toISOString(), ate: ate.toISOString() },
       resumo,
-      porParceiro: porParceiro.sort((a, b) => b.liquido_total - a.liquido_total),
+      porParceiro: porParceiro.sort((a, b) => b.liquido_periodo - a.liquido_periodo),
       vendas,
-      estornos,
+      // Mantém o nome do contrato da API; a lista contém retiradas com e sem
+      // reembolso, enquanto as métricas financeiras usam apenas reembolsos.
+      estornos: retiradas,
       ajustesPositivos,
       concessoes,
       migracoes,

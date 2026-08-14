@@ -110,6 +110,7 @@ const formQuantidade = ref<number | null>(null)
 const formReferencia = ref('')
 const formDesconto = ref<number | null>(null)
 const formValorPago = ref<number | null>(null)
+const formHouveReembolso = ref(false)
 const formDescricao = ref('')
 const salvandoCredito = ref(false)
 const idemCredito = ref('')
@@ -129,6 +130,7 @@ function abrirCreditos(p: ParceiroLicencas) {
   formReferencia.value = ''
   formDesconto.value = null
   formValorPago.value = null
+  formHouveReembolso.value = false
   formDescricao.value = ''
   idemCredito.value = novaChave()
   showCreditos.value = true
@@ -161,6 +163,17 @@ const arred = (v: number) => Number(Math.max(0, v).toFixed(2))
 watch(formOperacao, () => {
   formDesconto.value = null
   formValorPago.value = null
+  formHouveReembolso.value = false
+})
+
+watch([formQuantidade, formOperacao], ([quantidade, operacao]) => {
+  if (operacao === 'correcao' && Number(quantidade) < 0) return
+  formHouveReembolso.value = false
+  if (operacao !== 'compra') formValorPago.value = null
+})
+
+watch(formHouveReembolso, (houveReembolso) => {
+  if (!houveReembolso && formOperacao.value === 'correcao') formValorPago.value = null
 })
 
 /**
@@ -200,6 +213,7 @@ const podeSalvarCredito = computed(() => {
   if (!q || !Number.isInteger(q) || q === 0) return false
   if (q < 0 && formOperacao.value !== 'correcao') return false
   if (formOperacao.value === 'correcao' && !formDescricao.value.trim()) return false
+  if (formOperacao.value === 'correcao' && q < 0 && formHouveReembolso.value && !(Number(formValorPago.value) > 0)) return false
   return true
 })
 
@@ -228,7 +242,10 @@ async function salvarCredito() {
           quantidade: formQuantidade.value,
           operacao: formOperacao.value,
           referencia: formReferencia.value,
-          valorPago: formValorPago.value,
+          valorPago: formOperacao.value === 'correcao' && !formHouveReembolso.value
+            ? null
+            : formValorPago.value,
+          houveReembolso: formOperacao.value === 'correcao' && formHouveReembolso.value,
           descricao: descricaoFinal,
           idempotencyKey: idemCredito.value,
         },
@@ -645,22 +662,33 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
           </div>
         </template>
 
-        <!-- Correção negativa: o valor decide de onde o crédito sai no
-             financeiro. Com valor, estorna a compra (baixa do saldo pago);
-             sem valor, retira cortesia. -->
+        <!-- Retirada e estorno são decisões diferentes: remover saldo não pode
+             virar devolução de dinheiro por acidente. -->
         <div v-else-if="formOperacao === 'correcao' && (formQuantidade ?? 0) < 0">
-          <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-            Valor estornado <span class="font-medium normal-case text-slate-400">(opcional)</span>
+          <label class="flex items-start gap-2.5 rounded-md border border-slate-200 dark:border-white/10 p-3 cursor-pointer">
+            <input v-model="formHouveReembolso" type="checkbox" class="mt-0.5 rounded border-slate-300 text-red-600 focus:ring-red-500" />
+            <span>
+              <strong class="block text-xs text-slate-800 dark:text-slate-200">Houve devolução de dinheiro ao parceiro</strong>
+              <span class="block mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                Deixe desmarcado para apenas retirar créditos do saldo, sem alterar receita ou caixa.
+              </span>
+            </span>
           </label>
-          <AppCurrencyInput
-            v-model="formValorPago"
-            placeholder="R$ 0,00"
-            class="w-full px-3 py-2 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded text-sm text-slate-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-purple-500"
-          />
-          <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-            <strong class="text-slate-700 dark:text-slate-200">Com valor:</strong> estorna uma compra paga — sai do passivo pago.
-            <strong class="text-slate-700 dark:text-slate-200">Sem valor:</strong> retira um crédito de cortesia.
-          </p>
+
+          <div v-if="formHouveReembolso" class="mt-3">
+            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+              Valor total devolvido ao parceiro <span class="text-red-500">— obrigatório</span>
+            </label>
+            <AppCurrencyInput
+              v-model="formValorPago"
+              placeholder="R$ 0,00"
+              class="w-full px-3 py-2 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded text-sm text-slate-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-red-500"
+            />
+            <p v-if="Number(formValorPago) > 0 && formQuantidade" class="mt-1.5 text-xs tabular-nums text-slate-500 dark:text-slate-400">
+              {{ fmtBRL(formValorPago) }} no total ÷ {{ Math.abs(formQuantidade) }} crédito<span v-if="Math.abs(formQuantidade) !== 1">s</span>
+              = <strong class="text-red-600 dark:text-red-400">{{ fmtBRL(Number(formValorPago) / Math.abs(formQuantidade)) }} por crédito</strong>
+            </p>
+          </div>
         </div>
 
         <div>

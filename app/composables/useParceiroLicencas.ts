@@ -50,6 +50,7 @@ export interface MovimentacaoCredito {
   empresa_id: string | null
   empresa_nome: string | null
   descricao: string | null
+  valor_pago: number | null
   nova_validade: string | null
   created_at: string
 }

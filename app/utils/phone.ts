@@ -104,6 +104,30 @@ export function formatPhone(phone: string | null | undefined): string | null {
   return `+${d}`
 }
 
+/**
+ * Exibição local para as telas do parceiro: números brasileiros ficam apenas
+ * com DDD + número. O DDI continua no link do WhatsApp e números estrangeiros
+ * mantêm o próprio DDI para não ficarem ambíguos.
+ */
+export function formatPhoneSemDdiBrasil(phone: string | null | undefined): string | null {
+  if (!phone) return null
+  const d = phone.replace(/\D/g, '')
+  if (!d) return null
+
+  const match = detectCountry(d)
+  if (match?.c.flag === 'BR') return formatNational('BR', match.national)
+
+  // Também limpa cadastros brasileiros antigos com 55 duplicado ou número
+  // nacional incompleto, preservando o máximo possível do que foi gravado.
+  if (d.startsWith('55') && d.length > 4) {
+    const nacional = d.slice(2)
+    if (nacional.length === 10 || nacional.length === 11) return formatNational('BR', nacional)
+    return `(${nacional.slice(0, 2)}) ${nacional.slice(2)}`
+  }
+
+  return formatPhone(phone)
+}
+
 export function whatsappLink(phone: string | null | undefined): string | null {
   if (!phone) return null
   const d = phone.replace(/\D/g, '')

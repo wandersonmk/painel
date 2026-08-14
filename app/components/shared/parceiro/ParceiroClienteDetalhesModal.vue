@@ -45,7 +45,7 @@ const SITUACOES: Record<string, { label: string; cls: string }> = {
         </div>
         <div v-if="cliente.telefone" class="flex items-center justify-between px-4 py-2.5">
           <dt class="text-xs text-slate-500 dark:text-slate-400">Telefone</dt>
-          <dd class="text-slate-800 dark:text-white font-mono text-xs">{{ formatPhone(cliente.telefone) ?? cliente.telefone }}</dd>
+          <dd class="text-slate-800 dark:text-white text-xs tabular-nums">{{ formatPhoneSemDdiBrasil(cliente.telefone) ?? cliente.telefone }}</dd>
         </div>
         <div v-if="cliente.email" class="flex items-center justify-between px-4 py-2.5">
           <dt class="text-xs text-slate-500 dark:text-slate-400">E-mail</dt>

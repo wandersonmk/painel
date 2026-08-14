@@ -221,19 +221,19 @@ const td = 'px-4 py-2.5 text-sm'
         <div :class="['p-4', cardBase]">
           <p class="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
             <i class="fa-solid fa-arrow-trend-up text-[10px]" aria-hidden="true" />
-            Lucro bruto
+            Receita bruta
           </p>
-          <p class="text-2xl font-bold text-slate-900 dark:text-white tabular-nums mt-1">{{ fmtBRL(resumo.lucro_bruto) }}</p>
+          <p class="text-2xl font-bold text-slate-900 dark:text-white tabular-nums mt-1">{{ fmtBRL(resumo.receita_bruta) }}</p>
           <p class="text-[11px] text-slate-400 mt-0.5">
             {{ resumo.meses_vendidos }} {{ resumo.meses_vendidos === 1 ? 'mês vendido' : 'meses vendidos' }} para {{ resumo.clientes_atendidos }} cliente{{ resumo.clientes_atendidos === 1 ? '' : 's' }}
           </p>
         </div>
 
-        <!-- Este é o que entra na conta do líquido: dinheiro que saiu do bolso. -->
+        <!-- Caixa/estoque do período; não é descontado outra vez do resultado. -->
         <div :class="['p-4', cardBase]">
           <p class="text-[11px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400 flex items-center gap-1.5">
             <i class="fa-solid fa-cart-shopping text-[10px]" aria-hidden="true" />
-            Compra de créditos
+            Compra de créditos (caixa)
           </p>
           <p class="text-2xl font-bold text-slate-900 dark:text-white tabular-nums mt-1">{{ fmtBRL(resumo.gasto_compras) }}</p>
           <p class="text-[11px] text-slate-400 mt-0.5">
@@ -242,11 +242,10 @@ const td = 'px-4 py-2.5 text-sm'
           </p>
         </div>
 
-        <!-- Visão paralela, não entra no líquido. -->
         <div :class="['p-4', cardBase]">
           <p class="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
             <i class="fa-solid fa-coins text-[10px]" aria-hidden="true" />
-            Créditos usados
+            Custo dos créditos usados
           </p>
           <p class="text-2xl font-bold text-slate-700 dark:text-slate-200 tabular-nums mt-1">{{ fmtBRL(resumo.custo_creditos_usados) }}</p>
           <p class="text-[11px] text-slate-400 mt-0.5">
@@ -266,7 +265,7 @@ const td = 'px-4 py-2.5 text-sm'
             {{ fmtBRL(resumo.lucro_liquido) }}
           </p>
           <p class="text-[11px] text-slate-400 mt-0.5 tabular-nums">
-            {{ fmtBRL(resumo.lucro_bruto) }} − {{ fmtBRL(resumo.gasto_compras) }} · margem {{ resumo.margem.toFixed(1).replace('.', ',') }}%
+            {{ fmtBRL(resumo.receita_bruta) }} − {{ fmtBRL(resumo.custo_creditos_usados) }} · margem {{ resumo.margem.toFixed(1).replace('.', ',') }}%
           </p>
         </div>
       </div>
@@ -307,7 +306,7 @@ const td = 'px-4 py-2.5 text-sm'
                   <th :class="[th, 'text-center']">Meses</th>
                   <th :class="[th, 'text-right']">Receita</th>
                   <th :class="[th, 'text-right']">Crédito usado</th>
-                  <th :class="[th, 'text-right']">Resultado</th>
+                  <th :class="[th, 'text-right']">Lucro líquido</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 dark:divide-white/5">
@@ -354,6 +353,7 @@ const td = 'px-4 py-2.5 text-sm'
                   <td :class="[td, 'text-xs text-slate-500']">
                     {{ LABEL_TIPO[r.tipo_credito] ?? '—' }}
                     <span v-if="!r.consumiu_credito" class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">Agzap</span>
+                    <span v-else-if="r.credito_cortesia" class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">cortesia</span>
                   </td>
                   <td :class="[td, 'text-right tabular-nums text-slate-700 dark:text-slate-200']">
                     {{ fmtBRL(r.receita) }}
@@ -378,10 +378,10 @@ const td = 'px-4 py-2.5 text-sm'
       <p class="text-[11px] text-slate-400 dark:text-slate-500 flex items-start gap-1.5">
         <i class="fa-solid fa-circle-info text-[10px] mt-0.5 shrink-0" aria-hidden="true" />
         <span>
-          <strong>Lucro líquido = lucro bruto − compra de créditos</strong>, ou seja, o que sobrou do
-          dinheiro que entrou depois do que você pagou à Agzap no período (estorno de compra já abatido).
-          O cartão <strong>Créditos usados</strong> é uma visão paralela: quanto valeu o crédito gasto nas
-          renovações, com cortesia contando zero porque não custou nada — ele não entra no líquido.
+          <strong>Lucro líquido = receita das renovações − custo dos créditos usados nelas.</strong>
+          Cada venda, cada cliente e o total seguem exatamente essa mesma conta. Compra de créditos é
+          exibida separadamente como saída de caixa e entrada de estoque; descontá-la novamente faria o
+          mesmo crédito entrar duas vezes no custo. Crédito de cortesia entra com custo zero.
           A receita usa o <strong>valor atual</strong> cadastrado de cada cliente × os meses da renovação
           (12 no crédito anual).
         </span>
@@ -400,20 +400,20 @@ const td = 'px-4 py-2.5 text-sm'
         <table style="width:100%;border-collapse:collapse;margin-bottom:18px;font-size:10pt">
           <tbody>
             <tr>
-              <td style="padding:6px 0;color:#475569">Lucro bruto <span style="color:#94a3b8">({{ resumo.meses_vendidos }} meses vendidos)</span></td>
-              <td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a">{{ fmtBRL(resumo.lucro_bruto) }}</td>
+              <td style="padding:6px 0;color:#475569">Receita bruta <span style="color:#94a3b8">({{ resumo.meses_vendidos }} meses vendidos)</span></td>
+              <td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a">{{ fmtBRL(resumo.receita_bruta) }}</td>
             </tr>
             <tr>
-              <td style="padding:6px 0;color:#475569">Compra de créditos <span style="color:#94a3b8">({{ resumo.compras_creditos }} créditos)</span></td>
-              <td style="padding:6px 0;text-align:right;font-weight:700;color:#b91c1c">− {{ fmtBRL(resumo.gasto_compras) }}</td>
+              <td style="padding:6px 0;color:#475569">Custo dos créditos usados nas renovações</td>
+              <td style="padding:6px 0;text-align:right;font-weight:700;color:#b91c1c">− {{ fmtBRL(resumo.custo_creditos_usados) }}</td>
             </tr>
             <tr style="border-top:1px solid #cbd5e1">
               <td style="padding:8px 0;font-weight:700;color:#0f172a">Lucro líquido <span style="color:#94a3b8;font-weight:400">(margem {{ resumo.margem.toFixed(1).replace('.', ',') }}%)</span></td>
               <td style="padding:8px 0;text-align:right;font-weight:700;font-size:13pt;color:#047857">{{ fmtBRL(resumo.lucro_liquido) }}</td>
             </tr>
             <tr>
-              <td style="padding:6px 0;color:#94a3b8;font-size:9pt">Créditos usados nas renovações (não entra no líquido)</td>
-              <td style="padding:6px 0;text-align:right;color:#94a3b8;font-size:9pt">{{ fmtBRL(resumo.custo_creditos_usados) }}</td>
+              <td style="padding:6px 0;color:#94a3b8;font-size:9pt">Compra de créditos — caixa/estoque, informativo <span>({{ resumo.compras_creditos }} créditos)</span></td>
+              <td style="padding:6px 0;text-align:right;color:#94a3b8;font-size:9pt">{{ fmtBRL(resumo.gasto_compras) }}</td>
             </tr>
           </tbody>
         </table>
@@ -428,6 +428,7 @@ const td = 'px-4 py-2.5 text-sm'
               <th style="text-align:center;padding:5px 6px;border-bottom:1px solid #cbd5e1">Meses</th>
               <th style="text-align:right;padding:5px 6px;border-bottom:1px solid #cbd5e1">Receita</th>
               <th style="text-align:right;padding:5px 6px;border-bottom:1px solid #cbd5e1">Crédito usado</th>
+              <th style="text-align:right;padding:5px 6px;border-bottom:1px solid #cbd5e1">Lucro líquido</th>
             </tr>
           </thead>
           <tbody>
@@ -438,9 +439,10 @@ const td = 'px-4 py-2.5 text-sm'
               <td style="padding:5px 6px;text-align:center;border-bottom:1px solid #e2e8f0">{{ c.meses }}</td>
               <td style="padding:5px 6px;text-align:right;border-bottom:1px solid #e2e8f0">{{ fmtBRL(c.receita) }}</td>
               <td style="padding:5px 6px;text-align:right;border-bottom:1px solid #e2e8f0;color:#b91c1c">{{ fmtBRL(c.custo) }}</td>
+              <td style="padding:5px 6px;text-align:right;border-bottom:1px solid #e2e8f0;color:#047857;font-weight:700">{{ fmtBRL(c.resultado) }}</td>
             </tr>
             <tr v-if="!porCliente.length">
-              <td colspan="6" style="padding:10px;text-align:center;color:#94a3b8">Nenhuma renovação neste período</td>
+              <td colspan="7" style="padding:10px;text-align:center;color:#94a3b8">Nenhuma renovação neste período</td>
             </tr>
           </tbody>
         </table>
@@ -454,6 +456,8 @@ const td = 'px-4 py-2.5 text-sm'
                 <th style="text-align:left;padding:5px 6px;border-bottom:1px solid #cbd5e1">Cliente</th>
                 <th style="text-align:left;padding:5px 6px;border-bottom:1px solid #cbd5e1">Crédito</th>
                 <th style="text-align:right;padding:5px 6px;border-bottom:1px solid #cbd5e1">Receita</th>
+                <th style="text-align:right;padding:5px 6px;border-bottom:1px solid #cbd5e1">Custo</th>
+                <th style="text-align:right;padding:5px 6px;border-bottom:1px solid #cbd5e1">Lucro</th>
                 <th style="text-align:right;padding:5px 6px;border-bottom:1px solid #cbd5e1">Válido até</th>
               </tr>
             </thead>
@@ -462,9 +466,11 @@ const td = 'px-4 py-2.5 text-sm'
                 <td style="padding:5px 6px;border-bottom:1px solid #e2e8f0">{{ fmtDataHora(r.data) }}</td>
                 <td style="padding:5px 6px;border-bottom:1px solid #e2e8f0">{{ r.empresa_nome }}</td>
                 <td style="padding:5px 6px;border-bottom:1px solid #e2e8f0">
-                  {{ LABEL_TIPO[r.tipo_credito] ?? '—' }}<template v-if="!r.consumiu_credito"> (Agzap)</template>
+                  {{ LABEL_TIPO[r.tipo_credito] ?? '—' }}<template v-if="!r.consumiu_credito"> (Agzap)</template><template v-else-if="r.credito_cortesia"> (cortesia)</template>
                 </td>
                 <td style="padding:5px 6px;text-align:right;border-bottom:1px solid #e2e8f0">{{ fmtBRL(r.receita) }}</td>
+                <td style="padding:5px 6px;text-align:right;border-bottom:1px solid #e2e8f0;color:#b91c1c">{{ fmtBRL(r.custo) }}</td>
+                <td style="padding:5px 6px;text-align:right;border-bottom:1px solid #e2e8f0;color:#047857;font-weight:700">{{ r.consumiu_credito ? fmtBRL(r.resultado) : '—' }}</td>
                 <td style="padding:5px 6px;text-align:right;border-bottom:1px solid #e2e8f0">{{ fmtData(r.vencimento_novo) }}</td>
               </tr>
             </tbody>
@@ -472,9 +478,9 @@ const td = 'px-4 py-2.5 text-sm'
         </template>
 
         <p style="margin-top:16px;font-size:8pt;color:#64748b;line-height:1.5">
-          Lucro líquido = lucro bruto − compra de créditos do período (estorno de compra já abatido).
-          Crédito de cortesia tem custo zero. A receita usa o valor atual cadastrado de cada cliente
-          multiplicado pelos meses da renovação.
+          Lucro líquido = receita das renovações − custo dos créditos usados nelas. A compra de créditos
+          é apenas o movimento de caixa/estoque do período e não é descontada novamente. Crédito de
+          cortesia tem custo zero. A receita usa o valor atual cadastrado de cada cliente.
         </p>
       </section>
     </template>

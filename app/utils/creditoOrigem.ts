@@ -6,7 +6,7 @@
  *   entrada com valor  → dinheiro entrou
  *   entrada sem valor  → concessão, migração ou correção a favor
  *   saída com valor    → estorno de uma compra paga
- *   saída sem valor    → retirada de cortesia
+ *   saída sem valor    → retirada de saldo sem reembolso
  *
  * Consumo não tem origem: é uso de saldo, e qual lote ele gasta depende do
  * FIFO, que só o servidor calcula.
@@ -31,7 +31,7 @@ export function origemCredito(
   if (quantidade < 0) {
     return pago
       ? { texto: 'Estorno de compra', cls: emerald, icone: 'fa-rotate-left' }
-      : { texto: 'Retira cortesia', cls: amber, icone: 'fa-gift' }
+      : { texto: 'Sem reembolso', cls: amber, icone: 'fa-minus' }
   }
   return pago
     ? { texto: 'Pago', cls: emerald, icone: 'fa-money-bill-wave' }

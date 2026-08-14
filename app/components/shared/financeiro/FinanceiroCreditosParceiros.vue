@@ -32,27 +32,25 @@ interface LinhaParceiro {
   id: string
   nome: string
   ativo: boolean
-  vendido_total: number
-  vendido_mes: number
-  estornado_total: number
-  estornado_mes: number
-  liquido_total: number
+  vendido_periodo: number
+  estornado_periodo: number
+  liquido_periodo: number
   passivo_pago: number
   passivo_cortesia: number
   passivo_estimado: number
   saldo_pago: number
   saldo_cortesia: number
-  creditos_comprados: number
-  creditos_concedidos: number
-  creditos_estornados: number
-  creditos_consumidos: number
-  consumidos_mes: number
+  creditos_comprados_periodo: number
+  creditos_concedidos_periodo: number
+  creditos_estornados_periodo: number
+  creditos_retirados_periodo: number
+  creditos_consumidos_periodo: number
   saldo: { mensal_30d: number; anual_12m: number }
   saldo_total: number
   clientes_total: number
   clientes_vencendo_7d: number
   clientes_vencidos: number
-  ultimo_consumo_em: string | null
+  ultimo_consumo_periodo_em: string | null
 }
 
 interface ClienteVencendo {
@@ -78,14 +76,45 @@ const vencendo = ref<ClienteVencendo[]>([])
 
 const aba = ref<'vendas' | 'estornos' | 'concessoes' | 'consumo' | 'vencendo'>('vendas')
 const filtroParceiro = ref('')
+type Periodo = 'hoje' | '7d' | '30d' | 'custom'
+const periodo = ref<Periodo>('30d')
+const dataInicio = ref('')
+const dataFim = ref('')
+
+const isoDia = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+/** Dias de calendário no horário local, igual ao relatório do parceiro. */
+function intervalo(): { de: Date; ate: Date } {
+  const fim = new Date()
+  fim.setHours(23, 59, 59, 999)
+
+  if (periodo.value === 'custom' && dataInicio.value && dataFim.value) {
+    const [ay, am, ad] = dataInicio.value.split('-').map(Number)
+    const [by, bm, bd] = dataFim.value.split('-').map(Number)
+    return {
+      de: new Date(ay!, (am ?? 1) - 1, ad ?? 1, 0, 0, 0, 0),
+      ate: new Date(by!, (bm ?? 1) - 1, bd ?? 1, 23, 59, 59, 999),
+    }
+  }
+
+  const inicio = new Date()
+  inicio.setHours(0, 0, 0, 0)
+  if (periodo.value === '7d') inicio.setDate(inicio.getDate() - 6)
+  if (periodo.value === '30d') inicio.setDate(inicio.getDate() - 29)
+  return { de: inicio, ate: fim }
+}
 
 async function carregar() {
   loading.value = true
   erro.value = null
   try {
+    const { de, ate } = intervalo()
     const resp = await $fetch<{ success: boolean; data?: any; error?: string }>(
       '/api/admin/parceiros/financeiro',
-      { headers: await useAdminAuthHeaders() },
+      {
+        query: { de: de.toISOString(), ate: ate.toISOString() },
+        headers: await useAdminAuthHeaders(),
+      },
     )
     if (!resp.success || !resp.data) throw new Error(resp.error || 'Erro')
     resumo.value = resp.data.resumo
@@ -103,6 +132,36 @@ async function carregar() {
   }
 }
 
+function trocarPeriodo(novo: Periodo) {
+  periodo.value = novo
+  if (novo === 'custom') {
+    if (!dataInicio.value) {
+      const inicio = new Date()
+      inicio.setDate(inicio.getDate() - 29)
+      dataInicio.value = isoDia(inicio)
+    }
+    if (!dataFim.value) dataFim.value = isoDia(new Date())
+  }
+  pagina.value = 1
+  paginaAjustes.value = 1
+  carregar()
+}
+
+const filtroAtivo = computed(() => periodo.value !== 'hoje' || filtroParceiro.value !== '')
+function limparFiltros() {
+  periodo.value = 'hoje'
+  dataInicio.value = ''
+  dataFim.value = ''
+  filtroParceiro.value = ''
+  carregar()
+}
+
+function aplicarPeriodo() {
+  pagina.value = 1
+  paginaAjustes.value = 1
+  carregar()
+}
+
 onMounted(carregar)
 defineExpose({ carregar })
 
@@ -112,6 +171,12 @@ const fmtData = (s: string | null) =>
   s ? new Date(s).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'
 const fmtDataHora = (s: string | null) =>
   s ? new Date(s).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'
+
+const rotuloPeriodo = computed(() => {
+  const { de, ate } = intervalo()
+  if (periodo.value === 'hoje') return 'hoje'
+  return `${de.toLocaleDateString('pt-BR')} a ${ate.toLocaleDateString('pt-BR')}`
+})
 
 const LABEL_TIPO: Record<string, string> = { mensal_30d: '30 dias', anual_12m: '12 meses' }
 
@@ -137,36 +202,36 @@ const metricas = computed(() => {
   if (!r) return []
   return [
     {
-      rotulo: 'Vendido no mês', icone: 'fa-cart-shopping', cls: 'text-emerald-600 dark:text-emerald-400',
-      valor: fmtBRL(r.vendido_mes),
-      detalhe: `${r.creditos_vendidos_mes} créditos · ${fmtBRL(r.vendido_total)} no total`,
+      rotulo: 'Vendido no período', icone: 'fa-cart-shopping', cls: 'text-emerald-600 dark:text-emerald-400',
+      valor: fmtBRL(r.vendido_periodo),
+      detalhe: `${r.creditos_vendidos_periodo} créditos · ${rotuloPeriodo.value}`,
     },
     {
-      rotulo: 'Estornado no mês', icone: 'fa-rotate-left', cls: 'text-red-600 dark:text-red-400',
-      valor: fmtBRL(r.estornado_mes),
-      detalhe: `${r.creditos_estornados_total} créditos estornados no total`,
-      alerta: r.estornado_mes > 0,
+      rotulo: 'Estornado no período', icone: 'fa-rotate-left', cls: 'text-red-600 dark:text-red-400',
+      valor: fmtBRL(r.estornado_periodo),
+      detalhe: `${r.creditos_estornados_periodo} créditos estornados`,
+      alerta: r.estornado_periodo > 0,
     },
     {
-      rotulo: 'Líquido no mês', icone: 'fa-scale-balanced', cls: 'text-indigo-600 dark:text-indigo-400',
-      valor: fmtBRL(r.liquido_mes),
+      rotulo: 'Líquido no período', icone: 'fa-scale-balanced', cls: 'text-indigo-600 dark:text-indigo-400',
+      valor: fmtBRL(r.liquido_periodo),
       detalhe: `Ticket médio ${fmtBRL(r.ticket_medio_credito)}/crédito`,
     },
     {
       rotulo: 'Pago, ainda não usado', icone: 'fa-vault', cls: 'text-emerald-600 dark:text-emerald-400',
       valor: fmtBRL(r.passivo_pago),
-      detalhe: `${r.saldo_pago} créditos comprados na carteira · você ainda deve entregar`,
+      detalhe: `${r.saldo_pago} créditos na carteira · posição atual`,
     },
     {
       rotulo: 'Cortesia não usada', icone: 'fa-gift', cls: 'text-orange-600 dark:text-orange-400',
       valor: fmtBRL(r.passivo_cortesia),
-      detalhe: `${r.saldo_cortesia} créditos dados na carteira · entrega sem receita`,
+      detalhe: `${r.saldo_cortesia} créditos na carteira · posição atual`,
       alerta: r.passivo_cortesia > r.passivo_pago,
     },
     {
-      rotulo: 'Consumido no mês', icone: 'fa-fire', cls: 'text-purple-600 dark:text-purple-400',
-      valor: String(r.creditos_consumidos_mes),
-      detalhe: `${r.creditos_consumidos_total} no total · ${r.clientes_vencendo_7d} vencendo em 7d`,
+      rotulo: 'Consumido no período', icone: 'fa-fire', cls: 'text-purple-600 dark:text-purple-400',
+      valor: String(r.creditos_consumidos_periodo),
+      detalhe: `${r.clientes_vencendo_7d} clientes vencendo em 7d · posição atual`,
     },
   ]
 })
@@ -196,7 +261,7 @@ const ABAS = [
   { id: 'estornos', label: 'Estornos e correções', icone: 'fa-rotate-left' },
   { id: 'concessoes', label: 'Cortesias', icone: 'fa-gift' },
   { id: 'consumo', label: 'Consumo', icone: 'fa-fire' },
-  { id: 'vencendo', label: 'Vencendo', icone: 'fa-hourglass-half' },
+  { id: 'vencendo', label: 'Vencendo (atual)', icone: 'fa-hourglass-half' },
 ] as const
 
 const contagemAba = computed<Record<string, number>>(() => ({
@@ -236,7 +301,7 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
         </div>
         <div class="min-w-0">
           <h2 class="text-sm font-bold text-slate-900 dark:text-white">Créditos de parceiros</h2>
-          <p class="text-[11px] text-slate-500 dark:text-slate-400">Venda, estorno, consumo e passivo do programa de licenças</p>
+          <p class="text-[11px] text-slate-500 dark:text-slate-400">Venda, estorno e consumo · <span class="capitalize">{{ rotuloPeriodo }}</span></p>
         </div>
       </div>
       <div class="flex items-center gap-2">
@@ -260,6 +325,57 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
       </div>
     </div>
 
+    <!-- Período dos movimentos; saldos e vencimentos continuam sendo atuais. -->
+    <div class="px-3 sm:px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-2">
+      <button
+        v-for="p in ([
+          { id: 'hoje' as const, label: 'Hoje' },
+          { id: '7d' as const, label: '7 dias' },
+          { id: '30d' as const, label: '30 dias' },
+          { id: 'custom' as const, label: 'Personalizado' },
+        ])"
+        :key="p.id"
+        type="button"
+        @click="trocarPeriodo(p.id)"
+        class="px-3 py-1.5 rounded-full border text-xs font-semibold transition-colors"
+        :class="periodo === p.id
+          ? 'border-purple-400 bg-purple-50 dark:bg-purple-500/15 text-purple-700 dark:text-purple-400'
+          : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-300'"
+      >{{ p.label }}</button>
+
+      <div v-if="periodo === 'custom'" class="flex flex-wrap items-center gap-2 lg:ml-auto">
+        <input
+          v-model="dataInicio"
+          type="date"
+          aria-label="Data inicial"
+          class="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-900 dark:text-white"
+        />
+        <span class="text-slate-400 text-xs">até</span>
+        <input
+          v-model="dataFim"
+          type="date"
+          aria-label="Data final"
+          class="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-900 dark:text-white"
+        />
+        <button
+          type="button"
+          @click="aplicarPeriodo"
+          class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white transition-colors"
+        >Aplicar</button>
+      </div>
+
+      <button
+        v-if="filtroAtivo"
+        type="button"
+        @click="limparFiltros"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+        :class="periodo === 'custom' ? '' : 'ml-auto'"
+      >
+        <i class="fa-solid fa-xmark text-[10px]" aria-hidden="true" />
+        Limpar filtros
+      </button>
+    </div>
+
     <div v-if="loading && !resumo" class="p-8 flex items-center justify-center gap-3 text-slate-400 text-sm">
       <i class="fa-solid fa-circle-notch animate-spin" aria-hidden="true" />
       Carregando dados dos parceiros…
@@ -270,7 +386,7 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
     </div>
 
     <template v-else-if="resumo">
-      <!-- Números do mês: faixa compacta em vez de seis cards.
+      <!-- Números do período: faixa compacta em vez de seis cards.
            Card com ícone grande roubava largura e truncava o valor. -->
       <div class="m-3 sm:m-5 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
         <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 divide-x divide-y sm:divide-y-0 xl:divide-y-0 divide-slate-200 dark:divide-slate-800">
@@ -295,24 +411,24 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
       <!-- Avisos de controle -->
       <div class="mx-3 sm:mx-5 mb-4 space-y-2">
       <div
-        v-if="resumo.creditos_concedidos_total > 0 || resumo.renovacoes_sem_credito_mes > 0"
+        v-if="resumo.creditos_concedidos_periodo > 0 || resumo.renovacoes_sem_credito_periodo > 0"
         class="flex flex-wrap gap-2 text-[11px]"
       >
         <span
-          v-if="resumo.creditos_concedidos_total > 0"
+          v-if="resumo.creditos_concedidos_periodo > 0"
           class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 font-semibold"
-          title="Total já liberado sem pagamento em toda a história — parte disso já foi consumida. O que ainda falta entregar está no card Cortesia a executar."
+          title="Créditos liberados sem pagamento dentro do período selecionado"
         >
           <i class="fa-solid fa-gift" aria-hidden="true" />
-          {{ resumo.creditos_concedidos_total }} créditos de cortesia já liberados · {{ fmtBRL(resumo.concedido_valor_tabela) }} a preço de tabela
+          {{ resumo.creditos_concedidos_periodo }} créditos de cortesia liberados no período · {{ fmtBRL(resumo.concedido_valor_tabela_periodo) }} a preço de tabela
         </span>
         <span
-          v-if="resumo.renovacoes_sem_credito_mes > 0"
+          v-if="resumo.renovacoes_sem_credito_periodo > 0"
           class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold"
           title="Renovações feitas pela Agzap em cliente de parceiro — não consumiram crédito"
         >
           <i class="fa-solid fa-circle-info" aria-hidden="true" />
-          {{ resumo.renovacoes_sem_credito_mes }} renovações da Agzap sem consumo de crédito neste mês
+          {{ resumo.renovacoes_sem_credito_periodo }} renovações da Agzap sem consumo de crédito no período
         </span>
       </div>
       <p class="text-[11px] text-slate-400 dark:text-slate-500 flex items-start gap-1.5">
@@ -322,13 +438,14 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
           parceiro e ainda não virou renovação. O <strong>pago</strong> é dinheiro que já entrou e
           vira obrigação sua; a <strong>cortesia</strong> é serviço prometido sem receita nenhuma.
           O saldo é separado por ordem de entrada, e a renovação gasta sempre o crédito mais antigo.
+          Esses saldos e a aba <strong>Vencendo</strong> são a posição atual; os demais números obedecem ao período selecionado.
         </span>
       </p>
       </div>
 
       <!-- Consolidado por parceiro -->
       <div class="px-3 sm:px-5 pb-5">
-        <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Por parceiro</p>
+        <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Por parceiro · movimentos do período</p>
         <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
           <table class="w-full text-xs whitespace-nowrap">
             <thead class="bg-slate-50 dark:bg-slate-950/60">
@@ -343,7 +460,7 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                 <th :class="[th, 'text-right']">Pago não usado</th>
                 <th :class="[th, 'text-right']">Cortesia não usada</th>
                 <th :class="[th, 'text-right']">Clientes</th>
-                <th :class="[th, 'text-right']">Último consumo</th>
+                <th :class="[th, 'text-right']">Último consumo no período</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
@@ -354,19 +471,19 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                     <span v-if="!p.ativo" class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-400">Suspenso</span>
                   </div>
                 </td>
-                <td :class="[td, 'text-right tabular-nums text-emerald-600 dark:text-emerald-400 font-semibold']">{{ fmtBRL(p.vendido_total) }}</td>
-                <td :class="[td, 'text-right tabular-nums']" :title="`${p.creditos_estornados} créditos estornados`">
-                  <span :class="p.estornado_total > 0 ? 'text-red-600 dark:text-red-400 font-semibold' : 'text-slate-400'">
-                    {{ p.estornado_total > 0 ? '−' + fmtBRL(p.estornado_total) : '—' }}
+                <td :class="[td, 'text-right tabular-nums text-emerald-600 dark:text-emerald-400 font-semibold']">{{ fmtBRL(p.vendido_periodo) }}</td>
+                <td :class="[td, 'text-right tabular-nums']" :title="`${p.creditos_estornados_periodo} créditos estornados no período`">
+                  <span :class="p.estornado_periodo > 0 ? 'text-red-600 dark:text-red-400 font-semibold' : 'text-slate-400'">
+                    {{ p.estornado_periodo > 0 ? '−' + fmtBRL(p.estornado_periodo) : '—' }}
                   </span>
                 </td>
-                <td :class="[td, 'text-right tabular-nums font-bold text-slate-900 dark:text-white']">{{ fmtBRL(p.liquido_total) }}</td>
+                <td :class="[td, 'text-right tabular-nums font-bold text-slate-900 dark:text-white']">{{ fmtBRL(p.liquido_periodo) }}</td>
                 <td :class="[td, 'text-right tabular-nums']">
-                  <span :class="p.creditos_concedidos > 0 ? 'text-amber-600 dark:text-amber-400 font-semibold' : 'text-slate-400'">
-                    {{ p.creditos_concedidos || '—' }}
+                  <span :class="p.creditos_concedidos_periodo > 0 ? 'text-amber-600 dark:text-amber-400 font-semibold' : 'text-slate-400'">
+                    {{ p.creditos_concedidos_periodo || '—' }}
                   </span>
                 </td>
-                <td :class="[td, 'text-right tabular-nums']" :title="`${p.consumidos_mes} neste mês`">{{ p.creditos_consumidos }}</td>
+                <td :class="[td, 'text-right tabular-nums']">{{ p.creditos_consumidos_periodo }}</td>
                 <td :class="[td, 'text-right tabular-nums']" :title="`${p.saldo.mensal_30d} de 30 dias · ${p.saldo.anual_12m} de 12 meses`">
                   <span class="font-semibold text-purple-600 dark:text-purple-400">{{ p.saldo_total }}</span>
                 </td>
@@ -385,7 +502,7 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                   <span v-if="p.clientes_vencendo_7d" class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400">{{ p.clientes_vencendo_7d }} vencendo</span>
                   <span v-if="p.clientes_vencidos" class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-400">{{ p.clientes_vencidos }} vencidos</span>
                 </td>
-                <td :class="[td, 'text-right tabular-nums text-slate-400']">{{ fmtDataHora(p.ultimo_consumo_em) }}</td>
+                <td :class="[td, 'text-right tabular-nums text-slate-400']">{{ fmtDataHora(p.ultimo_consumo_periodo_em) }}</td>
               </tr>
             </tbody>
           </table>
@@ -454,8 +571,8 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
           <!-- Estornos e correções -->
           <div v-else-if="aba === 'estornos'" class="space-y-5">
             <div>
-              <p class="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-wider mb-2">Estornos (crédito retirado)</p>
-              <p v-if="!estornosFiltrados.length" class="text-xs text-slate-400 py-3">Nenhum estorno registrado.</p>
+              <p class="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-wider mb-2">Retiradas e estornos</p>
+              <p v-if="!estornosFiltrados.length" class="text-xs text-slate-400 py-3">Nenhuma retirada registrada.</p>
               <div v-else class="overflow-x-auto">
                 <table class="w-full text-xs">
                   <thead class="bg-slate-50 dark:bg-slate-950/60">
@@ -465,8 +582,8 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                       <th :class="th">Crédito</th>
                       <th :class="[th, 'text-right']">Qtd.</th>
                       <th :class="[th, 'text-right']">Valor</th>
-                      <th :class="th">Baixa de</th>
-                      <th :class="th">Motivo do estorno</th>
+                      <th :class="th">Efeito</th>
+                      <th :class="th">Motivo</th>
                       <th :class="th">Lançado por</th>
                     </tr>
                   </thead>

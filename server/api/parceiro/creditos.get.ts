@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
       .select('tipo_credito, saldo, updated_at')
       .eq('parceiro_id', parceiro.id),
     supabase.from('parceiro_creditos_ledger')
-      .select('id, tipo_credito, quantidade, operacao, empresa_id, empresa_nome, referencia, descricao, created_at, renovacao_id')
+      .select('id, tipo_credito, quantidade, operacao, empresa_id, empresa_nome, referencia, descricao, valor_pago, created_at, renovacao_id')
       .eq('parceiro_id', parceiro.id)
       .order('created_at', { ascending: false })
       .limit(200),
@@ -53,6 +53,9 @@ export default defineEventHandler(async (event) => {
     empresa_nome: l.empresa_nome,
     // Referência interna do pedido não vai para o parceiro; descrição sim.
     descricao: l.descricao,
+    // O parceiro precisa reconciliar a entrada da carteira com o que pagou.
+    // Consumos e cortesias continuam nulos porque não movimentaram dinheiro.
+    valor_pago: l.valor_pago === null ? null : Number(l.valor_pago),
     nova_validade: l.renovacao_id ? validadePorRenovacao.get(l.renovacao_id) ?? null : null,
     created_at: l.created_at,
   }))

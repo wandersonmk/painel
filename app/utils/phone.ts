@@ -14,7 +14,47 @@ const COUNTRIES: Country[] = [
   { ddi: '1',   flag: 'US', lens: [10] },
 ]
 
+/**
+ * DDDs que existem de verdade. Sem essa lista, "569xxxxxxxx" (Chile com DDI)
+ * passaria por celular brasileiro de DDD 56, que não existe.
+ */
+const DDD_BR = new Set([
+  11, 12, 13, 14, 15, 16, 17, 18, 19,
+  21, 22, 24, 27, 28,
+  31, 32, 33, 34, 35, 37, 38,
+  41, 42, 43, 44, 45, 46, 47, 48, 49,
+  51, 53, 54, 55,
+  61, 62, 63, 64, 65, 66, 67, 68, 69,
+  71, 73, 74, 75, 77, 79,
+  81, 82, 83, 84, 85, 86, 87, 88, 89,
+  91, 92, 93, 94, 95, 96, 97, 98, 99,
+])
+
+/**
+ * Número nacional brasileiro, gravado sem o 55 na frente.
+ *
+ * Precisa ser testado ANTES da detecção por DDI: o DDI dos EUA é '1' e engolia
+ * todo celular de DDD 11 a 19 — São Paulo inteiro virava "+1 (9xx) xxx-xxxx".
+ *
+ * Celular: 11 dígitos, DDD válido e o 9 obrigatório na frente.
+ * Fixo: 10 dígitos, DDD válido e começando de 2 a 5.
+ *
+ * Um número dos EUA só cairia aqui por engano se o código de área tivesse 9 no
+ * meio (99x), faixa que a NANP não usa. Para um produto brasileiro, a troca é
+ * essa e vale a pena.
+ */
+function isBrNacional(d: string): boolean {
+  const ddd = Number(d.slice(0, 2))
+  if (!DDD_BR.has(ddd)) return false
+  if (d.length === 11) return d[2] === '9'
+  if (d.length === 10) return /[2-5]/.test(d[2] ?? '')
+  return false
+}
+
+const BR: Country = COUNTRIES.find(c => c.flag === 'BR')!
+
 function detectCountry(d: string): { c: Country; national: string } | null {
+  if (isBrNacional(d)) return { c: BR, national: d }
   for (const c of COUNTRIES) {
     if (!d.startsWith(c.ddi)) continue
     const rest = d.slice(c.ddi.length)
@@ -68,7 +108,10 @@ export function whatsappLink(phone: string | null | undefined): string | null {
   if (!phone) return null
   const d = phone.replace(/\D/g, '')
   if (!d) return null
-  // Se já começa com 55, nunca prefixar de novo (evita wa.me/5555…)
+  // Nacional brasileiro precisa do 55 no link, senão o wa.me abre um número
+  // americano. Era o mesmo bug da exibição: o link ia para wa.me/19991091605.
+  if (isBrNacional(d)) return `https://wa.me/55${d}`
+  // Já tem DDI reconhecido (ou começa com 55): não prefixar de novo.
   const withDdi = detectCountry(d) || d.startsWith('55')
     ? d
     : (d.length === 10 || d.length === 11 ? `55${d}` : d)

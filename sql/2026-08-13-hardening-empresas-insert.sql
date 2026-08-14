@@ -1,4 +1,7 @@
 -- ═══════════════════════════════════════════════════════════════════════════
+-- APLICADO EM 13/08/2026 — migration `hardening_creditos_parceiros`.
+-- Mantido no repositório como registro.
+--
 -- Hardening: impedir que um usuário logado crie empresa já paga (auto-concessão)
 --
 -- PROBLEMA (confirmado em 13/08/2026 com PoC em transação + rollback):
@@ -25,9 +28,9 @@
 --   sempre que o autor NÃO for o backend (service_role) nem superAdmin.
 --   Cadastro continua funcionando; plano pago passa a ser impossível de forjar.
 --
--- APLICAR: revisar com o time do app antes. Se o cadastro do app grava
--- subscription_* no insert do cliente, ele passa a virar trial de 7 dias — que
--- é justamente o comportamento correto.
+-- Conferido antes de aplicar: o cadastro do app (server/api/auth/register.post.ts)
+-- insere a empresa com service_role, então o trigger não o afeta — testado com
+-- insert simulado, os valores enviados (trial/free/397) passaram intactos.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- 1) Trigger de normalização ------------------------------------------------

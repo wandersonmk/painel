@@ -1,111 +1,73 @@
 -- ═══════════════════════════════════════════════════════════════════════════
+-- APLICADO EM 13/08/2026 — migrations `hardening_creditos_parceiros` e
+-- `hardening_creditos_revoke_public`. Mantido no repositório como registro.
+--
 -- CRÍTICO — RPCs de assinatura sem nenhuma checagem de autorização
 --
--- Quatro funções SECURITY DEFINER estão com EXECUTE liberado para `anon` e
--- `authenticated` e não verificam NADA sobre quem chamou. Qualquer usuário
--- logado (cliente ou parceiro) alcança direto pelo PostgREST com a anon key.
+-- Quatro funções SECURITY DEFINER estavam alcançáveis por qualquer usuário
+-- logado pelo PostgREST e não verificavam NADA sobre quem chamou.
 --
--- PoC confirmado em 13/08/2026 (transação + rollback), com JWT de parceiro:
+-- PoC confirmado (transação + rollback), com JWT de parceiro:
 --
 --   select public.renew_subscription('<auth_user_id do cliente>');
 --   → empresas.subscription_renews_at = now() + 30 dias, status 'active'
 --
---   Rodou sem erro, renovou cliente de terceiro, NÃO consumiu crédito e NÃO
---   deixou rastro em parceiro_renovacoes nem em parceiro_auditoria.
+--   Renovou cliente de terceiro, NÃO consumiu crédito e NÃO deixou rastro em
+--   parceiro_renovacoes nem em parceiro_auditoria. O modelo pré-pago inteiro
+--   era contornável em loop.
 --
--- Efeito prático: o modelo de licenças pré-pagas é contornável por completo.
--- Um parceiro renova todos os clientes dele de graça, para sempre, chamando a
--- função em loop — e o painel mostra tudo "Ativo", sem consumo.
+-- ATENÇÃO À ARMADILHA: `revoke ... from anon, authenticated` NÃO resolve.
+-- O EXECUTE vinha do PUBLIC (acl "=X/postgres"), e revogar de um papel que
+-- só herda do PUBLIC não faz nada — o primeiro teste depois do revoke ainda
+-- renovou. O correto é revoke from PUBLIC + grant explícito para
+-- service_role, que é como parceiro_conceder_creditos já estava.
 --
--- As quatro:
---   renew_subscription(user_id)                     → +30d em qualquer empresa por auth_user_id
---   ativar_assinatura(empresa_id, cust, sub, venc)  → ativa qualquer empresa como 'pro' na data que quiser
---   renovar_assinatura(subscription_id, venc)       → ativa + move vencimento por subscription_id
---   cancelar_assinatura(subscription_id, status)    → cancela assinatura de terceiro (sabotagem)
---
--- E o parceiro consegue os identificadores: a policy `empresas_acesso_parceiro`
--- deixa ele ler a linha inteira dos clientes vinculados, subscription_id e
--- auth_user_id inclusive.
---
--- ANTES DE APLICAR: procurar no repositório do app (app.agzap.com.br) por
--- chamadas `rpc('renew_subscription'|'ativar_assinatura'|'renovar_assinatura'|
--- 'cancelar_assinatura')`. Se existir alguma no navegador, ela É a falha —
--- precisa virar chamada de servidor com service_role antes do revoke.
+-- Conferido nos dois repositórios antes de aplicar: nenhum chama essas
+-- funções; o cadastro (app/server/api/auth/register) e os webhooks usam
+-- service_role, e garantir_customer_stripe só é chamada em
+-- server/api/stripe/create-checkout-session, também com service_role.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- 1) Cobrança só pelo backend ------------------------------------------------
-revoke execute on function public.renew_subscription(uuid) from anon, authenticated;
-revoke execute on function public.ativar_assinatura(uuid, text, text, timestamptz) from anon, authenticated;
-revoke execute on function public.renovar_assinatura(text, timestamptz) from anon, authenticated;
-revoke execute on function public.cancelar_assinatura(text, text) from anon, authenticated;
+revoke execute on function public.renew_subscription(uuid) from public;
+revoke execute on function public.ativar_assinatura(uuid, text, text, timestamptz) from public;
+revoke execute on function public.renovar_assinatura(text, timestamptz) from public;
+revoke execute on function public.cancelar_assinatura(text, text) from public;
+revoke execute on function public.garantir_customer_stripe(uuid, text) from public;
 
--- search_path fixo nas quatro (todas estão sem, é o padrão que o advisor aponta).
+grant execute on function public.renew_subscription(uuid) to service_role;
+grant execute on function public.ativar_assinatura(uuid, text, text, timestamptz) to service_role;
+grant execute on function public.renovar_assinatura(text, timestamptz) to service_role;
+grant execute on function public.cancelar_assinatura(text, text) to service_role;
+grant execute on function public.garantir_customer_stripe(uuid, text) to service_role;
+
+-- 2) ElevenLabs legado -------------------------------------------------------
+-- Sem checagem de dono e sem uso no app (substituído pela MiniMax).
+revoke execute on function public.salvar_elevenlabs_empresa(uuid, text, text) from public;
+revoke execute on function public.atualizar_elevenlabs_voice_id(uuid, text) from public;
+revoke execute on function public.remover_elevenlabs_empresa(uuid) from public;
+revoke execute on function public.toggle_elevenlabs_voz(uuid, boolean) from public;
+
+-- 3) search_path fixo (function_search_path_mutable nos advisors) -------------
 alter function public.renew_subscription(uuid) set search_path to 'public', 'pg_temp';
 alter function public.ativar_assinatura(uuid, text, text, timestamptz) set search_path to 'public', 'pg_temp';
 alter function public.renovar_assinatura(text, timestamptz) set search_path to 'public', 'pg_temp';
 alter function public.cancelar_assinatura(text, text) set search_path to 'public', 'pg_temp';
+alter function public.garantir_customer_stripe(uuid, text) set search_path to 'public', 'pg_temp';
+alter function public.is_super_admin() set search_path to 'public', 'pg_temp';
 
--- 2) Configuração de empresa: nada para anônimo ------------------------------
--- Estas continuam disponíveis para `authenticated` porque o app chama do
--- navegador, mas ninguém deslogado tem o que fazer com elas.
-revoke execute on function public.garantir_customer_stripe(uuid, text) from anon;
-revoke execute on function public.salvar_elevenlabs_empresa(uuid, text, text) from anon;
-revoke execute on function public.atualizar_elevenlabs_voice_id(uuid, text) from anon;
-revoke execute on function public.remover_elevenlabs_empresa(uuid) from anon;
-revoke execute on function public.toggle_elevenlabs_voz(uuid, boolean) from anon;
-revoke execute on function public.salvar_minimax_empresa(uuid, text, text, text, text) from anon;
-revoke execute on function public.remover_minimax_empresa(uuid) from anon;
-revoke execute on function public.toggle_minimax_voz(uuid, boolean) from anon;
-
--- 3) IDOR pendente nas funções de configuração -------------------------------
--- Todas recebem p_empresa_id e não conferem se a empresa é de quem chamou:
--- qualquer usuário logado sobrescreve a chave de API, a voz ou a config de
--- QUALQUER empresa. Não é fraude de crédito, mas é adulteração de dado alheio.
---
--- O guard abaixo resolve com duas linhas dentro de cada função. Aplicar depois
--- de conferir o corpo de cada uma (elas não foram reescritas aqui de propósito,
--- para não alterar comportamento que o app depende).
-create or replace function public.empresa_do_usuario(p_empresa_id uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path to 'public', 'pg_temp'
-as $$
-  select exists (
-    select 1 from public.empresas e
-     where e.id = p_empresa_id
-       and e.auth_user_id = (select auth.uid())
-  )
-  or exists (
-    select 1 from public.usuarios_empresas ue
-      join public.usuarios u on u.id = ue.usuario_id
-     where ue.empresa_id = p_empresa_id
-       and u.auth_user_id = (select auth.uid())
-       and coalesce(ue.ativo, true)
-       and ue.papel in ('proprietario', 'admin')
-  )
-  or (select public.is_super_admin());
-$$;
-
--- Trecho a inserir no começo de cada função da lista do item 2:
---
---   if not public.empresa_do_usuario(p_empresa_id) then
---     raise exception 'Empresa não pertence ao usuário autenticado';
---   end if;
---
--- Funções que precisam: garantir_customer_stripe, salvar_elevenlabs_empresa,
--- atualizar_elevenlabs_voice_id, remover_elevenlabs_empresa,
--- toggle_elevenlabs_voz, salvar_minimax_empresa, remover_minimax_empresa,
--- atualizar_minimax_config (as duas assinaturas), toggle_minimax_voz.
+notify pgrst, 'reload schema';
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- VERIFICAÇÃO (depois de aplicar, o insert abaixo deve falhar com permissão
--- negada em vez de renovar):
+-- NÃO ERA FALHA: as funções da MiniMax (salvar_minimax_empresa,
+-- remover_minimax_empresa, atualizar_minimax_config, toggle_minimax_voz) já
+-- conferem o dono da empresa via pode_editar_integracoes_empresa(). Uma busca
+-- por 'auth.uid' no corpo não acha isso porque a checagem está no helper.
 --
+-- VERIFICAÇÃO (deve dar ERROR 42501 nas duas):
 --   begin;
 --   set local role authenticated;
---   set local request.jwt.claims = '{"sub":"<uid de parceiro>","role":"authenticated"}';
---   select public.renew_subscription('<auth_user_id de um cliente>');  -- espera-se ERROR 42501
+--   set local request.jwt.claims = '{"sub":"<uid real>","role":"authenticated"}';
+--   select public.renew_subscription('<auth_user_id de um cliente>');
 --   rollback;
 -- ═══════════════════════════════════════════════════════════════════════════

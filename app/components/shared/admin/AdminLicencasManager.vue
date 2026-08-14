@@ -108,6 +108,7 @@ const formTipo = ref<'mensal_30d' | 'anual_12m'>('mensal_30d')
 const formOperacao = ref<'concessao_admin' | 'compra' | 'correcao'>('compra')
 const formQuantidade = ref<number | null>(null)
 const formReferencia = ref('')
+const formDesconto = ref<number | null>(null)
 const formValorPago = ref<number | null>(null)
 const formDescricao = ref('')
 const salvandoCredito = ref(false)
@@ -126,6 +127,7 @@ function abrirCreditos(p: ParceiroLicencas) {
   formOperacao.value = 'compra'
   formQuantidade.value = null
   formReferencia.value = ''
+  formDesconto.value = null
   formValorPago.value = null
   formDescricao.value = ''
   idemCredito.value = novaChave()
@@ -144,13 +146,45 @@ const precoSugerido = computed(() => {
   return { unitario: Number(faixa.preco_unitario), total: Number(faixa.preco_unitario) * qtd }
 })
 
+const totalTabela = computed(() => precoSugerido.value?.total ?? 0)
+const descontoAplicado = computed(() => Math.min(Number(formDesconto.value ?? 0), totalTabela.value))
+const percentualDesconto = computed(() =>
+  totalTabela.value > 0 && descontoAplicado.value > 0
+    ? (descontoAplicado.value / totalTabela.value) * 100
+    : 0)
+
+const arred = (v: number) => Number(Math.max(0, v).toFixed(2))
+
 /**
  * Numa compra, o valor já vem preenchido pela tabela comercial — evita erro de
  * digitação. O admin pode sobrescrever se cobrou um valor diferente.
  */
 watch([formQuantidade, formTipo, formOperacao], () => {
-  if (formOperacao.value !== 'compra') return
-  formValorPago.value = precoSugerido.value ? Number(precoSugerido.value.total.toFixed(2)) : null
+  if (formOperacao.value !== 'compra') {
+    formDesconto.value = null
+    return
+  }
+  formValorPago.value = totalTabela.value ? arred(totalTabela.value - descontoAplicado.value) : null
+})
+
+/**
+ * Desconto e valor pago são o mesmo número visto de dois lados: mexer num
+ * recalcula o outro. Cada watcher só escreve quando o valor muda de fato, o
+ * que faz os dois convergirem sem laço infinito.
+ *
+ * O valor pago vai para o ledger já abatido — é ele que alimenta faturamento,
+ * ticket médio e passivo. Sem isso a métrica mostraria a tabela, não a venda.
+ */
+watch(formDesconto, () => {
+  if (formOperacao.value !== 'compra' || !totalTabela.value) return
+  const alvo = arred(totalTabela.value - descontoAplicado.value)
+  if (Number(formValorPago.value ?? -1) !== alvo) formValorPago.value = alvo
+})
+
+watch(formValorPago, () => {
+  if (formOperacao.value !== 'compra' || !totalTabela.value || formValorPago.value === null) return
+  const alvo = arred(totalTabela.value - Number(formValorPago.value))
+  if (Number(formDesconto.value ?? 0) !== alvo) formDesconto.value = alvo || null
 })
 
 const podeSalvarCredito = computed(() => {
@@ -164,6 +198,17 @@ const podeSalvarCredito = computed(() => {
 async function salvarCredito() {
   if (!alvoCredito.value || !podeSalvarCredito.value || salvandoCredito.value) return
   salvandoCredito.value = true
+
+  // O desconto entra na descrição do lançamento: o valor_pago já vai abatido,
+  // então sem esta linha ninguém saberia depois que houve desconto nem de
+  // quanto era a tabela na época.
+  const partes: string[] = []
+  if (formOperacao.value === 'compra' && descontoAplicado.value > 0) {
+    partes.push(`Desconto de ${fmtBRL(descontoAplicado.value)} sobre a tabela de ${fmtBRL(totalTabela.value)}`)
+  }
+  if (formDescricao.value.trim()) partes.push(formDescricao.value.trim())
+  const descricaoFinal = partes.join(' · ').slice(0, 300)
+
   try {
     const resp = await $fetch<{ success: boolean; error?: string; data?: { saldo: number } }>(
       '/api/admin/parceiros/creditos',
@@ -176,7 +221,7 @@ async function salvarCredito() {
           operacao: formOperacao.value,
           referencia: formReferencia.value,
           valorPago: formValorPago.value,
-          descricao: formDescricao.value,
+          descricao: descricaoFinal,
           idempotencyKey: idemCredito.value,
         },
         headers: await useAdminAuthHeaders(),
@@ -515,21 +560,50 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
           </p>
         </div>
 
-        <div v-if="formOperacao === 'compra'" class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Referência do pedido</label>
-            <input v-model="formReferencia" type="text" maxlength="120" placeholder="Ex.: PIX 12/08"
-              class="w-full px-3 py-2 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500" />
+        <template v-if="formOperacao === 'compra'">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Referência do pedido</label>
+              <input v-model="formReferencia" type="text" maxlength="120" placeholder="Ex.: PIX 12/08"
+                class="w-full px-3 py-2 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500" />
+            </div>
+            <div>
+              <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                Desconto <span class="font-medium normal-case text-slate-400">(opcional)</span>
+              </label>
+              <AppCurrencyInput
+                v-model="formDesconto"
+                placeholder="R$ 0,00"
+                class="w-full px-3 py-2 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded text-sm text-slate-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
           </div>
+
           <div>
-            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Valor pago</label>
+            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+              Valor pago <span class="font-medium normal-case text-slate-400">— é o que entra nas métricas</span>
+            </label>
             <AppCurrencyInput
               v-model="formValorPago"
               placeholder="R$ 0,00"
               class="w-full px-3 py-2 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded text-sm text-slate-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-purple-500"
             />
+            <!-- A conta na cara: tabela − desconto = cobrado. Editar qualquer
+                 um dos dois campos reescreve o outro. -->
+            <p v-if="totalTabela > 0" class="mt-1.5 text-xs tabular-nums flex flex-wrap items-center gap-x-1.5">
+              <span class="text-slate-400 line-through">{{ fmtBRL(totalTabela) }}</span>
+              <template v-if="descontoAplicado > 0">
+                <span class="text-red-600 dark:text-red-400">− {{ fmtBRL(descontoAplicado) }}</span>
+                <span class="text-slate-400">({{ percentualDesconto.toFixed(1).replace('.', ',') }}% off)</span>
+              </template>
+              <span class="text-slate-400">=</span>
+              <strong class="text-emerald-600 dark:text-emerald-400">{{ fmtBRL(formValorPago ?? 0) }}</strong>
+              <span v-if="formQuantidade" class="text-slate-400">
+                · {{ fmtBRL((formValorPago ?? 0) / Math.abs(formQuantidade)) }} por licença
+              </span>
+            </p>
           </div>
-        </div>
+        </template>
 
         <div>
           <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">

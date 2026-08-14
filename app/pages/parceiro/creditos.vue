@@ -348,6 +348,7 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
       :show="showSolicitar"
       tipo="creditos"
       :parceiro-nome="parceiro?.nome"
+      :precos="precos"
       @close="showSolicitar = false"
     />
   </div>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import type { ClienteCarteira } from '~/composables/useParceiroLicencas'
+import { computed, onMounted, ref, watch } from 'vue'
+import type { ClienteCarteira, PrecoLicenca } from '~/composables/useParceiroLicencas'
 
 export type TipoSolicitacao = 'creditos' | 'exclusao' | 'instancia' | 'numero' | 'assistente'
 
@@ -9,6 +9,8 @@ const props = defineProps<{
   tipo: TipoSolicitacao
   cliente?: ClienteCarteira | null
   parceiroNome?: string
+  /** Opcional: a tela que já carregou os preços passa e evita nova requisição. */
+  precos?: PrecoLicenca[]
 }>()
 
 const emit = defineEmits<{ close: [] }>()
@@ -53,18 +55,26 @@ const observacao = ref('')
 
 // ───────── Pedido de créditos: quantidade e preço ─────────
 // Os preços vêm da tabela do banco, não de constante no código: a Agzap muda
-// faixa quando quiser e o pedido tem que acompanhar. O modal busca sozinho
-// porque é usado em três telas e nem todas têm os preços carregados.
-const { precos, loadCreditos } = useParceiroLicencas()
+// faixa quando quiser e o pedido tem que acompanhar.
+//
+// A carga acontece no onMounted, e não ao abrir o modal: dentro do watch o
+// useSupabaseClient() do useAdminAuthHeaders roda fora do contexto do Nuxt,
+// falha calado e o preço aparecia zerado. A tela que já tem os preços pode
+// passar por prop e evitar a requisição.
+const { precos: precosCarregados, loadCreditos } = useParceiroLicencas()
+const precos = computed(() => props.precos?.length ? props.precos : precosCarregados.value)
 const qtdMensal = ref(0)
 const qtdAnual = ref(0)
 
-watch(() => props.show, async (aberto) => {
+onMounted(() => {
+  if (props.tipo === 'creditos' && !props.precos?.length) loadCreditos()
+})
+
+watch(() => props.show, (aberto) => {
   if (!aberto) return
   observacao.value = ''
   qtdMensal.value = 0
   qtdAnual.value = 0
-  if (props.tipo === 'creditos' && !precos.value.length) await loadCreditos()
 })
 
 const fmtBRL = (v: number) =>
@@ -101,6 +111,8 @@ const linhaMensal = computed(() => linhaDe('mensal_30d', Number(qtdMensal.value)
 const linhaAnual = computed(() => linhaDe('anual_12m', Number(qtdAnual.value) || 0))
 const totalPedido = computed(() => linhaMensal.value.total + linhaAnual.value.total)
 const totalCreditos = computed(() => linhaMensal.value.qtd + linhaAnual.value.qtd)
+/** Sem tabela carregada, some com o dinheiro em vez de exibir R$ 0,00. */
+const temPrecos = computed(() => precos.value.length > 0)
 
 /** "Peça mais 2 e o preço cai": só quando a próxima faixa existe e compensa. */
 const proximaFaixaMensal = computed(() => {
@@ -124,13 +136,17 @@ const linkWhatsApp = computed(() => {
   // perguntar nada de volta.
   if (props.tipo === 'creditos' && totalCreditos.value > 0) {
     linhas.push('')
+    const detalhe = (qtd: number, rotulo: string, unitario: number, total: number) =>
+      temPrecos.value
+        ? `• ${qtd} crédito(s) de ${rotulo} — ${fmtBRL(unitario)} cada = ${fmtBRL(total)}`
+        : `• ${qtd} crédito(s) de ${rotulo}`
     if (linhaMensal.value.qtd > 0) {
-      linhas.push(`• ${linhaMensal.value.qtd} crédito(s) de 30 dias — ${fmtBRL(linhaMensal.value.unitario)} cada = ${fmtBRL(linhaMensal.value.total)}`)
+      linhas.push(detalhe(linhaMensal.value.qtd, '30 dias', linhaMensal.value.unitario, linhaMensal.value.total))
     }
     if (linhaAnual.value.qtd > 0) {
-      linhas.push(`• ${linhaAnual.value.qtd} crédito(s) de 12 meses — ${fmtBRL(linhaAnual.value.unitario)} cada = ${fmtBRL(linhaAnual.value.total)}`)
+      linhas.push(detalhe(linhaAnual.value.qtd, '12 meses', linhaAnual.value.unitario, linhaAnual.value.total))
     }
-    linhas.push('', `*Total: ${fmtBRL(totalPedido.value)}*`)
+    if (temPrecos.value) linhas.push('', `*Total: ${fmtBRL(totalPedido.value)}*`)
   }
 
   if (props.cliente) {
@@ -229,7 +245,7 @@ function abrir() {
             </div>
           </div>
 
-          <div v-if="linha.dados.qtd > 0" class="mt-2 pt-2 border-t border-slate-200/70 dark:border-white/5 flex items-baseline justify-between text-xs">
+          <div v-if="linha.dados.qtd > 0 && temPrecos" class="mt-2 pt-2 border-t border-slate-200/70 dark:border-white/5 flex items-baseline justify-between text-xs">
             <span class="text-slate-500 dark:text-slate-400 tabular-nums">
               {{ linha.dados.qtd }} × {{ fmtBRL(linha.dados.unitario) }}
             </span>
@@ -244,8 +260,16 @@ function abrir() {
           </p>
         </div>
 
+        <p
+          v-if="totalCreditos > 0 && !temPrecos"
+          class="text-[11px] text-amber-600 dark:text-amber-400 flex items-start gap-1.5 px-1"
+        >
+          <i class="fa-solid fa-triangle-exclamation text-[10px] mt-0.5 shrink-0" aria-hidden="true" />
+          Não consegui carregar a tabela de preços agora — o pedido vai só com as quantidades.
+        </p>
+
         <div
-          v-if="totalCreditos > 0"
+          v-if="totalCreditos > 0 && temPrecos"
           class="flex items-baseline justify-between px-3 py-2.5 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/10"
         >
           <div>
@@ -264,7 +288,9 @@ function abrir() {
           v-model="observacao"
           rows="3"
           maxlength="500"
-          :placeholder="tipo === 'creditos' ? 'Ex.: pago por Pix hoje ainda' : 'Conte o que você precisa'"
+          :placeholder="tipo === 'creditos'
+            ? 'Ex.: já tenho muitos clientes, consegue aplicar desconto? Me envie o link para pagamento'
+            : 'Conte o que você precisa'"
           class="w-full px-3 py-2 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
         />
       </div>

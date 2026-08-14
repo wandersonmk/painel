@@ -35,7 +35,11 @@ interface LinhaParceiro {
   estornado_total: number
   estornado_mes: number
   liquido_total: number
+  passivo_pago: number
+  passivo_cortesia: number
   passivo_estimado: number
+  saldo_pago: number
+  saldo_cortesia: number
   creditos_comprados: number
   creditos_concedidos: number
   creditos_estornados: number
@@ -224,7 +228,7 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
 
     <template v-else-if="resumo">
       <!-- Números do mês -->
-      <div class="p-3 sm:p-5 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+      <div class="p-3 sm:p-5 grid grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-3">
         <AdminStatsCard
           title="Vendido no mês"
           :value="fmtBRL(resumo.vendido_mes)"
@@ -248,11 +252,19 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
           :color="resumo.liquido_mes >= 0 ? 'indigo' : 'orange'"
         />
         <AdminStatsCard
-          title="Passivo em créditos"
-          :value="fmtBRL(resumo.passivo_estimado)"
-          :subtitle="`${resumo.saldo_creditos_aberto} créditos pagos, não usados`"
+          title="Passivo pago"
+          :value="fmtBRL(resumo.passivo_pago)"
+          :subtitle="`${resumo.saldo_pago} créditos com dinheiro atrás`"
           icon="fa-vault"
-          color="amber"
+          color="emerald"
+        />
+        <AdminStatsCard
+          title="Cortesia a executar"
+          :value="fmtBRL(resumo.passivo_cortesia)"
+          :subtitle="`${resumo.saldo_cortesia} créditos sem dinheiro atrás`"
+          icon="fa-gift"
+          color="orange"
+          :highlighted="resumo.passivo_cortesia > resumo.passivo_pago"
         />
         <AdminStatsCard
           title="Consumido no mês"
@@ -264,17 +276,18 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
       </div>
 
       <!-- Avisos de controle -->
+      <div class="mx-3 sm:mx-5 mb-4 space-y-2">
       <div
         v-if="resumo.creditos_concedidos_total > 0 || resumo.renovacoes_sem_credito_mes > 0"
-        class="mx-3 sm:mx-5 mb-4 flex flex-wrap gap-2 text-[11px]"
+        class="flex flex-wrap gap-2 text-[11px]"
       >
         <span
           v-if="resumo.creditos_concedidos_total > 0"
           class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 font-semibold"
-          title="Créditos liberados sem pagamento — custo de cortesia avaliado a preço de tabela"
+          title="Total já liberado sem pagamento em toda a história — parte disso já foi consumida. O que ainda falta entregar está no card Cortesia a executar."
         >
           <i class="fa-solid fa-gift" aria-hidden="true" />
-          {{ resumo.creditos_concedidos_total }} créditos de cortesia · {{ fmtBRL(resumo.concedido_valor_tabela) }} a preço de tabela
+          {{ resumo.creditos_concedidos_total }} créditos de cortesia já liberados · {{ fmtBRL(resumo.concedido_valor_tabela) }} a preço de tabela
         </span>
         <span
           v-if="resumo.renovacoes_sem_credito_mes > 0"
@@ -284,6 +297,15 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
           <i class="fa-solid fa-circle-info" aria-hidden="true" />
           {{ resumo.renovacoes_sem_credito_mes }} renovações da Agzap sem consumo de crédito neste mês
         </span>
+      </div>
+      <p class="text-[11px] text-slate-400 dark:text-slate-500 flex items-start gap-1.5">
+        <i class="fa-solid fa-circle-info text-[10px] mt-0.5 shrink-0" aria-hidden="true" />
+        <span>
+          O saldo é separado por ordem de entrada (FIFO): crédito comprado sai antes do crédito
+          de cortesia. Entrada com valor lançado conta como <strong>pago</strong>; concessão,
+          migração e correção sem valor contam como <strong>cortesia</strong>, avaliada a preço de tabela.
+        </span>
+      </p>
       </div>
 
       <!-- Consolidado por parceiro -->
@@ -300,7 +322,8 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                 <th :class="[th, 'text-right']">Cortesia</th>
                 <th :class="[th, 'text-right']">Consumidos</th>
                 <th :class="[th, 'text-right']">Saldo</th>
-                <th :class="[th, 'text-right']">Passivo</th>
+                <th :class="[th, 'text-right']">Passivo pago</th>
+                <th :class="[th, 'text-right']">Cortesia a executar</th>
                 <th :class="[th, 'text-right']">Clientes</th>
                 <th :class="[th, 'text-right']">Último consumo</th>
               </tr>
@@ -329,7 +352,16 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                 <td :class="[td, 'text-right tabular-nums']" :title="`${p.saldo.mensal_30d} de 30 dias · ${p.saldo.anual_12m} de 12 meses`">
                   <span class="font-semibold text-purple-600 dark:text-purple-400">{{ p.saldo_total }}</span>
                 </td>
-                <td :class="[td, 'text-right tabular-nums text-amber-600 dark:text-amber-400']">{{ fmtBRL(p.passivo_estimado) }}</td>
+                <td :class="[td, 'text-right tabular-nums']" :title="`${p.saldo_pago} créditos com dinheiro atrás`">
+                  <span :class="p.passivo_pago > 0 ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-slate-400'">
+                    {{ p.passivo_pago > 0 ? fmtBRL(p.passivo_pago) : '—' }}
+                  </span>
+                </td>
+                <td :class="[td, 'text-right tabular-nums']" :title="`${p.saldo_cortesia} créditos sem dinheiro atrás`">
+                  <span :class="p.passivo_cortesia > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-slate-400'">
+                    {{ p.passivo_cortesia > 0 ? fmtBRL(p.passivo_cortesia) : '—' }}
+                  </span>
+                </td>
                 <td :class="[td, 'text-right tabular-nums']">
                   {{ p.clientes_total }}
                   <span v-if="p.clientes_vencendo_7d" class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400">{{ p.clientes_vencendo_7d }} vencendo</span>

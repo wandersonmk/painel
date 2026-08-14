@@ -71,21 +71,74 @@ export default defineEventHandler(async (event) => {
     return Number(faixas[0].preco_unitario) || 0
   }
 
-  // Preço médio efetivamente pago por parceiro/tipo — base honesta do passivo,
-  // porque cada parceiro compra em faixa diferente.
-  const pagoPorParceiroTipo = new Map<string, { qtd: number; valor: number }>()
-  for (const l of ledger) {
-    if (l.operacao !== 'compra' || Number(l.quantidade) <= 0) continue
+  // ───────── Rateio do saldo: o que tem dinheiro atrás e o que é cortesia ─────────
+  // O ledger não marca lote, então reconstruímos: cada entrada vira um lote com
+  // origem e preço unitário, cada saída consome do lote mais antigo (FIFO).
+  // Sem isso, "passivo" mistura receita adiantada (dívida de verdade) com
+  // cortesia concedida (serviço prometido sem dinheiro nenhum recebido).
+  interface Lote { origem: 'pago' | 'cortesia'; unitario: number; qtd: number }
+  const lotesPorChave = new Map<string, Lote[]>()
+
+  // O ledger vem do mais novo para o mais velho; o FIFO precisa do contrário.
+  for (const l of [...ledger].reverse()) {
     const chave = `${l.parceiro_id}:${l.tipo_credito}`
-    const atual = pagoPorParceiroTipo.get(chave) ?? { qtd: 0, valor: 0 }
-    atual.qtd += Number(l.quantidade)
-    atual.valor += valor(l)
-    pagoPorParceiroTipo.set(chave, atual)
+    const fila = lotesPorChave.get(chave) ?? []
+    const qtd = Number(l.quantidade)
+
+    if (qtd > 0) {
+      // Entrada com valor lançado = dinheiro entrou. Sem valor (concessão,
+      // migração, correção a favor) = crédito dado, avaliado a preço de tabela.
+      const pago = valor(l) > 0
+      fila.push({
+        origem: pago ? 'pago' : 'cortesia',
+        unitario: pago ? valor(l) / qtd : precoTabela(l.tipo_credito),
+        qtd,
+      })
+    }
+    else {
+      let restante = -qtd
+      while (restante > 0 && fila.length) {
+        const lote = fila[0]!
+        const usa = Math.min(lote.qtd, restante)
+        lote.qtd -= usa
+        restante -= usa
+        if (lote.qtd === 0) fila.shift()
+      }
+    }
+    lotesPorChave.set(chave, fila)
   }
-  const precoMedio = (parceiroId: string, tipo: Tipo): number => {
-    const c = pagoPorParceiroTipo.get(`${parceiroId}:${tipo}`)
-    if (c && c.qtd > 0 && c.valor > 0) return c.valor / c.qtd
-    return precoTabela(tipo)
+
+  /**
+   * Saldo rateado, conferido contra parceiro_creditos_saldo — que é a fonte da
+   * verdade. Divergência (ledger truncado, ajuste fora do fluxo) entra como
+   * cortesia: na dúvida, nunca inflar o que consta como pago.
+   */
+  function ratearSaldo(parceiroId: string, tipo: Tipo, saldoReal: number) {
+    const fila = (lotesPorChave.get(`${parceiroId}:${tipo}`) ?? []).map(l => ({ ...l }))
+    let sobrando = fila.reduce((acc, l) => acc + l.qtd, 0) - saldoReal
+    // Ledger diz mais que o saldo: consome o excedente do lote mais antigo.
+    while (sobrando > 0 && fila.length) {
+      const lote = fila[0]!
+      const usa = Math.min(lote.qtd, sobrando)
+      lote.qtd -= usa
+      sobrando -= usa
+      if (lote.qtd === 0) fila.shift()
+    }
+
+    const pago = fila.filter(l => l.origem === 'pago')
+    const cortesia = fila.filter(l => l.origem === 'cortesia')
+    const qtdPago = pago.reduce((acc, l) => acc + l.qtd, 0)
+    const qtdCortesia = cortesia.reduce((acc, l) => acc + l.qtd, 0)
+    // Saldo diz mais que o ledger: a diferença não tem origem conhecida.
+    const semOrigem = Math.max(0, saldoReal - qtdPago - qtdCortesia)
+
+    return {
+      qtdPago,
+      qtdCortesia: qtdCortesia + semOrigem,
+      valorPago: pago.reduce((acc, l) => acc + l.qtd * l.unitario, 0),
+      valorCortesia: cortesia.reduce((acc, l) => acc + l.qtd * l.unitario, 0)
+        + semOrigem * precoTabela(tipo),
+    }
   }
 
   // ───────── Listas detalhadas ─────────
@@ -146,8 +199,10 @@ export default defineEventHandler(async (event) => {
     const vencimentoDe = (v: any) => v.empresas.subscription_renews_at ?? v.empresas.trial_ends_at ?? null
     const diasAte = (iso: string | null) => iso === null ? null : Math.ceil((new Date(iso).getTime() - agora) / DIA_MS)
 
-    const passivo = saldo.mensal_30d * precoMedio(p.id, 'mensal_30d')
-      + saldo.anual_12m * precoMedio(p.id, 'anual_12m')
+    const rateioMensal = ratearSaldo(p.id, 'mensal_30d', saldo.mensal_30d)
+    const rateioAnual = ratearSaldo(p.id, 'anual_12m', saldo.anual_12m)
+    const passivoPago = rateioMensal.valorPago + rateioAnual.valorPago
+    const passivoCortesia = rateioMensal.valorCortesia + rateioAnual.valorCortesia
 
     return {
       id: p.id,
@@ -161,7 +216,14 @@ export default defineEventHandler(async (event) => {
       estornado_total: soma(estornosP, valor),
       estornado_mes: soma(estornosP.filter(l => noMes(l.data)), valor),
       liquido_total: soma(vendasP, valor) - soma(estornosP, valor),
-      passivo_estimado: passivo,
+      // Passivo pago = dinheiro que entrou e ainda não virou entrega.
+      // Cortesia = serviço prometido sem nenhum dinheiro atrás. São coisas
+      // diferentes; somar as duas num número só engana.
+      passivo_pago: passivoPago,
+      passivo_cortesia: passivoCortesia,
+      passivo_estimado: passivoPago + passivoCortesia,
+      saldo_pago: rateioMensal.qtdPago + rateioAnual.qtdPago,
+      saldo_cortesia: rateioMensal.qtdCortesia + rateioAnual.qtdCortesia,
       // Créditos
       creditos_comprados: soma(vendasP, l => l.quantidade),
       creditos_concedidos: soma(concessoesP, l => l.quantidade),
@@ -233,7 +295,12 @@ export default defineEventHandler(async (event) => {
     ticket_medio_credito: soma(vendas, l => l.quantidade) > 0
       ? soma(vendas, valor) / soma(vendas, l => l.quantidade)
       : 0,
-    // Passivo: crédito pago que ainda não virou renovação entregue.
+    // Passivo pago: dinheiro no caixa que ainda não virou renovação entregue.
+    passivo_pago: porParceiro.reduce((acc, p) => acc + p.passivo_pago, 0),
+    saldo_pago: porParceiro.reduce((acc, p) => acc + p.saldo_pago, 0),
+    // Cortesia a executar: serviço prometido sem dinheiro recebido.
+    passivo_cortesia: porParceiro.reduce((acc, p) => acc + p.passivo_cortesia, 0),
+    saldo_cortesia: porParceiro.reduce((acc, p) => acc + p.saldo_cortesia, 0),
     passivo_estimado: porParceiro.reduce((acc, p) => acc + p.passivo_estimado, 0),
     saldo_creditos_aberto: porParceiro.reduce((acc, p) => acc + p.saldo_total, 0),
     clientes_vencendo_7d: vencendo.filter(c => (c.dias_restantes ?? 0) >= 0).length,

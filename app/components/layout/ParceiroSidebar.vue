@@ -6,6 +6,7 @@ const navItems = [
   { label: 'Dashboard', icon: 'fa-gauge-high', to: '/parceiro' },
   { label: 'Clientes', icon: 'fa-users', to: '/parceiro/clientes' },
   { label: 'Créditos', icon: 'fa-coins', to: '/parceiro/creditos' },
+  { label: 'Relatório', icon: 'fa-chart-line', to: '/parceiro/relatorio' },
   { label: 'Materiais', icon: 'fa-box-open', to: '/parceiro/materiais' },
   { label: 'Termos', icon: 'fa-file-contract', to: '/parceiro/termos' },
 ]

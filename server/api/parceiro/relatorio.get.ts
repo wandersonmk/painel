@@ -50,11 +50,11 @@ export default defineEventHandler(async (event) => {
       .select('tipo_credito, quantidade, operacao, valor_pago, created_at')
       .eq('parceiro_id', parceiro.id),
     supabase.from('parceiro_empresas')
-      .select('empresa_id, cobranca_agzap, empresas ( nome, subscription_price )')
+      .select('empresa_id, cobranca_agzap, preco_anual, empresas ( nome, subscription_price )')
       .eq('parceiro_id', parceiro.id)
       .eq('ativo', true),
     supabase.from('parceiro_precos_licenca')
-      .select('tipo_credito, quantidade_min, preco_unitario')
+      .select('tipo_credito, quantidade_min, preco_unitario, preco_sugerido_revenda')
       .eq('ativo', true)
       .order('tipo_credito').order('quantidade_min'),
   ])
@@ -67,10 +67,33 @@ export default defineEventHandler(async (event) => {
   const precos = (precosRes.data ?? []) as any[]
 
   const precoDoCliente = new Map<string, number>()
+  const precoAnualDoCliente = new Map<string, number | null>()
   const nomeDoCliente = new Map<string, string>()
   for (const v of vinculos) {
     precoDoCliente.set(v.empresa_id, Number(v.empresas.subscription_price ?? 0) || 0)
+    precoAnualDoCliente.set(v.empresa_id, v.preco_anual === null || v.preco_anual === undefined ? null : Number(v.preco_anual))
     nomeDoCliente.set(v.empresa_id, v.empresas.nome)
+  }
+
+  /** Sugestão de revenda da tabela, quando o parceiro não definiu a dele. */
+  const sugeridoRevenda = (tipo: string): number => {
+    const faixa = precos.filter(p => p.tipo_credito === tipo)[0]
+    return faixa ? Number(faixa.preco_sugerido_revenda ?? 0) || 0 : 0
+  }
+
+  /**
+   * Receita de uma renovação anual: quem vende 12 meses cobra um preço
+   * fechado, não 12× o mensal. A ordem é a do mais específico para o mais
+   * genérico — valor do cliente, sugerido da tabela, e só então 12× o mensal.
+   */
+  function receitaAnual(empresaId: string, precoMensal: number) {
+    const doCliente = precoAnualDoCliente.get(empresaId)
+    if (doCliente !== null && doCliente !== undefined && doCliente > 0) {
+      return { valor: doCliente, origem: 'cliente' as const }
+    }
+    const sugerido = sugeridoRevenda('anual_12m')
+    if (sugerido > 0) return { valor: sugerido, origem: 'tabela' as const }
+    return { valor: precoMensal * 12, origem: 'mensal_x12' as const }
   }
 
   // Custo por crédito: média do que ele pagou; sem compra, cai na tabela.
@@ -95,7 +118,8 @@ export default defineEventHandler(async (event) => {
     // lista para explicar o vencimento, mas com receita e custo zerados.
     // Sem isso, um ajuste administrativo de 1 dia virava um mês de receita.
     const custo = !consumiu ? 0 : (r.tipo_credito === 'anual_12m' ? custoAnual : custoMensal)
-    const receita = consumiu ? preco * meses : 0
+    const anual = r.tipo_credito === 'anual_12m' ? receitaAnual(r.empresa_id, preco) : null
+    const receita = !consumiu ? 0 : (anual ? anual.valor : preco * meses)
     return {
       id: r.id,
       data: r.executado_em,
@@ -106,6 +130,9 @@ export default defineEventHandler(async (event) => {
       consumiu_credito: r.consumiu_credito === true,
       meses,
       preco_mensal: preco,
+      // De onde saiu a receita da linha anual, para a tela poder avisar quando
+      // ainda é o sugerido da tabela e não o preço que ele realmente cobrou.
+      preco_anual_origem: anual?.origem ?? null,
       receita,
       custo,
       resultado: receita - custo,
@@ -188,6 +215,9 @@ export default defineEventHandler(async (event) => {
         clientes_atendidos: porCliente.filter(c => c.receita > 0).length,
         custo_medio_mensal: custoMensal,
         custo_medio_anual: custoAnual,
+        // Quantas renovações anuais ainda usam o preço sugerido da tabela em
+        // vez do que o parceiro combinou com aquele cliente.
+        anuais_sem_preco_proprio: linhas.filter(l => l.preco_anual_origem && l.preco_anual_origem !== 'cliente').length,
         // Cliente sem valor cadastrado entra com receita zero e distorce o
         // relatório: a tela avisa em vez de fingir que está tudo certo.
         clientes_sem_preco: semPreco,

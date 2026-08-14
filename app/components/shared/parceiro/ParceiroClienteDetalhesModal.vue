@@ -61,7 +61,7 @@ const SITUACOES: Record<string, { label: string; cls: string }> = {
         </div>
         <!-- Valor que o cliente vê na assinatura: quem revende define. -->
         <div v-if="!cliente.cobranca_agzap" class="flex items-center justify-between px-4 py-2.5">
-          <dt class="text-xs text-slate-500 dark:text-slate-400">Valor cobrado do cliente</dt>
+          <dt class="text-xs text-slate-500 dark:text-slate-400">Valor mensal cobrado</dt>
           <dd>
             <button
               type="button"
@@ -69,6 +69,22 @@ const SITUACOES: Record<string, { label: string; cls: string }> = {
               class="inline-flex items-center gap-1.5 px-2 py-1 rounded text-sm tabular-nums font-semibold text-purple-700 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-500/10 transition-colors"
             >
               {{ fmtBRL(cliente.preco) }}
+              <i class="fa-solid fa-pen text-[9px]" aria-hidden="true" />
+            </button>
+          </dd>
+        </div>
+        <!-- Plano de 12 meses tem preço fechado, não 12× o mensal. -->
+        <div v-if="!cliente.cobranca_agzap" class="flex items-center justify-between px-4 py-2.5">
+          <dt class="text-xs text-slate-500 dark:text-slate-400">Valor do plano anual</dt>
+          <dd>
+            <button
+              type="button"
+              @click="emit('editar-valor', cliente)"
+              class="inline-flex items-center gap-1.5 px-2 py-1 rounded text-sm tabular-nums font-semibold transition-colors hover:bg-purple-50 dark:hover:bg-purple-500/10"
+              :class="cliente.preco_anual !== null ? 'text-purple-700 dark:text-purple-400' : 'text-slate-400'"
+              :title="cliente.preco_anual !== null ? 'Alterar o valor do plano de 12 meses' : 'Definir o valor do plano de 12 meses'"
+            >
+              {{ cliente.preco_anual !== null ? fmtBRL(cliente.preco_anual) : 'definir' }}
               <i class="fa-solid fa-pen text-[9px]" aria-hidden="true" />
             </button>
           </dd>

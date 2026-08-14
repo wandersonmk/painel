@@ -271,10 +271,21 @@ const td = 'px-4 py-2.5 text-sm'
         </div>
       </div>
 
-      <div v-if="resumo.clientes_sem_preco > 0" class="flex flex-wrap gap-2">
-        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400">
+      <div v-if="resumo.clientes_sem_preco > 0 || resumo.anuais_sem_preco_proprio > 0" class="flex flex-wrap gap-2">
+        <span
+          v-if="resumo.clientes_sem_preco > 0"
+          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400"
+        >
           <i class="fa-solid fa-triangle-exclamation text-[10px]" aria-hidden="true" />
           {{ resumo.clientes_sem_preco }} cliente(s) sem valor cadastrado entram como R$ 0,00
+        </span>
+        <span
+          v-if="resumo.anuais_sem_preco_proprio > 0"
+          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400"
+          title="Defina o valor anual do cliente em Clientes › Valor cobrado"
+        >
+          <i class="fa-solid fa-calendar-days text-[10px]" aria-hidden="true" />
+          {{ resumo.anuais_sem_preco_proprio }} renovação(ões) anual(is) usando o preço sugerido da tabela
         </span>
       </div>
 
@@ -332,6 +343,7 @@ const td = 'px-4 py-2.5 text-sm'
                   <th :class="th">Crédito</th>
                   <th :class="[th, 'text-right']">Receita</th>
                   <th :class="[th, 'text-right']">Custo</th>
+                  <th :class="[th, 'text-right']">Lucro na venda</th>
                   <th :class="[th, 'text-right']">Válido até</th>
                 </tr>
               </thead>
@@ -343,8 +355,18 @@ const td = 'px-4 py-2.5 text-sm'
                     {{ LABEL_TIPO[r.tipo_credito] ?? '—' }}
                     <span v-if="!r.consumiu_credito" class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">Agzap</span>
                   </td>
-                  <td :class="[td, 'text-right tabular-nums text-slate-700 dark:text-slate-200']">{{ fmtBRL(r.receita) }}</td>
+                  <td :class="[td, 'text-right tabular-nums text-slate-700 dark:text-slate-200']">
+                    {{ fmtBRL(r.receita) }}
+                    <span
+                      v-if="r.preco_anual_origem && r.preco_anual_origem !== 'cliente'"
+                      class="block text-[9px] text-amber-600 dark:text-amber-400 font-medium"
+                      title="Este cliente ainda não tem preço anual definido — usando a sugestão da tabela"
+                    >preço sugerido</span>
+                  </td>
                   <td :class="[td, 'text-right tabular-nums text-red-600 dark:text-red-400']">{{ fmtBRL(r.custo) }}</td>
+                  <td :class="[td, 'text-right tabular-nums font-bold', r.resultado >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400']">
+                    {{ r.consumiu_credito ? fmtBRL(r.resultado) : '—' }}
+                  </td>
                   <td :class="[td, 'text-right tabular-nums text-xs text-slate-500']">{{ fmtData(r.vencimento_novo) }}</td>
                 </tr>
               </tbody>

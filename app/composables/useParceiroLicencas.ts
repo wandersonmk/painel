@@ -19,6 +19,8 @@ export interface ClienteCarteira {
   situacao: SituacaoAcesso
   /** Valor que o cliente vê na tela de assinatura — definido pelo parceiro. */
   preco: number | null
+  /** Preço fechado do plano de 12 meses, para o relatório do parceiro. */
+  preco_anual: number | null
   bloqueado_em: string | null
   cobranca_agzap: boolean
   instancias: number
@@ -147,16 +149,27 @@ export const useParceiroLicencas = () => {
     if (!resp.success) throw new Error(resp.error || 'Não foi possível concluir a operação')
   }
 
-  /** Valor da assinatura que o cliente do parceiro enxerga no app. */
-  const salvarValorAssinatura = async (empresaId: string, valor: number | null) => {
-    const resp = await $fetch<{ success: boolean; error?: string; data?: { valor: number | null } }>(
-      '/api/parceiro/valor-assinatura',
-      { method: 'POST', body: { empresaId, valor }, headers: await useAdminAuthHeaders() },
-    )
+  /**
+   * Mensal é o que o cliente vê no app; anual é o preço fechado do plano de
+   * 12 meses, usado no relatório do parceiro.
+   */
+  const salvarValorAssinatura = async (empresaId: string, valor: number | null, valorAnual: number | null = null) => {
+    const resp = await $fetch<{
+      success: boolean
+      error?: string
+      data?: { valor: number | null; valorAnual: number | null }
+    }>('/api/parceiro/valor-assinatura', {
+      method: 'POST',
+      body: { empresaId, valor, valorAnual },
+      headers: await useAdminAuthHeaders(),
+    })
     if (!resp.success) throw new Error(resp.error || 'Não foi possível salvar o valor')
     const c = clientes.value.find(x => x.empresa_id === empresaId)
-    if (c) c.preco = resp.data?.valor ?? null
-    return resp.data?.valor ?? null
+    if (c) {
+      c.preco = resp.data?.valor ?? null
+      c.preco_anual = resp.data?.valorAnual ?? null
+    }
+    return resp.data ?? null
   }
 
   return {

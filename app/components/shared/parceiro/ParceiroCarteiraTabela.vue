@@ -192,7 +192,9 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
                   :class="c.preco !== null
                     ? 'text-slate-700 dark:text-slate-200 font-semibold hover:bg-purple-50 dark:hover:bg-purple-500/10'
                     : 'text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-500/10'"
-                  :title="c.preco !== null ? 'Alterar o valor que o cliente vê' : 'Definir o valor que o cliente vê'"
+                  :title="c.preco_anual !== null
+                    ? `Mensal ${fmtBRL(c.preco ?? 0)} · anual ${fmtBRL(c.preco_anual)} — clique para alterar`
+                    : 'Clique para definir o valor mensal e o do plano anual'"
                 >
                   {{ c.preco !== null ? fmtBRL(c.preco) : 'definir' }}
                   <i class="fa-solid fa-pen text-[9px] opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden="true" />

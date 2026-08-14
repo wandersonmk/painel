@@ -12,6 +12,7 @@ const emit = defineEmits<{ close: []; saved: [] }>()
 
 const { salvarValorAssinatura } = useParceiroLicencas()
 const valor = ref<number | null>(null)
+const valorAnual = ref<number | null>(null)
 const salvando = ref(false)
 const erro = ref<string | null>(null)
 let toast: Awaited<ReturnType<typeof useToastSafe>> | null = null
@@ -19,6 +20,7 @@ let toast: Awaited<ReturnType<typeof useToastSafe>> | null = null
 watch(() => props.show, async (aberto) => {
   if (!aberto) return
   valor.value = props.cliente?.preco ?? null
+  valorAnual.value = props.cliente?.preco_anual ?? null
   erro.value = null
   if (!toast) toast = await useToastSafe()
 })
@@ -31,7 +33,7 @@ async function salvar() {
   salvando.value = true
   erro.value = null
   try {
-    await salvarValorAssinatura(props.cliente.empresa_id, valor.value)
+    await salvarValorAssinatura(props.cliente.empresa_id, valor.value, valorAnual.value)
     toast?.success('Valor da assinatura atualizado')
     emit('saved')
     emit('close')
@@ -65,6 +67,23 @@ async function salvar() {
         />
         <p class="mt-1.5 text-[11px] text-slate-400">
           Valor atual: <span class="tabular-nums">{{ fmtBRL(cliente.preco) }}</span> · deixe vazio para não exibir preço
+        </p>
+      </div>
+
+      <!-- Quem vende 12 meses cobra um preço fechado, não 12× o mensal. Sem
+           este campo o relatório multiplicava e inflava a receita anual. -->
+      <div>
+        <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+          Valor do plano de 12 meses <span class="font-medium normal-case text-slate-400">(opcional)</span>
+        </label>
+        <AppCurrencyInput
+          v-model="valorAnual"
+          placeholder="R$ 0,00"
+          class="w-full px-3 py-2.5 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded text-base font-semibold text-slate-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-purple-500"
+        />
+        <p class="mt-1.5 text-[11px] text-slate-400">
+          Usado no relatório quando você renova com crédito anual. Vazio = o relatório usa o valor
+          sugerido pela Agzap.
         </p>
       </div>
 

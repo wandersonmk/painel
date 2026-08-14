@@ -14,7 +14,7 @@ import { aplicarRateLimit, registrarAuditoria } from '~~/server/utils/parceiroLi
  */
 export default defineEventHandler(async (event) => {
   const { userId, parceiro } = await requireParceiroPrepago(event)
-  const body = await readBody<{ empresaId?: string; valor?: number | null }>(event)
+  const body = await readBody<{ empresaId?: string; valor?: number | null; valorAnual?: number | null }>(event)
 
   const empresaId = String(body?.empresaId ?? '').trim()
   if (!/^[0-9a-f-]{36}$/i.test(empresaId)) {
@@ -22,11 +22,16 @@ export default defineEventHandler(async (event) => {
   }
 
   // null limpa o valor; qualquer outra coisa precisa ser dinheiro plausível.
-  const valor = body?.valor === null || body?.valor === undefined ? null : Number(body.valor)
-  if (valor !== null && (!Number.isFinite(valor) || valor < 0 || valor > 100_000)) {
-    throw createError({ statusCode: 400, statusMessage: 'Valor inválido' })
+  const normalizar = (bruto: unknown, rotulo: string) => {
+    if (bruto === null || bruto === undefined) return null
+    const n = Number(bruto)
+    if (!Number.isFinite(n) || n < 0 || n > 100_000) {
+      throw createError({ statusCode: 400, statusMessage: `${rotulo} inválido` })
+    }
+    return Number(n.toFixed(2))
   }
-  const valorFinal = valor === null ? null : Number(valor.toFixed(2))
+  const valorFinal = normalizar(body?.valor, 'Valor mensal')
+  const valorAnualFinal = normalizar(body?.valorAnual, 'Valor anual')
 
   aplicarRateLimit(`valor:${parceiro.id}`, 30, 60_000)
 
@@ -35,7 +40,7 @@ export default defineEventHandler(async (event) => {
   // Vínculo revalidado a cada ação — nunca só no carregamento da página.
   const { data: vinculo, error: vincErr } = await supabase
     .from('parceiro_empresas')
-    .select('id, cobranca_agzap')
+    .select('id, cobranca_agzap, preco_anual')
     .eq('empresa_id', empresaId)
     .eq('parceiro_id', parceiro.id)
     .eq('ativo', true)
@@ -60,11 +65,19 @@ export default defineEventHandler(async (event) => {
     return failPublic(empErr, 'parceiro/valor-assinatura', 'Não foi possível concluir a operação.')
   }
 
+  // Mensal fica em empresas (é o que o cliente vê no app); anual fica no
+  // vínculo, porque é dado comercial do parceiro e o app não precisa dele.
   const { error } = await supabase
     .from('empresas')
     .update({ subscription_price: valorFinal, updated_at: new Date().toISOString() })
     .eq('id', empresaId)
   if (error) return failPublic(error, 'parceiro/valor-assinatura', 'Não foi possível salvar o valor.')
+
+  const { error: anualErr } = await supabase
+    .from('parceiro_empresas')
+    .update({ preco_anual: valorAnualFinal, updated_at: new Date().toISOString() })
+    .eq('id', vinculo.id)
+  if (anualErr) return failPublic(anualErr, 'parceiro/valor-assinatura', 'Não foi possível salvar o valor anual.')
 
   await registrarAuditoria(supabase, event, {
     parceiro_id: parceiro.id,
@@ -72,10 +85,10 @@ export default defineEventHandler(async (event) => {
     ator_user_id: userId,
     ator_papel: 'parceiro',
     acao: 'valor_assinatura',
-    estado_anterior: { subscription_price: empresa.subscription_price },
-    estado_novo: { subscription_price: valorFinal },
+    estado_anterior: { subscription_price: empresa.subscription_price, preco_anual: vinculo.preco_anual },
+    estado_novo: { subscription_price: valorFinal, preco_anual: valorAnualFinal },
     origem: 'painel_parceiro',
   })
 
-  return { success: true as const, data: { valor: valorFinal } }
+  return { success: true as const, data: { valor: valorFinal, valorAnual: valorAnualFinal } }
 })

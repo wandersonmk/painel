@@ -294,8 +294,12 @@ const OPERACOES: Record<string, string> = {
 
 const LABEL_TIPO: Record<string, string> = { mensal_30d: '30 dias', anual_12m: '12 meses' }
 
-const movsDoParceiro = (id: string) => movimentacoes.value.filter(m => m.parceiro_id === id).slice(0, 20)
-const renovsDoParceiro = (id: string) => renovacoes.value.filter(r => r.parceiro_id === id).slice(0, 20)
+// As listas rolam por dentro, então cabe mais histórico sem esticar a página.
+const LIMITE_LISTA = 50
+const movsDoParceiro = (id: string) => movimentacoes.value.filter(m => m.parceiro_id === id).slice(0, LIMITE_LISTA)
+const totalMovs = (id: string) => movimentacoes.value.filter(m => m.parceiro_id === id).length
+const renovsDoParceiro = (id: string) => renovacoes.value.filter(r => r.parceiro_id === id).slice(0, LIMITE_LISTA)
+const totalRenovs = (id: string) => renovacoes.value.filter(r => r.parceiro_id === id).length
 
 const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none'
 </script>
@@ -414,11 +418,16 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
 
         <!-- Clientes vinculados -->
         <div>
-          <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Clientes vinculados</p>
+          <div class="flex items-baseline justify-between mb-2">
+            <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Clientes vinculados</p>
+            <span v-if="p.clientes.length" class="text-[10px] text-slate-400 tabular-nums">{{ p.clientes.length }}</span>
+          </div>
           <div v-if="p.clientes.length === 0" class="text-xs text-slate-400 py-2">Nenhum cliente vinculado.</div>
-          <div v-else class="overflow-x-auto">
+          <!-- Mesma razão da lista de movimentações: carteira grande não pode
+               empurrar a página inteira. Cabeçalho fica fixo na rolagem. -->
+          <div v-else class="overflow-auto max-h-72">
             <table class="w-full text-xs">
-              <thead>
+              <thead class="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900">
                 <tr class="text-slate-500 dark:text-slate-500">
                   <th class="text-left py-1.5 pr-3 font-semibold uppercase tracking-wider">Cliente</th>
                   <th class="text-left py-1.5 px-3 font-semibold uppercase tracking-wider">Vinculado</th>
@@ -461,9 +470,16 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
         <!-- Movimentações e renovações -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <div>
-            <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Movimentações de crédito</p>
+            <div class="flex items-baseline justify-between mb-2">
+              <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Movimentações de crédito</p>
+              <span v-if="totalMovs(p.id) > 0" class="text-[10px] text-slate-400 tabular-nums">
+                {{ totalMovs(p.id) > LIMITE_LISTA ? `${LIMITE_LISTA} de ${totalMovs(p.id)}` : totalMovs(p.id) }}
+              </span>
+            </div>
             <div v-if="movsDoParceiro(p.id).length === 0" class="text-xs text-slate-400 py-2">Nenhuma movimentação.</div>
-            <ul v-else class="space-y-1.5">
+            <!-- Rola por dentro: com o histórico crescendo, o cartão do parceiro
+                 empurrava o resto da página para fora da tela. -->
+            <ul v-else class="space-y-1.5 max-h-72 overflow-y-auto pr-1">
               <li
                 v-for="m in movsDoParceiro(p.id)"
                 :key="m.id"
@@ -503,9 +519,14 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
           </div>
 
           <div>
-            <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Renovações</p>
+            <div class="flex items-baseline justify-between mb-2">
+              <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Renovações</p>
+              <span v-if="totalRenovs(p.id) > 0" class="text-[10px] text-slate-400 tabular-nums">
+                {{ totalRenovs(p.id) > LIMITE_LISTA ? `${LIMITE_LISTA} de ${totalRenovs(p.id)}` : totalRenovs(p.id) }}
+              </span>
+            </div>
             <div v-if="renovsDoParceiro(p.id).length === 0" class="text-xs text-slate-400 py-2">Nenhuma renovação.</div>
-            <ul v-else class="space-y-1.5">
+            <ul v-else class="space-y-1.5 max-h-72 overflow-y-auto pr-1">
               <li
                 v-for="r in renovsDoParceiro(p.id)"
                 :key="r.id"

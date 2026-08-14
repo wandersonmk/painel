@@ -100,7 +100,8 @@ watch(() => props.show, async (open) => {
     whatsapp.value = props.cliente.whatsapp || ''
     const price = props.cliente.subscription_price ?? 297
     priceCents.value = Math.round(price * 100)
-    priceAnualCents.value = Math.round((props.cliente.subscription_price_anual ?? 0) * 100)
+    const priceAnual = Number(props.cliente.subscription_price_anual) || 2299
+    priceAnualCents.value = Math.round(priceAnual * 100)
     toast = await useToastSafe()
     tokenEditing.value = false
     novoToken.value = ''

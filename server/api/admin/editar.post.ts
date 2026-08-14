@@ -28,10 +28,14 @@ export default defineEventHandler(async (event) => {
   if (price != null && (!Number.isFinite(price) || price < 0 || price > 1_000_000)) {
     throw createError({ statusCode: 400, statusMessage: 'Preço inválido' })
   }
-  const precoAnual = body.preco_anual
-  if (precoAnual != null && (!Number.isFinite(precoAnual) || precoAnual < 0 || precoAnual > 1_000_000)) {
+  const precoAnualRecebido = body.preco_anual
+  if (precoAnualRecebido != null && (!Number.isFinite(precoAnualRecebido) || precoAnualRecebido < 0 || precoAnualRecebido > 1_000_000)) {
     throw createError({ statusCode: 400, statusMessage: 'Preço anual inválido' })
   }
+  // Limpar/zerar restaura o preço padrão em vez de deixar o app sem anual.
+  const precoAnual = precoAnualRecebido != null && precoAnualRecebido > 0
+    ? Number(precoAnualRecebido.toFixed(2))
+    : 2299
 
   const supabase = getServiceClient()
   const { error } = await supabase

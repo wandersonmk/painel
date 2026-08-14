@@ -31,7 +31,11 @@ export default defineEventHandler(async (event) => {
     return Number(n.toFixed(2))
   }
   const valorFinal = normalizar(body?.valor, 'Valor mensal')
-  const valorAnualFinal = normalizar(body?.valorAnual, 'Valor anual')
+  const valorAnualRecebido = normalizar(body?.valorAnual, 'Valor anual')
+  // Limpar/zerar restaura o padrão que a página de assinatura deve exibir.
+  const valorAnualFinal = valorAnualRecebido != null && valorAnualRecebido > 0
+    ? valorAnualRecebido
+    : 2299
 
   aplicarRateLimit(`valor:${parceiro.id}`, 30, 60_000)
 

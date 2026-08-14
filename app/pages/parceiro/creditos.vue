@@ -51,24 +51,27 @@ function faixaLabel(faixas: typeof precos.value, i: number) {
   return `${atual.quantidade_min} a ${proxima.quantidade_min - 1} licenças`
 }
 
-/** Margem na revenda, com o preço de entrada (o pior caso para o parceiro). */
-const margemMensal = computed(() => {
-  const revenda = Number(precosMensais.value[0]?.preco_sugerido_revenda ?? 0)
-  if (!revenda || !precoEntradaMensal.value) return null
-  const lucro = revenda - precoEntradaMensal.value
-  return { revenda, lucro, percentual: Math.round((lucro / precoEntradaMensal.value) * 100) }
+/** Preço de referência de revenda ao cliente final, sugerido pela Agzap. */
+const precoRevenda = computed(() => Number(precosMensais.value[0]?.preco_sugerido_revenda ?? 0))
+
+/** Uma linha de lucro por faixa de compra: "comprando a X, lucre Y". */
+const margensMensais = computed(() => {
+  if (!precoRevenda.value) return []
+  return precosMensais.value.map(p => ({
+    compra: Number(p.preco_unitario),
+    lucro: precoRevenda.value - Number(p.preco_unitario),
+  }))
 })
 
-const margemAnual = computed(() => {
-  const revenda = Number(precosMensais.value[0]?.preco_sugerido_revenda ?? 0)
-  if (!revenda || !precoAnual.value) return null
-  return { revenda, lucro: revenda * 12 - precoAnual.value }
-})
-
-/** Quanto o crédito anual economiza contra 12 mensais no melhor preço. */
-const economiaAnual = computed(() => {
-  if (!precoAnual.value || !precosMensais.value.length) return 0
-  return Math.max(0, melhorPrecoMensal.value * 12 - precoAnual.value)
+/** No anual, o que interessa é o custo por mês e o ganho no ano inteiro. */
+const anualDetalhe = computed(() => {
+  if (!precoAnual.value) return null
+  const receitaAno = precoRevenda.value * 12
+  return {
+    porMes: precoAnual.value / 12,
+    receitaAno,
+    lucroAno: receitaAno ? receitaAno - precoAnual.value : 0,
+  }
 })
 
 function fmtBRL(v: number | null) {
@@ -172,13 +175,17 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
             </li>
           </ul>
 
-          <div v-if="margemMensal" class="mt-3 pt-3 border-t border-slate-100 dark:border-white/5 flex items-baseline justify-between text-xs">
-            <span class="text-slate-500 dark:text-slate-400">
-              Revendendo a {{ fmtBRL(margemMensal.revenda) }}
-            </span>
-            <span class="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
-              +{{ fmtBRL(margemMensal.lucro) }} <span class="font-medium text-slate-400">({{ margemMensal.percentual }}%)</span>
-            </span>
+          <!-- Uma frase por faixa, em vez do percentual solto que não dizia
+               de onde saía nem sobre qual preço de compra. -->
+          <div v-if="margensMensais.length" class="mt-3 pt-3 border-t border-slate-100 dark:border-white/5">
+            <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5">Quanto você ganha</p>
+            <ul class="space-y-1">
+              <li v-for="m in margensMensais" :key="m.compra" class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                Comprando a <span class="font-semibold text-slate-800 dark:text-slate-200 tabular-nums">{{ fmtBRL(m.compra) }}</span>
+                e revendendo a <span class="font-semibold text-slate-800 dark:text-slate-200 tabular-nums">{{ fmtBRL(precoRevenda) }}</span>,
+                lucre <span class="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{{ fmtBRL(m.lucro) }}</span>
+              </li>
+            </ul>
           </div>
         </div>
 
@@ -198,22 +205,20 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
             <span class="text-xs text-slate-400">/licença</span>
           </p>
 
-          <ul class="mt-3 pt-3 border-t border-slate-100 dark:border-white/5 space-y-1.5">
-            <li class="flex items-baseline justify-between text-xs">
-              <span class="text-slate-500 dark:text-slate-400">Equivale a</span>
-              <span class="font-semibold text-slate-800 dark:text-white tabular-nums">{{ fmtBRL(precoAnual / 12) }}/mês</span>
-            </li>
-            <li v-if="economiaAnual > 0" class="flex items-baseline justify-between text-xs">
-              <span class="text-slate-500 dark:text-slate-400">Contra 12 licenças de 30 dias</span>
-              <span class="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">economiza {{ fmtBRL(economiaAnual) }}</span>
-            </li>
-          </ul>
-
-          <div v-if="margemAnual" class="mt-3 pt-3 border-t border-slate-100 dark:border-white/5 flex items-baseline justify-between text-xs">
-            <span class="text-slate-500 dark:text-slate-400">Revendendo a {{ fmtBRL(margemAnual.revenda) }}/mês</span>
-            <span class="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
-              +{{ fmtBRL(margemAnual.lucro) }} <span class="font-medium text-slate-400">no ano</span>
-            </span>
+          <!-- Só as duas contas que importam no anual: quanto sai o mês e
+               quanto sobra vendendo esse ano no preço mensal. -->
+          <div v-if="anualDetalhe" class="mt-3 pt-3 border-t border-slate-100 dark:border-white/5 space-y-2">
+            <p class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              Sai a <span class="font-semibold text-slate-800 dark:text-slate-200 tabular-nums">{{ fmtBRL(anualDetalhe.porMes) }}</span> por mês
+              <template v-if="melhorPrecoMensal">
+                — contra {{ fmtBRL(melhorPrecoMensal) }} na licença de 30 dias
+              </template>
+            </p>
+            <p v-if="precoRevenda" class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              Cobrando <span class="font-semibold text-slate-800 dark:text-slate-200 tabular-nums">{{ fmtBRL(precoRevenda) }}</span> por mês
+              do seu cliente, são <span class="font-semibold text-slate-800 dark:text-slate-200 tabular-nums">{{ fmtBRL(anualDetalhe.receitaAno) }}</span> no ano:
+              lucre <span class="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{{ fmtBRL(anualDetalhe.lucroAno) }}</span>
+            </p>
           </div>
         </div>
       </div>
@@ -221,8 +226,9 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
       <p class="mt-3 text-xs text-slate-400 dark:text-slate-500 flex items-start gap-1.5">
         <i class="fa-solid fa-circle-info text-[10px] mt-0.5 shrink-0" aria-hidden="true" />
         <span>
-          Você define livremente quanto cobra do seu cliente final — os valores de revenda acima são só
-          referência da Agzap. O crédito entra na carteira depois que a Agzap confirma o pagamento.
+          <strong>Você revende pelo valor que quiser</strong> — os {{ precoRevenda ? fmtBRL(precoRevenda) : 'valores' }} acima são
+          só a referência sugerida pela Agzap para o cálculo. O crédito entra na carteira depois que a
+          Agzap confirma o pagamento.
         </span>
       </p>
     </section>

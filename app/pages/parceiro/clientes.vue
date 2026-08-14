@@ -106,14 +106,26 @@ const semSaldo = computed(() => saldos.value.mensal_30d < 1 && saldos.value.anua
         </p>
       </div>
       <div class="flex items-center gap-2 w-full sm:w-auto">
-        <!-- Saldo sempre à vista: é o que limita as ações desta página -->
-        <div class="flex items-center gap-2 px-3 py-2 rounded-md bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10">
-          <i class="fa-solid fa-coins text-purple-500 text-xs" aria-hidden="true" />
-          <span class="text-xs text-slate-500 dark:text-slate-400">Saldo</span>
-          <span class="text-sm font-bold text-slate-800 dark:text-white tabular-nums">{{ saldos.mensal_30d }}</span>
-          <span class="text-[10px] text-slate-400">× 30d</span>
-          <span class="text-sm font-bold text-slate-800 dark:text-white tabular-nums ml-1">{{ saldos.anual_12m }}</span>
-          <span class="text-[10px] text-slate-400">× 12m</span>
+        <!-- Saldo sempre à vista: é o que limita as ações desta página.
+             Número em cima, o que ele compra embaixo — "3 × 30d" numa linha só
+             obrigava a decifrar a abreviação. Zerado fica apagado. -->
+        <div class="flex items-stretch rounded-md bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 divide-x divide-slate-200 dark:divide-white/10 overflow-hidden">
+          <div class="hidden sm:flex items-center gap-2 px-3">
+            <i class="fa-solid fa-coins text-purple-500 text-xs" aria-hidden="true" />
+            <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 leading-tight">Créditos<br>disponíveis</span>
+          </div>
+          <div class="px-3.5 py-1.5 text-center min-w-[78px]">
+            <p class="text-xl font-bold leading-none tabular-nums" :class="saldos.mensal_30d > 0 ? 'text-slate-900 dark:text-white' : 'text-slate-300 dark:text-slate-600'">
+              {{ saldos.mensal_30d }}
+            </p>
+            <p class="text-[10px] font-semibold uppercase tracking-wide text-purple-600 dark:text-purple-400 mt-0.5">de 30 dias</p>
+          </div>
+          <div class="px-3.5 py-1.5 text-center min-w-[78px]">
+            <p class="text-xl font-bold leading-none tabular-nums" :class="saldos.anual_12m > 0 ? 'text-slate-900 dark:text-white' : 'text-slate-300 dark:text-slate-600'">
+              {{ saldos.anual_12m }}
+            </p>
+            <p class="text-[10px] font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-400 mt-0.5">de 12 meses</p>
+          </div>
         </div>
         <button
           @click="recarregar"

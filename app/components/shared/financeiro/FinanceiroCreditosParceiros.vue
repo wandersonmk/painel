@@ -23,6 +23,8 @@ interface Movimentacao {
   valor_pago: number | null
   motivo: string | null
   criado_por_papel: string
+  renovacao_id?: string | null
+  renovou_de?: string | null
   renovou_ate?: string | null
 }
 
@@ -560,7 +562,7 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                   <th :class="th">Parceiro</th>
                   <th :class="th">Cliente renovado</th>
                   <th :class="th">Crédito</th>
-                  <th :class="[th, 'text-right']">Renovou até</th>
+                  <th :class="[th, 'text-right']">Vencimento</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
@@ -569,7 +571,13 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                   <td :class="[td, 'font-medium text-slate-900 dark:text-white']">{{ c.parceiro_nome }}</td>
                   <td :class="[td, 'text-slate-700 dark:text-slate-200']">{{ c.empresa_nome || '—' }}</td>
                   <td :class="[td, 'text-slate-500']">{{ LABEL_TIPO[c.tipo_credito] }}</td>
-                  <td :class="[td, 'text-right tabular-nums text-slate-500']">{{ fmtData(c.renovou_ate ?? null) }}</td>
+                  <!-- Antes → depois desta renovação especificamente, vindo do
+                       renovacao_id do próprio lançamento. -->
+                  <td :class="[td, 'text-right tabular-nums whitespace-nowrap']">
+                    <span class="text-slate-400">{{ fmtData(c.renovou_de ?? null) }}</span>
+                    <i class="fa-solid fa-arrow-right text-[9px] text-slate-300 dark:text-slate-600 mx-1.5" aria-hidden="true" />
+                    <span class="text-slate-700 dark:text-slate-200 font-semibold">{{ fmtData(c.renovou_ate ?? null) }}</span>
+                  </td>
                 </tr>
               </tbody>
             </table>

@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
     // Sem limite artificial: o financeiro precisa do total do ano, não dos
     // últimos N lançamentos. O ledger cresce devagar (1 linha por operação).
     supabase.from('parceiro_creditos_ledger')
-      .select('id, parceiro_id, tipo_credito, quantidade, operacao, empresa_id, empresa_nome, referencia, valor_pago, descricao, criado_por_papel, created_at')
+      .select('id, parceiro_id, tipo_credito, quantidade, operacao, empresa_id, empresa_nome, renovacao_id, referencia, valor_pago, descricao, criado_por_papel, created_at')
       .order('created_at', { ascending: false })
       .limit(2000),
     supabase.from('parceiro_creditos_saldo').select('parceiro_id, tipo_credito, saldo'),
@@ -152,6 +152,7 @@ export default defineEventHandler(async (event) => {
     operacao: l.operacao,
     empresa_id: l.empresa_id ?? null,
     empresa_nome: l.empresa_nome,
+    renovacao_id: l.renovacao_id ?? null,
     referencia: l.referencia,
     valor_pago: l.valor_pago === null ? null : Number(l.valor_pago),
     // O motivo é o que faltava na tela: correção sem justificativa não passa
@@ -168,8 +169,14 @@ export default defineEventHandler(async (event) => {
   const ajustesPositivos = correcoes.filter(l => l.quantidade > 0)
   const consumos = ledger.filter(l => l.operacao === 'consumo').map(enriquecer)
 
-  // Última renovação por parceiro+empresa: casa o consumo do ledger com o
-  // vencimento que ele gerou. Casar por empresa_id, nunca por nome.
+  // Cada consumo aponta para a SUA renovação (ledger.renovacao_id). Casar por
+  // parceiro+empresa faria todas as linhas do cliente herdarem a data da
+  // renovação mais recente e o histórico viraria mentira.
+  const renovPorId = new Map<string, any>()
+  for (const r of renovacoes) renovPorId.set(r.id, r)
+
+  // Só para a coluna "última renovação" da lista de vencendo, onde a pergunta
+  // é mesmo "quando esse cliente foi renovado pela última vez".
   const renovPorEmpresa = new Map<string, any>()
   for (const r of renovacoes) {
     const chave = `${r.parceiro_id}:${r.empresa_id}`
@@ -269,12 +276,14 @@ export default defineEventHandler(async (event) => {
     .sort((a, b) => (a.dias_restantes ?? 0) - (b.dias_restantes ?? 0))
 
   // ───────── Consumo detalhado (quem gastou, com quem) ─────────
-  const consumoDetalhado = consumos.map(c => ({
-    ...c,
-    renovou_ate: c.empresa_id
-      ? renovPorEmpresa.get(`${c.parceiro_id}:${c.empresa_id}`)?.vencimento_novo ?? null
-      : null,
-  }))
+  const consumoDetalhado = consumos.map((c) => {
+    const r = c.renovacao_id ? renovPorId.get(c.renovacao_id) : null
+    return {
+      ...c,
+      renovou_de: r?.vencimento_anterior ?? null,
+      renovou_ate: r?.vencimento_novo ?? null,
+    }
+  })
 
   // ───────── Resumo geral ─────────
   const resumo = {

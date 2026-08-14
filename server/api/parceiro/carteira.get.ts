@@ -17,7 +17,8 @@ export default defineEventHandler(async (event) => {
     .select(`
       id, empresa_id, ativo, cobranca_agzap, bloqueio_origem, bloqueado_em, created_at,
       empresas ( id, nome, nome_cliente, email, whatsapp, ativo, created_at,
-                 subscription_status, subscription_plan, subscription_renews_at, trial_ends_at,
+                 subscription_status, subscription_plan, subscription_price,
+                 subscription_renews_at, trial_ends_at,
                  max_instancias, max_agentes )
     `)
     .eq('parceiro_id', parceiro.id)
@@ -88,6 +89,11 @@ export default defineEventHandler(async (event) => {
       email: e.email ?? null,
       telefone: e.whatsapp ?? null,
       plano: e.subscription_plan ?? null,
+      // O parceiro define este valor: é o que o cliente dele vê na tela de
+      // assinatura do app.
+      preco: e.subscription_price === null || e.subscription_price === undefined
+        ? null
+        : Number(e.subscription_price),
       status_assinatura: e.subscription_status ?? null,
       vinculado_em: v.created_at,
       empresa_cadastro: e.created_at,

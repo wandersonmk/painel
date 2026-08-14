@@ -3,7 +3,10 @@ import type { ClienteCarteira } from '~/composables/useParceiroLicencas'
 import type { TipoSolicitacao } from './ParceiroSolicitarModal.vue'
 
 defineProps<{ show: boolean; cliente: ClienteCarteira | null }>()
-const emit = defineEmits<{ close: []; solicitar: [TipoSolicitacao] }>()
+const emit = defineEmits<{ close: []; solicitar: [TipoSolicitacao]; 'editar-valor': [ClienteCarteira] }>()
+
+const fmtBRL = (v: number | null) =>
+  v === null ? '—' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 
 function fmtData(s: string | null) {
   if (!s) return '—'
@@ -55,6 +58,20 @@ const SITUACOES: Record<string, { label: string; cls: string }> = {
         <div class="flex items-center justify-between px-4 py-2.5">
           <dt class="text-xs text-slate-500 dark:text-slate-400">Vencimento</dt>
           <dd class="text-slate-800 dark:text-white tabular-nums">{{ fmtData(cliente.vencimento) }}</dd>
+        </div>
+        <!-- Valor que o cliente vê na assinatura: quem revende define. -->
+        <div v-if="!cliente.cobranca_agzap" class="flex items-center justify-between px-4 py-2.5">
+          <dt class="text-xs text-slate-500 dark:text-slate-400">Valor cobrado do cliente</dt>
+          <dd>
+            <button
+              type="button"
+              @click="emit('editar-valor', cliente)"
+              class="inline-flex items-center gap-1.5 px-2 py-1 rounded text-sm tabular-nums font-semibold text-purple-700 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-500/10 transition-colors"
+            >
+              {{ fmtBRL(cliente.preco) }}
+              <i class="fa-solid fa-pen text-[9px]" aria-hidden="true" />
+            </button>
+          </dd>
         </div>
         <div class="flex items-center justify-between px-4 py-2.5">
           <dt class="text-xs text-slate-500 dark:text-slate-400">Última renovação</dt>

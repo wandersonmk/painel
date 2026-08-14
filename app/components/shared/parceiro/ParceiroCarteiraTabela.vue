@@ -56,6 +56,7 @@ const showRenovar = ref(false)
 const showBloquear = ref(false)
 const acaoBloquear = ref(true)
 const showDetalhes = ref(false)
+const showValor = ref(false)
 const showSolicitar = ref(false)
 const tipoSolicitacao = ref<TipoSolicitacao>('creditos')
 
@@ -72,6 +73,14 @@ function abrirDetalhes(c: ClienteCarteira) {
   selecionado.value = c
   showDetalhes.value = true
 }
+function abrirValor(c: ClienteCarteira) {
+  selecionado.value = c
+  showDetalhes.value = false
+  showValor.value = true
+}
+
+const fmtBRL = (v: number) =>
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 function abrirSolicitacao(tipo: TipoSolicitacao) {
   tipoSolicitacao.value = tipo
   showDetalhes.value = false
@@ -110,6 +119,7 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
               <th class="hidden md:table-cell text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Vencimento</th>
               <th class="hidden sm:table-cell text-center px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Restam</th>
               <th class="hidden sm:table-cell text-center px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Situação</th>
+              <th v-if="!compacto" class="hidden md:table-cell text-right px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Valor cobrado</th>
               <th v-if="!compacto" class="hidden lg:table-cell text-center px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Instâncias</th>
               <th v-if="!compacto" class="hidden lg:table-cell text-center px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Assistentes</th>
               <th v-if="!compacto" class="hidden xl:table-cell text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Últ. renovação</th>
@@ -169,6 +179,25 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
                   <span class="w-1.5 h-1.5 rounded-full bg-current" aria-hidden="true" />
                   {{ SITUACOES[c.situacao].label }}
                 </span>
+              </td>
+
+              <!-- Valor da revenda: clicar edita. É o que o cliente vê na tela
+                   de assinatura dele, então precisa estar à mão. -->
+              <td v-if="!compacto" class="hidden md:table-cell px-5 py-3 text-right whitespace-nowrap">
+                <button
+                  v-if="!c.cobranca_agzap"
+                  type="button"
+                  @click="abrirValor(c)"
+                  class="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs tabular-nums transition-colors group"
+                  :class="c.preco !== null
+                    ? 'text-slate-700 dark:text-slate-200 font-semibold hover:bg-purple-50 dark:hover:bg-purple-500/10'
+                    : 'text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-500/10'"
+                  :title="c.preco !== null ? 'Alterar o valor que o cliente vê' : 'Definir o valor que o cliente vê'"
+                >
+                  {{ c.preco !== null ? fmtBRL(c.preco) : 'definir' }}
+                  <i class="fa-solid fa-pen text-[9px] opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden="true" />
+                </button>
+                <span v-else class="text-xs text-slate-400">Agzap</span>
               </td>
 
               <td v-if="!compacto" class="hidden lg:table-cell px-5 py-3 text-center text-xs text-slate-600 dark:text-slate-400 tabular-nums">
@@ -262,6 +291,13 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
       :cliente="selecionado"
       @close="showDetalhes = false"
       @solicitar="abrirSolicitacao"
+      @editar-valor="abrirValor"
+    />
+    <ParceiroValorAssinaturaModal
+      :show="showValor"
+      :cliente="selecionado"
+      @close="showValor = false"
+      @saved="emit('changed')"
     />
     <ParceiroSolicitarModal
       :show="showSolicitar"

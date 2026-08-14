@@ -43,12 +43,12 @@ export default defineEventHandler(async (event) => {
       .gte('executado_em', de.toISOString())
       .lte('executado_em', ate.toISOString())
       .order('executado_em', { ascending: false }),
-    // Compras do parceiro: as do período viram saída de caixa; todas juntas
-    // dão o preço médio que ele paga por crédito.
+    // Ledger inteiro: as compras do período são o gasto de caixa, as compras
+    // de todas as épocas dão o preço médio por crédito, e o estorno de compra
+    // devolve dinheiro, então abate do gasto.
     supabase.from('parceiro_creditos_ledger')
       .select('tipo_credito, quantidade, operacao, valor_pago, created_at')
-      .eq('parceiro_id', parceiro.id)
-      .eq('operacao', 'compra'),
+      .eq('parceiro_id', parceiro.id),
     supabase.from('parceiro_empresas')
       .select('empresa_id, cobranca_agzap, empresas ( nome, subscription_price )')
       .eq('parceiro_id', parceiro.id)
@@ -61,7 +61,8 @@ export default defineEventHandler(async (event) => {
   if (renovRes.error) return failPublic(renovRes.error, 'parceiro/relatorio', 'Não foi possível montar o relatório.')
 
   const renovacoes = (renovRes.data ?? []) as any[]
-  const compras = (ledgerRes.data ?? []) as any[]
+  const ledger = (ledgerRes.data ?? []) as any[]
+  const compras = ledger.filter(l => l.operacao === 'compra' && Number(l.quantidade) > 0)
   const vinculos = ((vinculosRes.data ?? []) as any[]).filter(v => v.empresas)
   const precos = (precosRes.data ?? []) as any[]
 
@@ -87,13 +88,14 @@ export default defineEventHandler(async (event) => {
   const MESES: Record<string, number> = { mensal_30d: 1, anual_12m: 12 }
 
   const linhas = renovacoes.map((r) => {
-    const meses = MESES[r.tipo_credito as string] ?? 1
+    const consumiu = r.consumiu_credito === true
+    const meses = consumiu ? (MESES[r.tipo_credito as string] ?? 1) : 0
     const preco = precoDoCliente.get(r.empresa_id) ?? 0
-    // Renovação da Agzap não consome crédito do parceiro: custo zero para ele.
-    const custo = !r.consumiu_credito
-      ? 0
-      : (r.tipo_credito === 'anual_12m' ? custoAnual : custoMensal)
-    const receita = preco * meses
+    // Renovação da Agzap não é venda do parceiro nem custo dele: entra na
+    // lista para explicar o vencimento, mas com receita e custo zerados.
+    // Sem isso, um ajuste administrativo de 1 dia virava um mês de receita.
+    const custo = !consumiu ? 0 : (r.tipo_credito === 'anual_12m' ? custoAnual : custoMensal)
+    const receita = consumiu ? preco * meses : 0
     return {
       id: r.id,
       data: r.executado_em,
@@ -106,7 +108,7 @@ export default defineEventHandler(async (event) => {
       preco_mensal: preco,
       receita,
       custo,
-      lucro: receita - custo,
+      resultado: receita - custo,
       vencimento_novo: r.vencimento_novo,
     }
   })
@@ -124,23 +126,39 @@ export default defineEventHandler(async (event) => {
         meses: 0,
         receita: 0,
         custo: 0,
-        lucro: 0,
+        resultado: 0,
       }
-      atual.renovacoes += 1
+      // Só conta como renovação vendida o que consumiu crédito dele.
+      if (l.consumiu_credito) atual.renovacoes += 1
       atual.meses += l.meses
       atual.receita += l.receita
       atual.custo += l.custo
-      atual.lucro += l.lucro
+      atual.resultado += l.resultado
       mapa.set(l.empresa_id, atual)
       return mapa
     }, new Map<string, any>()).values(),
-  ).sort((a, b) => b.lucro - a.lucro)
+  ).sort((a, b) => b.resultado - a.resultado)
 
-  // Caixa: o que ele efetivamente pagou à Agzap dentro do período.
-  const comprasNoPeriodo = compras.filter((c) => {
-    const t = new Date(c.created_at).getTime()
+  // ───────── Caixa: o que ele pagou à Agzap dentro do período ─────────
+  const noPeriodo = (iso: string) => {
+    const t = new Date(iso).getTime()
     return t >= de.getTime() && t <= ate.getTime()
-  })
+  }
+  const comprasNoPeriodo = compras.filter(c => noPeriodo(c.created_at))
+  const compraValor = comprasNoPeriodo.reduce((acc, c) => acc + (Number(c.valor_pago) || 0), 0)
+  const compraCreditos = comprasNoPeriodo.reduce((acc, c) => acc + Number(c.quantidade), 0)
+
+  // Estorno de compra devolve dinheiro: abate do gasto do período. Correção
+  // sem valor é retirada de cortesia — não movimenta caixa, fica de fora.
+  const estornosNoPeriodo = ledger.filter(l =>
+    l.operacao === 'correcao'
+    && Number(l.quantidade) < 0
+    && (Number(l.valor_pago) || 0) > 0
+    && noPeriodo(l.created_at))
+  const estornoValor = estornosNoPeriodo.reduce((acc, l) => acc + (Number(l.valor_pago) || 0), 0)
+
+  const gastoCompras = compraValor - estornoValor
+  const lucroBruto = soma(l => l.receita)
 
   const semPreco = porCliente.filter(c => c.preco_mensal <= 0).length
 
@@ -149,16 +167,25 @@ export default defineEventHandler(async (event) => {
     data: {
       periodo: { de: de.toISOString(), ate: ate.toISOString() },
       resumo: {
-        lucro_bruto: soma(l => l.receita),
-        custo_creditos: soma(l => l.custo),
-        lucro_liquido: soma(l => l.lucro),
-        margem: soma(l => l.receita) > 0 ? (soma(l => l.lucro) / soma(l => l.receita)) * 100 : 0,
-        renovacoes: linhas.length,
+        lucro_bruto: lucroBruto,
+        // Gasto de caixa com a Agzap no período: é o que entra na conta do
+        // lucro líquido, já abatido de estorno de compra.
+        gasto_compras: gastoCompras,
+        compras_valor: compraValor,
+        compras_creditos: compraCreditos,
+        estornos_valor: estornoValor,
+        // Visão paralela: quanto valeu o crédito consumido nas renovações.
+        // Cortesia entra como zero — não custou nada.
+        custo_creditos_usados: soma(l => l.custo),
+        creditos_usados: linhas.filter(l => l.consumiu_credito).length,
+        creditos_cortesia_usados: linhas.filter(l => l.consumiu_credito && l.custo === 0).length,
+        // Lucro líquido = bruto − o que saiu do bolso comprando crédito.
+        lucro_liquido: lucroBruto - gastoCompras,
+        margem: lucroBruto > 0 ? ((lucroBruto - gastoCompras) / lucroBruto) * 100 : 0,
+        renovacoes: linhas.filter(l => l.consumiu_credito).length,
+        renovacoes_agzap: linhas.filter(l => !l.consumiu_credito).length,
         meses_vendidos: soma(l => l.meses),
-        clientes_atendidos: porCliente.length,
-        // Saída de caixa do período — não confundir com o custo das renovações.
-        compras_valor: comprasNoPeriodo.reduce((acc, c) => acc + (Number(c.valor_pago) || 0), 0),
-        compras_creditos: comprasNoPeriodo.reduce((acc, c) => acc + Number(c.quantidade), 0),
+        clientes_atendidos: porCliente.filter(c => c.receita > 0).length,
         custo_medio_mensal: custoMensal,
         custo_medio_anual: custoAnual,
         // Cliente sem valor cadastrado entra com receita zero e distorce o

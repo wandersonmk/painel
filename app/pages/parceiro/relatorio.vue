@@ -79,6 +79,26 @@ function trocarPeriodo(p: Periodo) {
   carregar()
 }
 
+/** Limpar volta para hoje — o estado mais restrito, sem filtro nenhum aplicado. */
+const filtroAtivo = computed(() => periodo.value !== 'hoje')
+function limparFiltros() {
+  periodo.value = 'hoje'
+  dataInicio.value = ''
+  dataFim.value = ''
+  carregar()
+}
+
+/**
+ * PDF pela impressão do navegador: sem dependência nova no bundle e o
+ * resultado é o que estilizamos na folha, não um print da tela.
+ */
+function exportarPdf() {
+  window.print()
+}
+
+const geradoEm = computed(() =>
+  new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }))
+
 onMounted(async () => {
   await Promise.all([checkParceiro(), carregar()])
 })
@@ -113,15 +133,26 @@ const td = 'px-4 py-2.5 text-sm'
           Quanto você faturou, quanto gastou de crédito e o que sobrou · <span class="capitalize">{{ rotuloPeriodo }}</span>
         </p>
       </div>
-      <button
-        @click="carregar"
-        :disabled="loading"
-        type="button"
-        class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded text-sm font-semibold transition-all duration-150 shadow-lg shadow-purple-600/30 dark:shadow-purple-600/20"
-      >
-        <i class="fa-solid fa-arrows-rotate text-sm" :class="{ 'animate-spin': loading }" aria-hidden="true" />
-        <span class="hidden sm:inline">Atualizar</span>
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          @click="exportarPdf"
+          :disabled="loading || !resumo"
+          type="button"
+          class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-white/[0.06] hover:bg-slate-50 dark:hover:bg-white/[0.1] disabled:opacity-50 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-white/10 rounded text-sm font-semibold transition-colors"
+        >
+          <i class="fa-solid fa-file-pdf text-red-500 text-sm" aria-hidden="true" />
+          <span class="hidden sm:inline">Exportar PDF</span>
+        </button>
+        <button
+          @click="carregar"
+          :disabled="loading"
+          type="button"
+          class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded text-sm font-semibold transition-all duration-150 shadow-lg shadow-purple-600/30 dark:shadow-purple-600/20"
+        >
+          <i class="fa-solid fa-arrows-rotate text-sm" :class="{ 'animate-spin': loading }" aria-hidden="true" />
+          <span class="hidden sm:inline">Atualizar</span>
+        </button>
+      </div>
     </div>
 
     <!-- Período -->
@@ -162,6 +193,17 @@ const td = 'px-4 py-2.5 text-sm'
           class="px-3 py-1.5 rounded text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white transition-colors"
         >Aplicar</button>
       </div>
+
+      <button
+        v-if="filtroAtivo"
+        type="button"
+        @click="limparFiltros"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+        :class="periodo === 'custom' ? '' : 'ml-auto'"
+      >
+        <i class="fa-solid fa-xmark text-[10px]" aria-hidden="true" />
+        Limpar filtros
+      </button>
     </div>
 
     <div v-if="erro" class="p-4 rounded-md bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 text-red-700 dark:text-red-400 text-sm flex items-center gap-2">
@@ -174,8 +216,8 @@ const td = 'px-4 py-2.5 text-sm'
     </div>
 
     <template v-else-if="resumo">
-      <!-- Os três números -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <!-- A conta, na ordem em que ela é feita -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         <div :class="['p-4', cardBase]">
           <p class="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
             <i class="fa-solid fa-arrow-trend-up text-[10px]" aria-hidden="true" />
@@ -187,14 +229,31 @@ const td = 'px-4 py-2.5 text-sm'
           </p>
         </div>
 
+        <!-- Este é o que entra na conta do líquido: dinheiro que saiu do bolso. -->
         <div :class="['p-4', cardBase]">
           <p class="text-[11px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400 flex items-center gap-1.5">
-            <i class="fa-solid fa-coins text-[10px]" aria-hidden="true" />
-            Gasto com créditos
+            <i class="fa-solid fa-cart-shopping text-[10px]" aria-hidden="true" />
+            Compra de créditos
           </p>
-          <p class="text-2xl font-bold text-slate-900 dark:text-white tabular-nums mt-1">{{ fmtBRL(resumo.custo_creditos) }}</p>
+          <p class="text-2xl font-bold text-slate-900 dark:text-white tabular-nums mt-1">{{ fmtBRL(resumo.gasto_compras) }}</p>
           <p class="text-[11px] text-slate-400 mt-0.5">
-            {{ resumo.renovacoes }} renovaç{{ resumo.renovacoes === 1 ? 'ão' : 'ões' }} · {{ fmtBRL(resumo.custo_medio_mensal) }} por crédito de 30 dias
+            {{ resumo.compras_creditos }} crédito{{ resumo.compras_creditos === 1 ? '' : 's' }} comprado{{ resumo.compras_creditos === 1 ? '' : 's' }} no período
+            <template v-if="resumo.estornos_valor > 0"> · {{ fmtBRL(resumo.estornos_valor) }} estornado já abatido</template>
+          </p>
+        </div>
+
+        <!-- Visão paralela, não entra no líquido. -->
+        <div :class="['p-4', cardBase]">
+          <p class="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+            <i class="fa-solid fa-coins text-[10px]" aria-hidden="true" />
+            Créditos usados
+          </p>
+          <p class="text-2xl font-bold text-slate-700 dark:text-slate-200 tabular-nums mt-1">{{ fmtBRL(resumo.custo_creditos_usados) }}</p>
+          <p class="text-[11px] text-slate-400 mt-0.5">
+            {{ resumo.creditos_usados }} nas renovações do período
+            <template v-if="resumo.creditos_cortesia_usados > 0">
+              · {{ resumo.creditos_cortesia_usados }} de cortesia (custo zero)
+            </template>
           </p>
         </div>
 
@@ -206,24 +265,14 @@ const td = 'px-4 py-2.5 text-sm'
           <p class="text-2xl font-bold tabular-nums mt-1" :class="resumo.lucro_liquido >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'">
             {{ fmtBRL(resumo.lucro_liquido) }}
           </p>
-          <p class="text-[11px] text-slate-400 mt-0.5">margem de {{ resumo.margem.toFixed(1).replace('.', ',') }}%</p>
+          <p class="text-[11px] text-slate-400 mt-0.5 tabular-nums">
+            {{ fmtBRL(resumo.lucro_bruto) }} − {{ fmtBRL(resumo.gasto_compras) }} · margem {{ resumo.margem.toFixed(1).replace('.', ',') }}%
+          </p>
         </div>
       </div>
 
-      <!-- Avisos que mudam a leitura dos números -->
-      <div class="flex flex-wrap gap-2">
-        <span
-          v-if="resumo.compras_valor > 0"
-          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-white/[0.06] text-slate-600 dark:text-slate-300"
-          title="Saída de caixa do período — não é o custo das renovações acima"
-        >
-          <i class="fa-solid fa-cart-shopping text-[10px]" aria-hidden="true" />
-          Você comprou {{ resumo.compras_creditos }} créditos neste período · {{ fmtBRL(resumo.compras_valor) }}
-        </span>
-        <span
-          v-if="resumo.clientes_sem_preco > 0"
-          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400"
-        >
+      <div v-if="resumo.clientes_sem_preco > 0" class="flex flex-wrap gap-2">
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400">
           <i class="fa-solid fa-triangle-exclamation text-[10px]" aria-hidden="true" />
           {{ resumo.clientes_sem_preco }} cliente(s) sem valor cadastrado entram como R$ 0,00
         </span>
@@ -246,8 +295,8 @@ const td = 'px-4 py-2.5 text-sm'
                   <th :class="[th, 'text-center']">Renovações</th>
                   <th :class="[th, 'text-center']">Meses</th>
                   <th :class="[th, 'text-right']">Receita</th>
-                  <th :class="[th, 'text-right']">Custo</th>
-                  <th :class="[th, 'text-right']">Lucro</th>
+                  <th :class="[th, 'text-right']">Crédito usado</th>
+                  <th :class="[th, 'text-right']">Resultado</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 dark:divide-white/5">
@@ -260,8 +309,8 @@ const td = 'px-4 py-2.5 text-sm'
                   <td :class="[td, 'text-center tabular-nums text-slate-600 dark:text-slate-400']">{{ c.meses }}</td>
                   <td :class="[td, 'text-right tabular-nums text-slate-700 dark:text-slate-200']">{{ fmtBRL(c.receita) }}</td>
                   <td :class="[td, 'text-right tabular-nums text-red-600 dark:text-red-400']">{{ fmtBRL(c.custo) }}</td>
-                  <td :class="[td, 'text-right tabular-nums font-bold', c.lucro >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400']">
-                    {{ fmtBRL(c.lucro) }}
+                  <td :class="[td, 'text-right tabular-nums font-bold', c.resultado >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400']">
+                    {{ fmtBRL(c.resultado) }}
                   </td>
                 </tr>
               </tbody>
@@ -307,11 +356,136 @@ const td = 'px-4 py-2.5 text-sm'
       <p class="text-[11px] text-slate-400 dark:text-slate-500 flex items-start gap-1.5">
         <i class="fa-solid fa-circle-info text-[10px] mt-0.5 shrink-0" aria-hidden="true" />
         <span>
-          A receita usa o <strong>valor atual</strong> cadastrado de cada cliente, multiplicado pelos meses
-          da renovação (12 no crédito anual). O custo é o <strong>preço médio</strong> que você pagou por
-          crédito; crédito de cortesia entra como zero, e renovação feita pela Agzap não tem custo para você.
+          <strong>Lucro líquido = lucro bruto − compra de créditos</strong>, ou seja, o que sobrou do
+          dinheiro que entrou depois do que você pagou à Agzap no período (estorno de compra já abatido).
+          O cartão <strong>Créditos usados</strong> é uma visão paralela: quanto valeu o crédito gasto nas
+          renovações, com cortesia contando zero porque não custou nada — ele não entra no líquido.
+          A receita usa o <strong>valor atual</strong> cadastrado de cada cliente × os meses da renovação
+          (12 no crédito anual).
         </span>
       </p>
+
+      <!-- ══════════ Folha de impressão (só aparece no PDF) ══════════ -->
+      <section id="folha-impressao" class="hidden">
+        <header style="border-bottom:2px solid #7c3aed;padding-bottom:10px;margin-bottom:16px">
+          <h1 style="font-size:18pt;font-weight:700;color:#0f172a;margin:0">Relatório de resultados</h1>
+          <p style="font-size:10pt;color:#475569;margin:4px 0 0">
+            Parceiro: <strong>{{ parceiro?.nome ?? '—' }}</strong> · Período: <strong>{{ rotuloPeriodo }}</strong>
+          </p>
+          <p style="font-size:8pt;color:#94a3b8;margin:2px 0 0">Gerado em {{ geradoEm }} · Agzap Systems</p>
+        </header>
+
+        <table style="width:100%;border-collapse:collapse;margin-bottom:18px;font-size:10pt">
+          <tbody>
+            <tr>
+              <td style="padding:6px 0;color:#475569">Lucro bruto <span style="color:#94a3b8">({{ resumo.meses_vendidos }} meses vendidos)</span></td>
+              <td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a">{{ fmtBRL(resumo.lucro_bruto) }}</td>
+            </tr>
+            <tr>
+              <td style="padding:6px 0;color:#475569">Compra de créditos <span style="color:#94a3b8">({{ resumo.compras_creditos }} créditos)</span></td>
+              <td style="padding:6px 0;text-align:right;font-weight:700;color:#b91c1c">− {{ fmtBRL(resumo.gasto_compras) }}</td>
+            </tr>
+            <tr style="border-top:1px solid #cbd5e1">
+              <td style="padding:8px 0;font-weight:700;color:#0f172a">Lucro líquido <span style="color:#94a3b8;font-weight:400">(margem {{ resumo.margem.toFixed(1).replace('.', ',') }}%)</span></td>
+              <td style="padding:8px 0;text-align:right;font-weight:700;font-size:13pt;color:#047857">{{ fmtBRL(resumo.lucro_liquido) }}</td>
+            </tr>
+            <tr>
+              <td style="padding:6px 0;color:#94a3b8;font-size:9pt">Créditos usados nas renovações (não entra no líquido)</td>
+              <td style="padding:6px 0;text-align:right;color:#94a3b8;font-size:9pt">{{ fmtBRL(resumo.custo_creditos_usados) }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2 style="font-size:11pt;font-weight:700;color:#0f172a;margin:0 0 6px">Por cliente</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:9pt;margin-bottom:18px">
+          <thead>
+            <tr style="background:#f1f5f9">
+              <th style="text-align:left;padding:5px 6px;border-bottom:1px solid #cbd5e1">Cliente</th>
+              <th style="text-align:right;padding:5px 6px;border-bottom:1px solid #cbd5e1">Valor/mês</th>
+              <th style="text-align:center;padding:5px 6px;border-bottom:1px solid #cbd5e1">Renov.</th>
+              <th style="text-align:center;padding:5px 6px;border-bottom:1px solid #cbd5e1">Meses</th>
+              <th style="text-align:right;padding:5px 6px;border-bottom:1px solid #cbd5e1">Receita</th>
+              <th style="text-align:right;padding:5px 6px;border-bottom:1px solid #cbd5e1">Crédito usado</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="c in porCliente" :key="`p-${c.empresa_id}`">
+              <td style="padding:5px 6px;border-bottom:1px solid #e2e8f0">{{ c.empresa_nome }}</td>
+              <td style="padding:5px 6px;text-align:right;border-bottom:1px solid #e2e8f0">{{ fmtBRL(c.preco_mensal) }}</td>
+              <td style="padding:5px 6px;text-align:center;border-bottom:1px solid #e2e8f0">{{ c.renovacoes }}</td>
+              <td style="padding:5px 6px;text-align:center;border-bottom:1px solid #e2e8f0">{{ c.meses }}</td>
+              <td style="padding:5px 6px;text-align:right;border-bottom:1px solid #e2e8f0">{{ fmtBRL(c.receita) }}</td>
+              <td style="padding:5px 6px;text-align:right;border-bottom:1px solid #e2e8f0;color:#b91c1c">{{ fmtBRL(c.custo) }}</td>
+            </tr>
+            <tr v-if="!porCliente.length">
+              <td colspan="6" style="padding:10px;text-align:center;color:#94a3b8">Nenhuma renovação neste período</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <template v-if="renovacoes.length">
+          <h2 style="font-size:11pt;font-weight:700;color:#0f172a;margin:0 0 6px">Renovações do período</h2>
+          <table style="width:100%;border-collapse:collapse;font-size:9pt">
+            <thead>
+              <tr style="background:#f1f5f9">
+                <th style="text-align:left;padding:5px 6px;border-bottom:1px solid #cbd5e1">Data</th>
+                <th style="text-align:left;padding:5px 6px;border-bottom:1px solid #cbd5e1">Cliente</th>
+                <th style="text-align:left;padding:5px 6px;border-bottom:1px solid #cbd5e1">Crédito</th>
+                <th style="text-align:right;padding:5px 6px;border-bottom:1px solid #cbd5e1">Receita</th>
+                <th style="text-align:right;padding:5px 6px;border-bottom:1px solid #cbd5e1">Válido até</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in renovacoes" :key="`p-${r.id}`">
+                <td style="padding:5px 6px;border-bottom:1px solid #e2e8f0">{{ fmtDataHora(r.data) }}</td>
+                <td style="padding:5px 6px;border-bottom:1px solid #e2e8f0">{{ r.empresa_nome }}</td>
+                <td style="padding:5px 6px;border-bottom:1px solid #e2e8f0">
+                  {{ LABEL_TIPO[r.tipo_credito] ?? '—' }}<template v-if="!r.consumiu_credito"> (Agzap)</template>
+                </td>
+                <td style="padding:5px 6px;text-align:right;border-bottom:1px solid #e2e8f0">{{ fmtBRL(r.receita) }}</td>
+                <td style="padding:5px 6px;text-align:right;border-bottom:1px solid #e2e8f0">{{ fmtData(r.vencimento_novo) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </template>
+
+        <p style="margin-top:16px;font-size:8pt;color:#64748b;line-height:1.5">
+          Lucro líquido = lucro bruto − compra de créditos do período (estorno de compra já abatido).
+          Crédito de cortesia tem custo zero. A receita usa o valor atual cadastrado de cada cliente
+          multiplicado pelos meses da renovação.
+        </p>
+      </section>
     </template>
   </div>
 </template>
+
+<!--
+  Impressão: a tela inteira some e só a folha aparece, com estilo próprio em
+  cores claras — assim o PDF sai igual no tema claro e no escuro, e não vira
+  uma captura da interface com menu e botões.
+-->
+<style>
+@media print {
+  @page { size: A4 portrait; margin: 14mm; }
+
+  html, body { background: #fff !important; }
+
+  body * { visibility: hidden !important; }
+  #folha-impressao, #folha-impressao * { visibility: visible !important; }
+
+  #folha-impressao {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    color: #0f172a;
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+
+  /* Linha não pode ser cortada no meio; cabeçalho repete em cada página. */
+  #folha-impressao tr { page-break-inside: avoid; }
+  #folha-impressao thead { display: table-header-group; }
+  #folha-impressao h2 { page-break-after: avoid; }
+}
+</style>

@@ -5,27 +5,35 @@ import type { AdminCliente } from '~/composables/useAdminClientes'
 const props = defineProps<{ show: boolean; cliente: AdminCliente | null }>()
 const emit = defineEmits<{
   close: []
-  confirm: [dados: { nome: string; email: string; whatsapp: string | null; subscription_price: number | null }]
+  confirm: [dados: {
+    nome: string
+    email: string
+    whatsapp: string | null
+    subscription_price: number | null
+    preco_anual: number | null
+  }]
 }>()
 
 const nome = ref('')
 const email = ref('')
 const whatsapp = ref('')
 const priceCents = ref(0)
+const priceAnualCents = ref(0)
 
-const priceDisplay = computed(() =>
-  (priceCents.value / 100).toLocaleString('pt-BR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
-)
+const centavosParaTexto = (c: number) =>
+  (c / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-function onPriceInput(e: Event) {
+const priceDisplay = computed(() => centavosParaTexto(priceCents.value))
+const priceAnualDisplay = computed(() => centavosParaTexto(priceAnualCents.value))
+
+function digitarValor(e: Event, alvo: typeof priceCents) {
   const input = e.target as HTMLInputElement
   const digits = input.value.replace(/\D/g, '').slice(0, 10)
-  priceCents.value = digits ? parseInt(digits, 10) : 0
-  input.value = priceDisplay.value
+  alvo.value = digits ? parseInt(digits, 10) : 0
+  input.value = centavosParaTexto(alvo.value)
 }
+const onPriceInput = (e: Event) => digitarValor(e, priceCents)
+const onPriceAnualInput = (e: Event) => digitarValor(e, priceAnualCents)
 
 // Estado do token OpenAI da empresa
 const tokenState = ref<'sem-token' | 'proprio' | 'global' | 'desconhecido'>('desconhecido')
@@ -92,6 +100,7 @@ watch(() => props.show, async (open) => {
     whatsapp.value = props.cliente.whatsapp || ''
     const price = props.cliente.subscription_price ?? 297
     priceCents.value = Math.round(price * 100)
+    priceAnualCents.value = Math.round((props.cliente.subscription_price_anual ?? 0) * 100)
     toast = await useToastSafe()
     tokenEditing.value = false
     novoToken.value = ''
@@ -105,6 +114,7 @@ function handleSubmit() {
     email: email.value.trim(),
     whatsapp: whatsapp.value.trim() || null,
     subscription_price: priceCents.value > 0 ? priceCents.value / 100 : null,
+    preco_anual: priceAnualCents.value > 0 ? priceAnualCents.value / 100 : null,
   })
 }
 </script>
@@ -124,18 +134,49 @@ function handleSubmit() {
         <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">WhatsApp</label>
         <input v-model="whatsapp" type="tel" placeholder="(11) 99999-9999" class="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white" />
       </div>
-      <div>
-        <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Valor do Plano (R$)</label>
-        <div class="relative">
-          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">R$</span>
-          <input
-            :value="priceDisplay"
-            @input="onPriceInput"
-            type="text"
-            inputmode="numeric"
-            placeholder="0,00"
-            class="w-full pl-10 pr-3 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white tabular-nums"
-          />
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+            Valor do Plano (R$)
+            <span class="font-normal text-xs text-slate-400">— mensal</span>
+          </label>
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">R$</span>
+            <input
+              :value="priceDisplay"
+              @input="onPriceInput"
+              type="text"
+              inputmode="numeric"
+              placeholder="0,00"
+              class="w-full pl-10 pr-3 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white tabular-nums"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+            Plano anual (R$)
+            <span class="font-normal text-xs text-slate-400">— 12 meses</span>
+          </label>
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">R$</span>
+            <input
+              :value="priceAnualDisplay"
+              @input="onPriceAnualInput"
+              type="text"
+              inputmode="numeric"
+              placeholder="0,00"
+              class="w-full pl-10 pr-3 py-2 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white tabular-nums"
+            />
+          </div>
+          <p class="mt-1 text-[11px] text-slate-400">
+            <template v-if="cliente?.parceiro_nome">
+              Cobrado por <strong>{{ cliente.parceiro_nome }}</strong> · vazio usa o sugerido da tabela
+            </template>
+            <template v-else>
+              Valor fechado do plano de 12 meses
+            </template>
+          </p>
         </div>
       </div>
 

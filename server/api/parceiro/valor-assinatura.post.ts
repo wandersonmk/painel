@@ -9,7 +9,7 @@ import { aplicarRateLimit, registrarAuditoria } from '~~/server/utils/parceiroLi
  * Quem revende cobra o preço que quiser, então a tela de assinatura do cliente
  * precisa mostrar o valor combinado com o parceiro, não o de tabela da Agzap.
  *
- * Escreve UMA coluna: empresas.subscription_price. Não toca em vencimento,
+ * Escreve somente os preços mensal e anual em empresas. Não toca em vencimento,
  * status, plano nem em nada do Stripe — mudar preço não pode virar renovação.
  */
 export default defineEventHandler(async (event) => {
@@ -40,7 +40,7 @@ export default defineEventHandler(async (event) => {
   // Vínculo revalidado a cada ação — nunca só no carregamento da página.
   const { data: vinculo, error: vincErr } = await supabase
     .from('parceiro_empresas')
-    .select('id, cobranca_agzap, preco_anual')
+    .select('id, cobranca_agzap')
     .eq('empresa_id', empresaId)
     .eq('parceiro_id', parceiro.id)
     .eq('ativo', true)
@@ -58,26 +58,24 @@ export default defineEventHandler(async (event) => {
 
   const { data: empresa, error: empErr } = await supabase
     .from('empresas')
-    .select('id, subscription_price')
+    .select('id, subscription_price, subscription_price_anual')
     .eq('id', empresaId)
     .maybeSingle()
   if (empErr || !empresa) {
     return failPublic(empErr, 'parceiro/valor-assinatura', 'Não foi possível concluir a operação.')
   }
 
-  // Mensal fica em empresas (é o que o cliente vê no app); anual fica no
-  // vínculo, porque é dado comercial do parceiro e o app não precisa dele.
+  // Os dois valores pertencem à empresa. Uma única atualização evita salvar
+  // apenas metade do formulário se a segunda operação falhar.
   const { error } = await supabase
     .from('empresas')
-    .update({ subscription_price: valorFinal, updated_at: new Date().toISOString() })
+    .update({
+      subscription_price: valorFinal,
+      subscription_price_anual: valorAnualFinal,
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', empresaId)
   if (error) return failPublic(error, 'parceiro/valor-assinatura', 'Não foi possível salvar o valor.')
-
-  const { error: anualErr } = await supabase
-    .from('parceiro_empresas')
-    .update({ preco_anual: valorAnualFinal, updated_at: new Date().toISOString() })
-    .eq('id', vinculo.id)
-  if (anualErr) return failPublic(anualErr, 'parceiro/valor-assinatura', 'Não foi possível salvar o valor anual.')
 
   await registrarAuditoria(supabase, event, {
     parceiro_id: parceiro.id,
@@ -85,8 +83,14 @@ export default defineEventHandler(async (event) => {
     ator_user_id: userId,
     ator_papel: 'parceiro',
     acao: 'valor_assinatura',
-    estado_anterior: { subscription_price: empresa.subscription_price, preco_anual: vinculo.preco_anual },
-    estado_novo: { subscription_price: valorFinal, preco_anual: valorAnualFinal },
+    estado_anterior: {
+      subscription_price: empresa.subscription_price,
+      subscription_price_anual: empresa.subscription_price_anual,
+    },
+    estado_novo: {
+      subscription_price: valorFinal,
+      subscription_price_anual: valorAnualFinal,
+    },
     origem: 'painel_parceiro',
   })
 

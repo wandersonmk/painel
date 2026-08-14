@@ -50,7 +50,7 @@ export default defineEventHandler(async (event) => {
       .select('tipo_credito, quantidade, operacao, valor_pago, created_at')
       .eq('parceiro_id', parceiro.id),
     supabase.from('parceiro_empresas')
-      .select('empresa_id, cobranca_agzap, preco_anual, empresas ( nome, subscription_price )')
+      .select('empresa_id, cobranca_agzap, empresas ( nome, subscription_price, subscription_price_anual )')
       .eq('parceiro_id', parceiro.id)
       .eq('ativo', true),
     supabase.from('parceiro_precos_licenca')
@@ -71,7 +71,12 @@ export default defineEventHandler(async (event) => {
   const nomeDoCliente = new Map<string, string>()
   for (const v of vinculos) {
     precoDoCliente.set(v.empresa_id, Number(v.empresas.subscription_price ?? 0) || 0)
-    precoAnualDoCliente.set(v.empresa_id, v.preco_anual === null || v.preco_anual === undefined ? null : Number(v.preco_anual))
+    precoAnualDoCliente.set(
+      v.empresa_id,
+      v.empresas.subscription_price_anual == null
+        ? null
+        : Number(v.empresas.subscription_price_anual),
+    )
     nomeDoCliente.set(v.empresa_id, v.empresas.nome)
   }
 

@@ -15,9 +15,9 @@ export default defineEventHandler(async (event) => {
   const { data: vinculos, error } = await supabase
     .from('parceiro_empresas')
     .select(`
-      id, empresa_id, ativo, cobranca_agzap, bloqueio_origem, bloqueado_em, preco_anual, created_at,
+      id, empresa_id, ativo, cobranca_agzap, bloqueio_origem, bloqueado_em, created_at,
       empresas ( id, nome, nome_cliente, email, whatsapp, ativo, created_at,
-                 subscription_status, subscription_plan, subscription_price,
+                 subscription_status, subscription_plan, subscription_price, subscription_price_anual,
                  subscription_renews_at, trial_ends_at,
                  max_instancias, max_agentes )
     `)
@@ -95,9 +95,9 @@ export default defineEventHandler(async (event) => {
         ? null
         : Number(e.subscription_price),
       // Preço fechado do plano de 12 meses. Nulo = ainda não definido.
-      preco_anual: v.preco_anual === null || v.preco_anual === undefined
+      preco_anual: e.subscription_price_anual === null || e.subscription_price_anual === undefined
         ? null
-        : Number(v.preco_anual),
+        : Number(e.subscription_price_anual),
       status_assinatura: e.subscription_status ?? null,
       vinculado_em: v.created_at,
       empresa_cadastro: e.created_at,

@@ -25,6 +25,8 @@ export interface AdminCliente {
   trial_ends_at: string | null
   subscription_renews_at: string | null
   subscription_price: number | null
+  /** Valor fechado do plano de 12 meses. */
+  subscription_price_anual?: number | null
   ativo: boolean
   created_at: string
   role?: 'user' | 'admin' | 'manager' | 'superAdmin'
@@ -175,11 +177,25 @@ export const useAdminClientes = () => {
     if (idx !== -1) clientes.value.splice(idx, 1)
   }
 
-  const editarCliente = async (id: string, dados: { nome: string; email: string; whatsapp: string | null; subscription_price: number | null }) => {
+  const editarCliente = async (
+    id: string,
+    dados: {
+      nome: string
+      email: string
+      whatsapp: string | null
+      subscription_price: number | null
+      // Só vai no corpo para cliente com parceiro; ausente preserva o valor.
+      preco_anual?: number | null
+    },
+  ) => {
     const resp = await $fetch<{ success: boolean }>('/api/admin/editar', { method: 'POST', body: { clienteId: id, ...dados }, headers: await getAuthHeaders() })
     if (!resp.success) throw new Error('Erro ao editar')
     const c = clientes.value.find(x => x.id === id)
-    if (c) Object.assign(c, dados)
+    if (c) {
+      const { preco_anual, ...demaisDados } = dados
+      Object.assign(c, demaisDados)
+      if (preco_anual !== undefined) c.subscription_price_anual = preco_anual
+    }
   }
 
   const isVencido = (c: AdminCliente) => c.subscription_status === 'expired' || diasParaVencimento(c) < 0

@@ -2,7 +2,15 @@ import { requireSuperAdmin, getServiceClient } from '~~/server/utils/requireSupe
 
 export default defineEventHandler(async (event) => {
   await requireSuperAdmin(event)
-  const body = await readBody<{ clienteId: string; nome: string; email: string; whatsapp: string | null; subscription_price: number | null }>(event)
+  const body = await readBody<{
+    clienteId: string
+    nome: string
+    email: string
+    whatsapp: string | null
+    subscription_price: number | null
+    /** Só é enviado pelo modal para clientes de parceiro. */
+    preco_anual?: number | null
+  }>(event)
 
   if (!body?.clienteId) {
     throw createError({ statusCode: 400, statusMessage: 'clienteId obrigatório' })
@@ -20,6 +28,10 @@ export default defineEventHandler(async (event) => {
   if (price != null && (!Number.isFinite(price) || price < 0 || price > 1_000_000)) {
     throw createError({ statusCode: 400, statusMessage: 'Preço inválido' })
   }
+  const precoAnual = body.preco_anual
+  if (precoAnual != null && (!Number.isFinite(precoAnual) || precoAnual < 0 || precoAnual > 1_000_000)) {
+    throw createError({ statusCode: 400, statusMessage: 'Preço anual inválido' })
+  }
 
   const supabase = getServiceClient()
   const { error } = await supabase
@@ -29,6 +41,10 @@ export default defineEventHandler(async (event) => {
       email,
       whatsapp: body.whatsapp,
       subscription_price: price,
+      // Ausente no corpo = preserva o preço anual atual.
+      ...(body.preco_anual !== undefined
+        ? { subscription_price_anual: precoAnual }
+        : {}),
       updated_at: new Date().toISOString(),
     })
     .eq('id', body.clienteId)
@@ -36,5 +52,6 @@ export default defineEventHandler(async (event) => {
   if (error) {
     return { success: false, error: error.message }
   }
+
   return { success: true }
 })

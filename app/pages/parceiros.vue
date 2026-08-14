@@ -21,8 +21,7 @@ export interface ParceiroAdmin {
 
 let toast: Awaited<ReturnType<typeof useToastSafe>> | null = null
 
-const abaAtiva = ref<'licencas' | 'aulas' | 'materiais'>('licencas')
-const aulasCount = ref(0)
+const abaAtiva = ref<'licencas' | 'materiais'>('licencas')
 const materiaisCount = ref(0)
 const isRefreshing = ref(false)
 
@@ -232,16 +231,6 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
           Licenças
         </button>
         <button
-          type="button" role="tab" :aria-selected="abaAtiva === 'aulas'"
-          @click="abaAtiva = 'aulas'"
-          class="flex-1 sm:flex-initial px-4 py-2 rounded-md text-sm font-semibold transition-colors flex items-center justify-center gap-2"
-          :class="abaAtiva === 'aulas' ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
-        >
-          <i class="fa-solid fa-graduation-cap text-purple-500" aria-hidden="true" />
-          Aulas
-          <span class="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold tabular-nums bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400">{{ aulasCount }}</span>
-        </button>
-        <button
           type="button" role="tab" :aria-selected="abaAtiva === 'materiais'"
           @click="abaAtiva = 'materiais'"
           class="flex-1 sm:flex-initial px-4 py-2 rounded-md text-sm font-semibold transition-colors flex items-center justify-center gap-2"
@@ -262,10 +251,6 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
           @suspender="pedirConfirmacao($event.ativo ? 'bloquear' : 'desbloquear', $event)"
           @excluir="pedirConfirmacao('excluir', $event)"
         />
-      </div>
-
-      <div v-show="abaAtiva === 'aulas'">
-        <AdminAulasManager @count-change="aulasCount = $event" />
       </div>
 
       <!-- ══════════════ ABA MATERIAIS ══════════════ -->

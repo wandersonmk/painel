@@ -3,11 +3,12 @@ import { ref, watch, computed } from 'vue'
 
 interface Instancia {
   id: string
-  provider: 'uazapi' | 'meta'
+  provider: 'uazapi' | 'meta' | 'instagram'
   nome_instancia: string
   status: string
   created_at: string
   phone: string | null
+  username: string | null
 }
 
 const props = defineProps<{
@@ -112,11 +113,13 @@ function getStatus(s: string) {
   return statusMap[s] ?? statusMap.disconnected
 }
 
-const providerMap: Record<'uazapi' | 'meta', { label: string; icon: string; badge: string; avatar: string }> = {
-  uazapi: { label: 'UAzAPI', icon: 'fa-brands fa-whatsapp',  badge: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300', avatar: 'bg-emerald-500' },
-  meta:   { label: 'Meta',   icon: 'fa-brands fa-meta',      badge: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300',             avatar: 'bg-blue-500' },
+type Provider = 'uazapi' | 'meta' | 'instagram'
+const providerMap: Record<Provider, { label: string; canal: string; icon: string; badge: string; avatar: string }> = {
+  uazapi:    { label: 'UAzAPI',    canal: 'WhatsApp',  icon: 'fa-brands fa-whatsapp',  badge: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300', avatar: 'bg-emerald-500' },
+  meta:      { label: 'Meta',      canal: 'WhatsApp',  icon: 'fa-brands fa-meta',      badge: 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300',             avatar: 'bg-blue-500' },
+  instagram: { label: 'Instagram', canal: 'Instagram', icon: 'fa-brands fa-instagram', badge: 'bg-pink-50 text-pink-700 dark:bg-pink-500/10 dark:text-pink-300',             avatar: 'bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600' },
 }
-function getProvider(p: 'uazapi' | 'meta') {
+function getProvider(p: Provider) {
   return providerMap[p] ?? providerMap.uazapi
 }
 
@@ -174,11 +177,17 @@ async function executarAcao() {
   }
 }
 
-const canaisUsados = computed(() => instancias.value.length)
+// Total = todos os canais (WhatsApp nativo + WhatsApp API + Instagram).
+const totalCanais = computed(() => instancias.value.length)
+// O campo de limite é "Canais WhatsApp" (mapeia max_instancias), então o "em uso"
+// ao lado dele conta só WhatsApp. Instagram aparece na lista e no cabeçalho à
+// parte — a checagem de teto do IG, se houver, é no app, não neste painel.
+const canaisWhatsapp = computed(() => instancias.value.filter(i => i.provider !== 'instagram').length)
+const canaisInstagram = computed(() => instancias.value.filter(i => i.provider === 'instagram').length)
 </script>
 
 <template>
-  <BaseModal :show="show" title="Limites e canais" max-width="max-w-xl" @close="$emit('close')">
+  <BaseModal :show="show" title="Limites e canais" max-width="max-w-2xl" @close="$emit('close')">
 
     <!-- Header do cliente -->
     <div class="flex items-center gap-3 pb-4 mb-4 border-b border-slate-200 dark:border-slate-800">
@@ -188,7 +197,7 @@ const canaisUsados = computed(() => instancias.value.length)
       <div>
         <p class="font-semibold text-slate-900 dark:text-white">{{ clienteNome }}</p>
         <p class="text-xs text-slate-500 dark:text-slate-400">
-          {{ canaisUsados }} de {{ valorAtual }} canal{{ valorAtual > 1 ? 'is' : '' }} em uso
+          {{ canaisWhatsapp }} de {{ valorAtual }} canal{{ valorAtual > 1 ? 'is' : '' }} WhatsApp<template v-if="canaisInstagram"> · {{ canaisInstagram }} Instagram</template>
         </p>
       </div>
     </div>
@@ -205,12 +214,12 @@ const canaisUsados = computed(() => instancias.value.length)
           ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
           : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
       >
-        <i class="fa-brands fa-whatsapp text-emerald-500" aria-hidden="true" />
-        Instâncias
+        <i class="fa-solid fa-tower-broadcast text-purple-500" aria-hidden="true" />
+        Canais
         <span
           class="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold tabular-nums"
-          :class="abaAtiva === 'instancias' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'"
-        >{{ canaisUsados }}</span>
+          :class="abaAtiva === 'instancias' ? 'bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'"
+        >{{ totalCanais }}</span>
       </button>
       <button
         type="button"
@@ -231,8 +240,8 @@ const canaisUsados = computed(() => instancias.value.length)
     <section v-show="abaAtiva === 'instancias'">
       <div class="flex items-center justify-between mb-3">
         <h3 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-          <i class="fa-brands fa-whatsapp text-emerald-500" aria-hidden="true" />
-          Instâncias cadastradas
+          <i class="fa-solid fa-tower-broadcast text-purple-500" aria-hidden="true" />
+          Canais conectados
         </h3>
         <button
           @click="carregarInstancias"
@@ -255,10 +264,10 @@ const canaisUsados = computed(() => instancias.value.length)
       <!-- Vazia -->
       <div v-else-if="instancias.length === 0" class="py-8 text-center">
         <div class="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">
-          <i class="fa-brands fa-whatsapp text-slate-400 dark:text-slate-600 text-xl" aria-hidden="true" />
+          <i class="fa-solid fa-tower-broadcast text-slate-400 dark:text-slate-600 text-xl" aria-hidden="true" />
         </div>
         <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Nenhum canal cadastrado</p>
-        <p class="text-xs text-slate-400 dark:text-slate-600 mt-0.5">O cliente ainda não conectou um número</p>
+        <p class="text-xs text-slate-400 dark:text-slate-600 mt-0.5">O cliente ainda não conectou WhatsApp nem Instagram</p>
       </div>
 
       <!-- Cards de instância -->
@@ -296,26 +305,38 @@ const canaisUsados = computed(() => instancias.value.length)
                     <span
                       class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
                       :class="getProvider(inst.provider).badge"
-                      :title="`Provedor: ${getProvider(inst.provider).label}`"
+                      :title="`Canal ${getProvider(inst.provider).canal} · ${getProvider(inst.provider).label}`"
                     >
                       <i :class="[getProvider(inst.provider).icon, 'text-[10px]']" aria-hidden="true" />
                       {{ getProvider(inst.provider).label }}
                     </span>
                   </div>
 
-                  <!-- Telefone conectado -->
-                  <div v-if="inst.phone"
-                    class="flex items-center gap-1.5 mb-1.5"
-                  >
-                    <i class="fa-solid fa-phone text-emerald-500 text-[11px]" aria-hidden="true" />
-                    <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 tabular-nums tracking-wide">
-                      {{ inst.phone }}
-                    </span>
-                  </div>
-                  <div v-else class="flex items-center gap-1.5 mb-1.5">
-                    <i class="fa-solid fa-phone text-slate-300 dark:text-slate-700 text-[11px]" aria-hidden="true" />
-                    <span class="text-xs text-slate-400 dark:text-slate-600 italic">Número não disponível</span>
-                  </div>
+                  <!-- Identificador: @usuário (Instagram) ou telefone (WhatsApp) -->
+                  <template v-if="inst.provider === 'instagram'">
+                    <div v-if="inst.username" class="flex items-center gap-1.5 mb-1.5">
+                      <i class="fa-brands fa-instagram text-pink-500 text-[12px]" aria-hidden="true" />
+                      <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 tracking-wide">
+                        @{{ inst.username }}
+                      </span>
+                    </div>
+                    <div v-else class="flex items-center gap-1.5 mb-1.5">
+                      <i class="fa-brands fa-instagram text-slate-300 dark:text-slate-700 text-[12px]" aria-hidden="true" />
+                      <span class="text-xs text-slate-400 dark:text-slate-600 italic">Perfil não identificado</span>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <div v-if="inst.phone" class="flex items-center gap-1.5 mb-1.5">
+                      <i class="fa-solid fa-phone text-emerald-500 text-[11px]" aria-hidden="true" />
+                      <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 tabular-nums tracking-wide">
+                        {{ inst.phone }}
+                      </span>
+                    </div>
+                    <div v-else class="flex items-center gap-1.5 mb-1.5">
+                      <i class="fa-solid fa-phone text-slate-300 dark:text-slate-700 text-[11px]" aria-hidden="true" />
+                      <span class="text-xs text-slate-400 dark:text-slate-600 italic">Número não disponível</span>
+                    </div>
+                  </template>
 
                   <!-- ID expansível -->
                   <button
@@ -385,7 +406,7 @@ const canaisUsados = computed(() => instancias.value.length)
               Canais WhatsApp
             </label>
             <p class="text-xs text-slate-400 dark:text-slate-600 mt-0.5">
-              Em uso: <span class="tabular-nums font-semibold text-slate-600 dark:text-slate-400">{{ canaisUsados }}</span> · Máximo de instâncias simultâneas (1 – 20)
+              Em uso: <span class="tabular-nums font-semibold text-slate-600 dark:text-slate-400">{{ canaisWhatsapp }}</span> · Máximo de instâncias simultâneas (1 – 20)
             </p>
           </div>
           <input

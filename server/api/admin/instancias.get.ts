@@ -3,11 +3,14 @@ import { uazapiRequest, formatPhone, extractPhoneDigits, type UazapiInstanceStat
 
 type InstanciaPainel = {
   id: string
-  provider: 'uazapi' | 'meta'
+  provider: 'uazapi' | 'meta' | 'instagram'
   nome_instancia: string
   status: string
   created_at: string
+  /** WhatsApp: número formatado. Instagram: null (usa `username`). */
   phone: string | null
+  /** Instagram: @handle sem o arroba. Demais provedores: null. */
+  username: string | null
 }
 
 export default defineEventHandler(async (event) => {
@@ -18,7 +21,7 @@ export default defineEventHandler(async (event) => {
 
   const supabase = getServiceClient()
 
-  const [uazResp, metaResp] = await Promise.all([
+  const [uazResp, metaResp, igResp] = await Promise.all([
     supabase
       .from('instancias_uazapi')
       .select('id, nome_instancia, status, created_at, uazapi_token, phone')
@@ -29,10 +32,17 @@ export default defineEventHandler(async (event) => {
       .select('id, nome_display, phone_number, phone_number_id, status, created_at')
       .eq('empresa_id', empresaId)
       .order('created_at', { ascending: false }),
+    // Instagram é canal de tabela própria (não é linha em instancias_meta).
+    supabase
+      .from('instancias_instagram')
+      .select('id, username, ig_business_account_id, status, created_at')
+      .eq('empresa_id', empresaId)
+      .order('created_at', { ascending: false }),
   ])
 
   if (uazResp.error) return { success: false, error: uazResp.error.message }
   if (metaResp.error) return { success: false, error: metaResp.error.message }
+  if (igResp.error) return { success: false, error: igResp.error.message }
 
   const uazapiList: InstanciaPainel[] = await Promise.all((uazResp.data || []).map(async (inst) => {
     let phone: string | null = formatPhone(inst.phone)
@@ -62,6 +72,7 @@ export default defineEventHandler(async (event) => {
       status: inst.status,
       created_at: inst.created_at,
       phone,
+      username: null,
     }
   }))
 
@@ -72,9 +83,23 @@ export default defineEventHandler(async (event) => {
     status: inst.status || 'ativo',
     created_at: inst.created_at,
     phone: inst.phone_number || null,
+    username: null,
   }))
 
-  const result = [...uazapiList, ...metaList].sort(
+  const instagramList: InstanciaPainel[] = (igResp.data || []).map((inst) => {
+    const handle = inst.username?.trim() || null
+    return {
+      id: inst.id,
+      provider: 'instagram' as const,
+      nome_instancia: handle || `Instagram · ${inst.ig_business_account_id?.slice(-4) || '—'}`,
+      status: inst.status || 'ativo',
+      created_at: inst.created_at,
+      phone: null,
+      username: handle,
+    }
+  })
+
+  const result = [...uazapiList, ...metaList, ...instagramList].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   )
 

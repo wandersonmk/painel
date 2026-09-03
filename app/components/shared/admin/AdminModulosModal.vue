@@ -52,11 +52,14 @@ const maxEnviosMes = ref(0)
 const maxProfissionais = ref(20)
 const maxClientes = ref(100000)
 
-// Faixas vendidas hoje. Valor em R$ não aparece aqui de propósito: quem
-// contrata fala com a gente no WhatsApp e recebe a tabela na hora, então o
-// painel não fixa preço que possa ficar desatualizado.
+// Faixas usuais na venda, viram só atalhos: o teto de fato é digitável (como
+// profissionais/clientes), pra caber contrato fora das três faixas. Valor em R$
+// não aparece aqui de propósito: quem contrata fala com a gente no WhatsApp e
+// recebe a tabela na hora, então o painel não fixa preço que possa desatualizar.
 const FAIXAS_ENVIO = [1000, 5000, 15000]
 const FAIXA_PADRAO = 1000
+// Espelha o CHECK da coluna max_envios_mes (server: modulos.post.ts).
+const MAX_ENVIOS_TETO = 200000
 const fmtMil = new Intl.NumberFormat('pt-BR')
 
 // Quanto a empresa já usa — evita salvar um teto abaixo do consumo atual sem
@@ -184,21 +187,29 @@ const LIMITES = [
   },
 ]
 
-// Ligar o add-on já deixa a menor faixa marcada (nunca "ligado sem plano");
-// desligar zera a faixa, porque plano sem gate não significa nada.
+// Ligar o add-on já preenche a faixa padrão (nunca "ligado sem teto"); desligar
+// zera, porque plano sem gate não significa nada.
 function alternarEnvios() {
   envios.value = !envios.value
   if (envios.value) {
-    if (!FAIXAS_ENVIO.includes(maxEnviosMes.value)) maxEnviosMes.value = FAIXA_PADRAO
+    if (!Number.isInteger(maxEnviosMes.value) || maxEnviosMes.value < 1) maxEnviosMes.value = FAIXA_PADRAO
   } else {
     maxEnviosMes.value = 0
   }
 }
 
+// Campo livre agora: se vier vazio/fora da faixa (validação nativa burlada),
+// cai na faixa padrão em vez de mandar lixo pro servidor.
+function tetoEnviosValido() {
+  const n = Math.trunc(Number(maxEnviosMes.value))
+  if (!Number.isFinite(n) || n < 1) return FAIXA_PADRAO
+  return Math.min(n, MAX_ENVIOS_TETO)
+}
+
 function submeter() {
   emit('confirm', {
     enviosHabilitado: envios.value,
-    maxEnviosMes: envios.value ? maxEnviosMes.value : 0,
+    maxEnviosMes: envios.value ? tetoEnviosValido() : 0,
     roteamentoHabilitado: roteamento.value,
     agendamentosHabilitado: agendamentos.value,
     paginaAgendamentoHabilitada: paginaAgendamento.value,
@@ -212,7 +223,7 @@ function submeter() {
 </script>
 
 <template>
-  <BaseModal :show="show" title="Módulos do app" max-width="max-w-md" @close="$emit('close')">
+  <BaseModal :show="show" title="Módulos do app" max-width="max-w-2xl" @close="$emit('close')">
 
     <!-- Header do cliente -->
     <div class="flex items-center gap-2.5 pb-3 mb-3 border-b border-slate-200 dark:border-slate-800">
@@ -226,11 +237,12 @@ function submeter() {
     </div>
 
     <form @submit.prevent="submeter" class="space-y-3">
-      <div class="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 divide-y divide-slate-200 dark:divide-slate-800">
+      <!-- Gates simples do app: 2 colunas pra deixar o modal mais baixo. -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div
           v-for="m in MODULOS"
           :key="m.key"
-          class="flex items-center justify-between gap-3 px-3 py-2.5"
+          class="flex items-center justify-between gap-3 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 px-3 py-2.5"
         >
           <div class="min-w-0 flex-1">
             <p class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
@@ -254,69 +266,88 @@ function submeter() {
             />
           </button>
         </div>
+      </div>
 
-        <!-- Envios: fica na mesma lista, mas com selo, porque é o único módulo
-             que nasce bloqueado e só abre depois da contratação. -->
-        <div class="px-3 py-2.5">
-          <div class="flex items-center justify-between gap-3">
-            <div class="min-w-0 flex-1">
-              <p class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 flex-wrap">
-                <i class="fa-solid fa-paper-plane text-fuchsia-500 text-[10px]" aria-hidden="true" />
-                Envios (régua de cobrança)
-                <span class="px-1.5 py-px rounded-full bg-fuchsia-100 dark:bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300 text-[9px] font-bold uppercase tracking-wide">Add-on</span>
-              </p>
-              <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
-                Módulo pago. Nasce bloqueado: só ligue depois que a empresa contratar.
-              </p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              :aria-checked="envios"
-              :aria-label="`${envios ? 'Bloquear' : 'Liberar'} módulo de Envios`"
-              @click="alternarEnvios"
-              class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
-              :class="envios ? 'bg-fuchsia-500' : 'bg-slate-300 dark:bg-slate-700'"
-            >
-              <span
-                class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
-                :class="envios ? 'translate-x-[18px]' : 'translate-x-0.5'"
-              />
-            </button>
-          </div>
-
-          <!-- Faixa contratada: só existe com o gate ligado. -->
-          <div v-if="envios" class="mt-2.5">
-            <p id="faixa-envios-label" class="text-[11px] font-semibold text-slate-600 dark:text-slate-400">Faixa contratada</p>
-            <div role="radiogroup" aria-labelledby="faixa-envios-label" class="grid grid-cols-3 gap-1.5 mt-1.5">
-              <button
-                v-for="f in FAIXAS_ENVIO"
-                :key="f"
-                type="button"
-                role="radio"
-                :aria-checked="maxEnviosMes === f"
-                @click="maxEnviosMes = f"
-                class="rounded border px-2 py-1.5 text-center transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500"
-                :class="maxEnviosMes === f
-                  ? 'border-fuchsia-500 bg-fuchsia-50 dark:bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300'
-                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'"
-              >
-                <span class="block text-[13px] font-bold tabular-nums leading-tight">{{ fmtMil.format(f) }}</span>
-                <span class="block text-[9px] uppercase tracking-wide opacity-70">msg/mês</span>
-              </button>
-            </div>
-            <p class="text-[10px] leading-snug text-slate-400 dark:text-slate-600 mt-1.5">
-              Teto de mensagens por mês. Os valores de cada faixa são passados no WhatsApp na contratação.
+      <!-- Disparos: card à parte — é o único add-on pago e nasce bloqueado. -->
+      <div class="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 px-3 py-2.5">
+        <div class="flex items-center justify-between gap-3">
+          <div class="min-w-0 flex-1">
+            <p class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 flex-wrap">
+              <i class="fa-solid fa-paper-plane text-fuchsia-500 text-[10px]" aria-hidden="true" />
+              Disparos
+              <span class="px-1.5 py-px rounded-full bg-fuchsia-100 dark:bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300 text-[9px] font-bold uppercase tracking-wide">Add-on</span>
+            </p>
+            <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
+              Módulo pago. Nasce bloqueado: só ligue depois que a empresa contratar.
             </p>
           </div>
+          <button
+            type="button"
+            role="switch"
+            :aria-checked="envios"
+            :aria-label="`${envios ? 'Bloquear' : 'Liberar'} módulo de Disparos`"
+            @click="alternarEnvios"
+            class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+            :class="envios ? 'bg-fuchsia-500' : 'bg-slate-300 dark:bg-slate-700'"
+          >
+            <span
+              class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
+              :class="envios ? 'translate-x-[18px]' : 'translate-x-0.5'"
+            />
+          </button>
         </div>
 
-        <!-- Limites: moram aqui e não em "Canais WhatsApp" porque na venda são
-             negociados junto com os módulos. -->
+        <!-- Faixa contratada: teto digitável (mesma pegada de profissionais),
+             com as faixas usuais viradas em atalho. Só com o gate ligado. -->
+        <div v-if="envios" class="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <label for="max-envios-mes" class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <i class="fa-solid fa-gauge-high text-fuchsia-500 text-[10px]" aria-hidden="true" />
+                Faixa contratada
+              </label>
+              <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
+                Teto de mensagens por mês (via API oficial da Meta). Os valores de cada faixa são passados no WhatsApp na contratação.
+              </p>
+            </div>
+            <div class="shrink-0 text-center">
+              <input
+                id="max-envios-mes"
+                v-model.number="maxEnviosMes"
+                type="number"
+                :min="1"
+                :max="MAX_ENVIOS_TETO"
+                required
+                class="w-24 px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-[13px] text-slate-900 dark:text-white tabular-nums text-center font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+              <span class="block text-[9px] uppercase tracking-wide text-slate-400 dark:text-slate-600 mt-0.5">msg/mês</span>
+            </div>
+          </div>
+          <div class="flex items-center flex-wrap gap-1.5 mt-2">
+            <span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400 dark:text-slate-600">Faixas usuais</span>
+            <button
+              v-for="f in FAIXAS_ENVIO"
+              :key="f"
+              type="button"
+              @click="maxEnviosMes = f"
+              class="rounded border px-2 py-0.5 text-[11px] font-semibold tabular-nums transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500"
+              :class="maxEnviosMes === f
+                ? 'border-fuchsia-500 bg-fuchsia-50 dark:bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300'
+                : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'"
+            >
+              {{ fmtMil.format(f) }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Limites: moram aqui (e não em "Canais WhatsApp") porque na venda são
+           negociados junto dos módulos. 2 colunas, mesma pegada dos gates. -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div
           v-for="l in LIMITES"
           :key="l.key"
-          class="flex items-center justify-between gap-3 px-3 py-2.5"
+          class="flex items-center justify-between gap-3 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 px-3 py-2.5"
         >
           <div class="min-w-0 flex-1">
             <label :for="`max-${l.key}`" class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">

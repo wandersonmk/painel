@@ -16,6 +16,8 @@ const FLAGS: Record<string, string> = {
   webhooksHabilitado: 'webhooks_habilitado',
   documentacaoHabilitada: 'documentacao_habilitada',
   enviosHabilitado: 'envios_habilitado',
+  // Add-on pago, mesmo padrão de enviosHabilitado: nasce FALSE no banco.
+  deliveryModuloAtivo: 'delivery_modulo_ativo',
 }
 
 export default defineEventHandler(async (event) => {
@@ -47,6 +49,9 @@ export default defineEventHandler(async (event) => {
     // 0 = sem plano de envios. O teto espelha o CHECK da coluna, folgado de
     // propósito pra caber faixas maiores que as três vendidas hoje.
     maxEnviosMes: { coluna: 'max_envios_mes', min: 0, max: 200_000 },
+    // Espelham os CHECKs de empresas.max_macros / max_acoes_macro (>= 0).
+    maxMacros: { coluna: 'max_macros', min: 0, max: 100 },
+    maxAcoesMacro: { coluna: 'max_acoes_macro', min: 0, max: 50 },
   }
 
   for (const [campo, regra] of Object.entries(LIMITES)) {

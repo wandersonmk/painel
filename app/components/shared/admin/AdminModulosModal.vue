@@ -18,6 +18,9 @@ export interface ModulosEmpresa {
   maxEnviosMes: number
   maxProfissionais: number
   maxClientes: number
+  deliveryModuloAtivo: boolean
+  maxMacros: number
+  maxAcoesMacro: number
 }
 
 const props = defineProps<{
@@ -34,6 +37,9 @@ const props = defineProps<{
   maxEnviosMesAtual: number
   maxProfissionaisAtual: number
   maxClientesAtual: number
+  deliveryAtual: boolean
+  maxMacrosAtual: number
+  maxAcoesMacroAtual: number
 }>()
 const emit = defineEmits<{
   close: []
@@ -51,6 +57,10 @@ const envios = ref(false)
 const maxEnviosMes = ref(0)
 const maxProfissionais = ref(20)
 const maxClientes = ref(100000)
+// Delivery é add-on pago, mesmo padrão de envios: nasce desligado.
+const delivery = ref(false)
+const maxMacros = ref(5)
+const maxAcoesMacro = ref(5)
 
 // Faixas usuais na venda, viram só atalhos: o teto de fato é digitável (como
 // profissionais/clientes), pra caber contrato fora das três faixas. Valor em R$
@@ -83,6 +93,9 @@ watch(() => props.show, async (open) => {
   maxEnviosMes.value = props.maxEnviosMesAtual ?? 0
   maxProfissionais.value = props.maxProfissionaisAtual ?? 20
   maxClientes.value = props.maxClientesAtual ?? 100000
+  delivery.value = props.deliveryAtual
+  maxMacros.value = props.maxMacrosAtual ?? 5
+  maxAcoesMacro.value = props.maxAcoesMacroAtual ?? 5
 
   if (!props.clienteId) return
   try {
@@ -185,6 +198,30 @@ const LIMITES = [
     max: 1000000,
     ajuda: 'Quantos pode cadastrar na mão (padrão 100.000)',
   },
+  {
+    key: 'macros' as const,
+    modelo: maxMacros,
+    emUso: ref(null),
+    alerta: ref(false),
+    label: 'Macros',
+    icon: 'fa-bolt',
+    iconCls: 'text-amber-500',
+    min: 0,
+    max: 100,
+    ajuda: 'Quantos macros a empresa pode ter (padrão 5)',
+  },
+  {
+    key: 'acoesMacro' as const,
+    modelo: maxAcoesMacro,
+    emUso: ref(null),
+    alerta: ref(false),
+    label: 'Ações por macro',
+    icon: 'fa-list-ol',
+    iconCls: 'text-amber-500',
+    min: 0,
+    max: 50,
+    ajuda: 'Quantas ações cada macro pode ter (padrão 5)',
+  },
 ]
 
 // Ligar o add-on já preenche a faixa padrão (nunca "ligado sem teto"); desligar
@@ -218,6 +255,9 @@ function submeter() {
     documentacaoHabilitada: documentacao.value,
     maxProfissionais: maxProfissionais.value,
     maxClientes: maxClientes.value,
+    deliveryModuloAtivo: delivery.value,
+    maxMacros: maxMacros.value,
+    maxAcoesMacro: maxAcoesMacro.value,
   })
 }
 </script>
@@ -338,6 +378,36 @@ function submeter() {
               {{ fmtMil.format(f) }}
             </button>
           </div>
+        </div>
+      </div>
+
+      <!-- Delivery: card à parte, mesmo padrão de add-on pago dos Disparos. -->
+      <div class="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 px-3 py-2.5">
+        <div class="flex items-center justify-between gap-3">
+          <div class="min-w-0 flex-1">
+            <p class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 flex-wrap">
+              <i class="fa-solid fa-motorcycle text-orange-500 text-[10px]" aria-hidden="true" />
+              Delivery
+              <span class="px-1.5 py-px rounded-full bg-orange-100 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300 text-[9px] font-bold uppercase tracking-wide">Add-on</span>
+            </p>
+            <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
+              Cardápio, pedidos e pizza com múltiplos sabores. Módulo pago, nasce bloqueado.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            :aria-checked="delivery"
+            :aria-label="`${delivery ? 'Bloquear' : 'Liberar'} módulo de Delivery`"
+            @click="delivery = !delivery"
+            class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+            :class="delivery ? 'bg-orange-500' : 'bg-slate-300 dark:bg-slate-700'"
+          >
+            <span
+              class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
+              :class="delivery ? 'translate-x-[18px]' : 'translate-x-0.5'"
+            />
+          </button>
         </div>
       </div>
 

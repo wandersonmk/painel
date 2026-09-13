@@ -10,7 +10,10 @@ export function useAuth() {
   const isLoading = useState<boolean>('auth_loading', () => import.meta.server ? false : true)
   const errorMessage = ref<string | null>(null)
 
-  const isAuthenticated = computed(() => !!user.value)
+  // O estado do módulo pode existir antes de a hidratação preencher o UUID.
+  // Considerar autenticado só quando há uma identidade utilizável evita
+  // consultas como `auth_user_id=eq.undefined`.
+  const isAuthenticated = computed(() => !!user.value?.id)
 
   const signInWithEmailAndPassword = async (email: string, password: string) => {
     isLoading.value = true

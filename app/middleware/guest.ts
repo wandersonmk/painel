@@ -1,6 +1,9 @@
 export default defineNuxtRouteMiddleware(async () => {
   const user = useSupabaseUser()
-  if (!user.value) return
+  // Durante a hidratação SSR o módulo pode expor temporariamente um objeto de
+  // usuário ainda incompleto. Nunca monte um filtro UUID antes de o id existir.
+  const authUserId = user.value?.id
+  if (!authUserId) return
 
   // Parceiro logado vai para o portal dele. Verificado também no SSR para o
   // redirect acontecer no servidor, sem nunca renderizar o painel admin no meio.
@@ -9,7 +12,7 @@ export default defineNuxtRouteMiddleware(async () => {
     const { data: parceiro } = await supabase
       .from('parceiros')
       .select('id, ativo')
-      .eq('auth_user_id', user.value.id)
+      .eq('auth_user_id', authUserId)
       .maybeSingle()
 
     const p = parceiro as { id: string; ativo: boolean } | null

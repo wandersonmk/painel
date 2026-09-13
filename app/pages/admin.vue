@@ -51,6 +51,9 @@ const clienteModulos = ref<{
   max_envios_mes: number
   max_profissionais: number
   max_clientes: number
+  delivery_modulo_ativo: boolean
+  max_macros: number
+  max_acoes_macro: number
 } | null>(null)
 
 const searchQuery = ref('')
@@ -357,6 +360,9 @@ function handleModulos(id: string) {
       max_envios_mes: c.max_envios_mes ?? 0,
       max_profissionais: c.max_profissionais ?? 20,
       max_clientes: c.max_clientes ?? 100000,
+      delivery_modulo_ativo: c.delivery_modulo_ativo ?? false,
+      max_macros: c.max_macros ?? 5,
+      max_acoes_macro: c.max_acoes_macro ?? 5,
     }
     showModulosModal.value = true
   }
@@ -374,6 +380,9 @@ async function confirmModulos(modulos: {
   maxEnviosMes: number
   maxProfissionais: number
   maxClientes: number
+  deliveryModuloAtivo: boolean
+  maxMacros: number
+  maxAcoesMacro: number
 }) {
   if (!clienteModulos.value) return
   try {
@@ -395,6 +404,9 @@ async function confirmModulos(modulos: {
       c.max_envios_mes = modulos.maxEnviosMes
       c.max_profissionais = modulos.maxProfissionais
       c.max_clientes = modulos.maxClientes
+      c.delivery_modulo_ativo = modulos.deliveryModuloAtivo
+      c.max_macros = modulos.maxMacros
+      c.max_acoes_macro = modulos.maxAcoesMacro
     }
     toast?.success('Módulos atualizados')
   } catch { toast?.error('Erro ao atualizar módulos') }
@@ -701,6 +713,9 @@ async function confirmModulos(modulos: {
         :max-envios-mes-atual="clienteModulos?.max_envios_mes ?? 0"
         :max-profissionais-atual="clienteModulos?.max_profissionais ?? 20"
         :max-clientes-atual="clienteModulos?.max_clientes ?? 100000"
+        :delivery-atual="clienteModulos?.delivery_modulo_ativo ?? false"
+        :max-macros-atual="clienteModulos?.max_macros ?? 5"
+        :max-acoes-macro-atual="clienteModulos?.max_acoes_macro ?? 5"
         @close="showModulosModal = false; clienteModulos = null"
         @confirm="confirmModulos"
       />

@@ -54,6 +54,10 @@ export interface AdminCliente {
   // Envios é add-on pago: ausente = false (bloqueado), nunca liberado por omissão.
   envios_habilitado?: boolean
   max_envios_mes?: number
+  // Delivery é add-on pago, mesmo padrão de envios: ausente = false (bloqueado).
+  delivery_modulo_ativo?: boolean
+  max_macros?: number
+  max_acoes_macro?: number
 }
 
 export interface AdminStats {

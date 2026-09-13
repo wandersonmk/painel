@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   try {
     const { data: empresas, error } = await supabase
       .from('empresas')
-      .select('id, nome, nome_cliente, email, whatsapp, subscription_status, subscription_plan, subscription_period, trial_ends_at, subscription_renews_at, subscription_price, subscription_price_anual, ativo, created_at, auth_user_id, max_instancias, max_agentes, max_webhooks_entrada, max_webhooks_saida, max_profissionais, max_clientes, cancel_at_period_end, roteamento_habilitado, agendamentos_habilitado, pagina_agendamento_habilitada, api_assistente_habilitada, webhooks_habilitado, documentacao_habilitada, envios_habilitado, max_envios_mes')
+      .select('id, nome, nome_cliente, email, whatsapp, subscription_status, subscription_plan, subscription_period, trial_ends_at, subscription_renews_at, subscription_price, subscription_price_anual, ativo, created_at, auth_user_id, max_instancias, max_agentes, max_webhooks_entrada, max_webhooks_saida, max_profissionais, max_clientes, cancel_at_period_end, roteamento_habilitado, agendamentos_habilitado, pagina_agendamento_habilitada, api_assistente_habilitada, webhooks_habilitado, documentacao_habilitada, envios_habilitado, max_envios_mes, delivery_modulo_ativo, max_macros, max_acoes_macro')
       .order('created_at', { ascending: false })
     if (error) throw error
 
@@ -73,6 +73,10 @@ export default defineEventHandler(async (event) => {
         // acima. Ausente = bloqueado, nunca liberado por omissão.
         envios_habilitado: emp.envios_habilitado ?? false,
         max_envios_mes: emp.max_envios_mes ?? 0,
+        // Delivery é add-on pago, mesmo padrão de envios: ausente = bloqueado.
+        delivery_modulo_ativo: emp.delivery_modulo_ativo ?? false,
+        max_macros: emp.max_macros ?? 5,
+        max_acoes_macro: emp.max_acoes_macro ?? 5,
         parceiro_nome: vinculo?.parceiros?.nome ?? null,
         parceiro_comissao: vinculo ? Number(vinculo.comissao_percentual) : null,
         // Quem derrubou o acesso: 'parceiro' (bloqueio comercial dele) ou 'admin'

@@ -58,6 +58,7 @@ export interface AdminCliente {
   delivery_modulo_ativo?: boolean
   max_macros?: number
   max_acoes_macro?: number
+  max_pedidos_mes?: number
 }
 
 export interface AdminStats {

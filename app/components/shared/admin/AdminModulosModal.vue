@@ -21,6 +21,7 @@ export interface ModulosEmpresa {
   deliveryModuloAtivo: boolean
   maxMacros: number
   maxAcoesMacro: number
+  maxPedidosMes: number
 }
 
 const props = defineProps<{
@@ -40,6 +41,7 @@ const props = defineProps<{
   deliveryAtual: boolean
   maxMacrosAtual: number
   maxAcoesMacroAtual: number
+  maxPedidosMesAtual: number
 }>()
 const emit = defineEmits<{
   close: []
@@ -61,6 +63,8 @@ const maxClientes = ref(100000)
 const delivery = ref(false)
 const maxMacros = ref(5)
 const maxAcoesMacro = ref(5)
+// 0 = sem limite de pedidos/mês. Mesma faixa usual de maxEnviosMes.
+const maxPedidosMes = ref(0)
 
 // Faixas usuais na venda, viram só atalhos: o teto de fato é digitável (como
 // profissionais/clientes), pra caber contrato fora das três faixas. Valor em R$
@@ -96,6 +100,7 @@ watch(() => props.show, async (open) => {
   delivery.value = props.deliveryAtual
   maxMacros.value = props.maxMacrosAtual ?? 5
   maxAcoesMacro.value = props.maxAcoesMacroAtual ?? 5
+  maxPedidosMes.value = props.maxPedidosMesAtual ?? 0
 
   if (!props.clienteId) return
   try {
@@ -258,7 +263,15 @@ function submeter() {
     deliveryModuloAtivo: delivery.value,
     maxMacros: maxMacros.value,
     maxAcoesMacro: maxAcoesMacro.value,
+    maxPedidosMes: delivery.value ? pedidosMesValido() : 0,
   })
+}
+
+// Campo livre (0 = sem limite): fora da faixa cai em 0, nunca manda lixo.
+function pedidosMesValido() {
+  const n = Math.trunc(Number(maxPedidosMes.value))
+  if (!Number.isFinite(n) || n < 0) return 0
+  return Math.min(n, 200_000)
 }
 </script>
 
@@ -408,6 +421,34 @@ function submeter() {
               :class="delivery ? 'translate-x-[18px]' : 'translate-x-0.5'"
             />
           </button>
+        </div>
+
+        <!-- Cota de pedidos/mês: soma WhatsApp + site (mesma função de
+             criação nos dois canais). 0 = sem limite. Só com o gate ligado. -->
+        <div v-if="delivery" class="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <label for="max-pedidos-mes" class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <i class="fa-solid fa-cart-shopping text-orange-500 text-[10px]" aria-hidden="true" />
+                Pedidos por mês
+              </label>
+              <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
+                Teto de pedidos (WhatsApp + site somados) por mês. 0 = sem limite.
+              </p>
+            </div>
+            <div class="shrink-0 text-center">
+              <input
+                id="max-pedidos-mes"
+                v-model.number="maxPedidosMes"
+                type="number"
+                :min="0"
+                :max="200000"
+                required
+                class="w-24 px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-[13px] text-slate-900 dark:text-white tabular-nums text-center font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+              <span class="block text-[9px] uppercase tracking-wide text-slate-400 dark:text-slate-600 mt-0.5">pedidos/mês</span>
+            </div>
+          </div>
         </div>
       </div>
 

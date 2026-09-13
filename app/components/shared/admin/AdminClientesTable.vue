@@ -15,6 +15,7 @@ const emit = defineEmits<{
   'remover-parceiro': [clienteId: string]
   'tornar-parceiro': [clienteId: string]
   modulos: [clienteId: string]
+  'ver-uso': [clienteId: string]
 }>()
 
 // Menu de ações (bottom sheet no mobile, painel central no desktop)
@@ -136,8 +137,10 @@ function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: str
           <tr
             v-for="c in clientes"
             :key="c.id"
-            class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+            class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors cursor-pointer"
             :class="!c.ativo ? 'opacity-55' : ''"
+            title="Ver uso desta empresa"
+            @click="$emit('ver-uso', c.id)"
           >
             <!-- Cliente -->
             <td class="px-2 sm:px-5 py-3 sm:py-4 max-w-[160px] sm:max-w-none border-l-4" :class="rowAccent(c)">
@@ -254,7 +257,7 @@ function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: str
             <td class="px-2 sm:px-5 py-3 sm:py-4">
               <div class="flex justify-end">
                 <button
-                  @click="openMenu(c)"
+                  @click.stop="openMenu(c)"
                   class="w-8 h-8 flex items-center justify-center rounded text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                   title="Ações"
                   aria-label="Abrir ações do cliente"

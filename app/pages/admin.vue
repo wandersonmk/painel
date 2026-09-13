@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import type { AdminCliente } from '~/composables/useAdminClientes'
 
 definePageMeta({
   middleware: ['auth', 'super-admin'],
@@ -26,6 +27,8 @@ const showReativarModal = ref(false)
 const showLimiteInstanciasModal = ref(false)
 const showAtribuirParceiroModal = ref(false)
 const showTornarParceiroModal = ref(false)
+const showUsoModal = ref(false)
+const clienteUso = ref<AdminCliente | null>(null)
 
 const selectedCliente = ref<{ id: string; nome: string } | null>(null)
 const clienteParaEditar = ref<any>(null)
@@ -54,6 +57,7 @@ const clienteModulos = ref<{
   delivery_modulo_ativo: boolean
   max_macros: number
   max_acoes_macro: number
+  max_pedidos_mes: number
 } | null>(null)
 
 const searchQuery = ref('')
@@ -363,6 +367,7 @@ function handleModulos(id: string) {
       delivery_modulo_ativo: c.delivery_modulo_ativo ?? false,
       max_macros: c.max_macros ?? 5,
       max_acoes_macro: c.max_acoes_macro ?? 5,
+      max_pedidos_mes: c.max_pedidos_mes ?? 0,
     }
     showModulosModal.value = true
   }
@@ -383,6 +388,7 @@ async function confirmModulos(modulos: {
   deliveryModuloAtivo: boolean
   maxMacros: number
   maxAcoesMacro: number
+  maxPedidosMes: number
 }) {
   if (!clienteModulos.value) return
   try {
@@ -407,11 +413,27 @@ async function confirmModulos(modulos: {
       c.delivery_modulo_ativo = modulos.deliveryModuloAtivo
       c.max_macros = modulos.maxMacros
       c.max_acoes_macro = modulos.maxAcoesMacro
+      c.max_pedidos_mes = modulos.maxPedidosMes
     }
     toast?.success('Módulos atualizados')
   } catch { toast?.error('Erro ao atualizar módulos') }
   showModulosModal.value = false
   clienteModulos.value = null
+}
+
+function handleVerUso(id: string) {
+  const c = clientes.value.find(x => x.id === id)
+  if (c) {
+    clienteUso.value = c
+    showUsoModal.value = true
+  }
+}
+// "Editar limites" dentro do modal de uso: fecha o de uso e abre o de
+// módulos direto, sem o usuário precisar fechar/reabrir pela linha.
+function abrirModulosDeUso(id: string) {
+  showUsoModal.value = false
+  clienteUso.value = null
+  handleModulos(id)
 }
 </script>
 
@@ -611,6 +633,7 @@ async function confirmModulos(modulos: {
         @remover-parceiro="handleRemoverParceiro"
         @tornar-parceiro="handleTornarParceiro"
         @modulos="handleModulos"
+        @ver-uso="handleVerUso"
       />
 
       <AdminEditarClienteModal
@@ -716,8 +739,16 @@ async function confirmModulos(modulos: {
         :delivery-atual="clienteModulos?.delivery_modulo_ativo ?? false"
         :max-macros-atual="clienteModulos?.max_macros ?? 5"
         :max-acoes-macro-atual="clienteModulos?.max_acoes_macro ?? 5"
+        :max-pedidos-mes-atual="clienteModulos?.max_pedidos_mes ?? 0"
         @close="showModulosModal = false; clienteModulos = null"
         @confirm="confirmModulos"
+      />
+
+      <AdminUsoEmpresaModal
+        :show="showUsoModal"
+        :cliente="clienteUso"
+        @close="showUsoModal = false; clienteUso = null"
+        @editar-modulos="abrirModulosDeUso"
       />
     </div>
   </div>

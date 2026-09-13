@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   try {
     const { data: empresas, error } = await supabase
       .from('empresas')
-      .select('id, nome, nome_cliente, email, whatsapp, subscription_status, subscription_plan, subscription_period, trial_ends_at, subscription_renews_at, subscription_price, subscription_price_anual, ativo, created_at, auth_user_id, max_instancias, max_agentes, max_webhooks_entrada, max_webhooks_saida, max_profissionais, max_clientes, cancel_at_period_end, roteamento_habilitado, agendamentos_habilitado, pagina_agendamento_habilitada, api_assistente_habilitada, webhooks_habilitado, documentacao_habilitada, envios_habilitado, max_envios_mes, delivery_modulo_ativo, max_macros, max_acoes_macro')
+      .select('id, nome, nome_cliente, email, whatsapp, subscription_status, subscription_plan, subscription_period, trial_ends_at, subscription_renews_at, subscription_price, subscription_price_anual, ativo, created_at, auth_user_id, max_instancias, max_agentes, max_webhooks_entrada, max_webhooks_saida, max_profissionais, max_clientes, cancel_at_period_end, roteamento_habilitado, agendamentos_habilitado, pagina_agendamento_habilitada, api_assistente_habilitada, webhooks_habilitado, documentacao_habilitada, envios_habilitado, max_envios_mes, delivery_modulo_ativo, max_macros, max_acoes_macro, max_pedidos_mes')
       .order('created_at', { ascending: false })
     if (error) throw error
 
@@ -77,6 +77,7 @@ export default defineEventHandler(async (event) => {
         delivery_modulo_ativo: emp.delivery_modulo_ativo ?? false,
         max_macros: emp.max_macros ?? 5,
         max_acoes_macro: emp.max_acoes_macro ?? 5,
+        max_pedidos_mes: emp.max_pedidos_mes ?? 0,
         parceiro_nome: vinculo?.parceiros?.nome ?? null,
         parceiro_comissao: vinculo ? Number(vinculo.comissao_percentual) : null,
         // Quem derrubou o acesso: 'parceiro' (bloqueio comercial dele) ou 'admin'

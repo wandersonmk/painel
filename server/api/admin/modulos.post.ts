@@ -52,6 +52,9 @@ export default defineEventHandler(async (event) => {
     // Espelham os CHECKs de empresas.max_macros / max_acoes_macro (>= 0).
     maxMacros: { coluna: 'max_macros', min: 0, max: 100 },
     maxAcoesMacro: { coluna: 'max_acoes_macro', min: 0, max: 50 },
+    // 0 = sem limite de pedidos. Mesmo padrão de maxEnviosMes, mas pro
+    // módulo Delivery (soma pedidos de WhatsApp + site).
+    maxPedidosMes: { coluna: 'max_pedidos_mes', min: 0, max: 200_000 },
   }
 
   for (const [campo, regra] of Object.entries(LIMITES)) {
@@ -66,6 +69,7 @@ export default defineEventHandler(async (event) => {
   // Gate desligado nunca convive com faixa contratada: zera aqui também, e não
   // só na tela, pra não sobrar plano fantasma se a chamada vier de outro lugar.
   if (update.envios_habilitado === false) update.max_envios_mes = 0
+  if (update.delivery_modulo_ativo === false) update.max_pedidos_mes = 0
 
   if (Object.keys(update).length === 1) {
     throw createError({ statusCode: 400, statusMessage: 'Nenhum módulo informado' })

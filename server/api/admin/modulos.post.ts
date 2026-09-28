@@ -55,6 +55,10 @@ export default defineEventHandler(async (event) => {
     // 0 = sem limite de pedidos. Mesmo padrão de maxEnviosMes, mas pro
     // módulo Delivery (soma pedidos de WhatsApp + site).
     maxPedidosMes: { coluna: 'max_pedidos_mes', min: 0, max: 200_000 },
+    // Produtos da Vitrine ("Produtos" no menu do app). 0 = sem limite.
+    // Espelha o CHECK de empresas.max_produtos_vitrine; quem trava de fato é
+    // POST /api/vitrine/produtos no app.
+    maxProdutosVitrine: { coluna: 'max_produtos_vitrine', min: 0, max: 100_000 },
   }
 
   for (const [campo, regra] of Object.entries(LIMITES)) {

@@ -27,6 +27,7 @@ interface Uso {
   macros: number
   enviosMes: number
   pedidosMes: number
+  produtosVitrine?: number
 }
 
 const uso = ref<Uso | null>(null)
@@ -74,6 +75,8 @@ const metricas = computed<Metrica[]>(() => {
     { key: 'clientes', label: 'Clientes', icon: 'fa-users', iconCls: 'text-blue-500', usado: u.clientes, max: c.max_clientes ?? 100000 },
     { key: 'instancias', label: 'Canais WhatsApp', icon: 'fa-mobile-screen', iconCls: 'text-purple-500', usado: u.instancias, max: c.max_instancias ?? 1 },
     { key: 'macros', label: 'Macros', icon: 'fa-bolt', iconCls: 'text-amber-500', usado: u.macros, max: c.max_macros ?? 5 },
+    // Vitrine ("Produtos" no menu do app) não é add-on: aparece sempre. 0 = sem limite.
+    { key: 'produtosVitrine', label: 'Produtos (Vitrine)', icon: 'fa-store', iconCls: 'text-emerald-500', usado: u.produtosVitrine ?? 0, max: c.max_produtos_vitrine ?? 0, semLimiteQuando0: true },
   ]
 
   // Envios e Pedidos só aparecem se o add-on estiver ligado — senão a
@@ -87,6 +90,40 @@ const metricas = computed<Metrica[]>(() => {
 
   return lista
 })
+
+// Dados de contato do dono da empresa, com cópia em um clique (pedido do dono,
+// 28/09/2026): ao abrir o uso da empresa, quem atende já quer falar com o
+// cliente. O WhatsApp copia só os dígitos (com DDI) — é o que se cola no
+// WhatsApp/wa.me; o formatado é só pra leitura.
+const contatos = computed(() => {
+  const c = props.cliente
+  if (!c) return []
+  const digitos = (c.whatsapp || '').replace(/\D/g, '')
+  return [
+    { key: 'dono', label: 'Responsável', icon: 'fa-user', valor: c.nome_cliente || null, exibir: c.nome_cliente || null },
+    { key: 'email', label: 'E-mail', icon: 'fa-envelope', valor: c.email || null, exibir: c.email || null },
+    { key: 'whatsapp', label: 'WhatsApp', icon: 'fa-whatsapp', marca: true, valor: digitos || null, exibir: formatPhone(c.whatsapp) || null },
+  ]
+})
+
+const copiado = ref<string | null>(null)
+async function copiar(key: string, valor: string | null) {
+  if (!valor) return
+  try {
+    await navigator.clipboard.writeText(valor)
+  } catch {
+    // Navegador sem permissão de clipboard: seleciona na mão via textarea.
+    const ta = document.createElement('textarea')
+    ta.value = valor
+    ta.style.cssText = 'position:fixed;opacity:0'
+    document.body.appendChild(ta)
+    ta.select()
+    try { document.execCommand('copy') } catch { /* noop */ }
+    ta.remove()
+  }
+  copiado.value = key
+  setTimeout(() => { if (copiado.value === key) copiado.value = null }, 1800)
+}
 
 function semLimite(m: Metrica): boolean {
   return m.semLimiteQuando0 === true && (m.max ?? 0) === 0
@@ -113,6 +150,34 @@ function tom(m: Metrica): 'ok' | 'atencao' | 'cheio' {
       <div class="min-w-0">
         <p class="text-sm font-semibold text-slate-900 dark:text-white truncate">{{ cliente?.nome }}</p>
         <p class="text-[11px] text-slate-500 dark:text-slate-400">Limites contratados x uso atual</p>
+      </div>
+    </div>
+
+    <!-- Contato do dono: cada linha com botão de copiar -->
+    <div v-if="cliente" class="mb-3 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 divide-y divide-slate-200 dark:divide-slate-800">
+      <div v-for="ct in contatos" :key="ct.key" class="flex items-center justify-between gap-3 px-3 py-2">
+        <div class="min-w-0 flex items-center gap-2">
+          <i :class="[ct.marca ? 'fa-brands' : 'fa-solid', ct.icon, ct.key === 'whatsapp' ? 'text-emerald-500' : 'text-slate-400', 'text-[12px] w-4 text-center shrink-0']" aria-hidden="true" />
+          <div class="min-w-0">
+            <p class="text-[10px] uppercase tracking-wide font-semibold text-slate-400 dark:text-slate-500">{{ ct.label }}</p>
+            <p class="text-[13px] font-medium truncate" :class="ct.exibir ? 'text-slate-800 dark:text-slate-200' : 'text-slate-400 dark:text-slate-600 italic'">
+              {{ ct.exibir || 'Não informado' }}
+            </p>
+          </div>
+        </div>
+        <button
+          v-if="ct.valor"
+          type="button"
+          :title="copiado === ct.key ? 'Copiado!' : `Copiar ${ct.label.toLowerCase()}`"
+          :aria-label="`Copiar ${ct.label.toLowerCase()}`"
+          class="shrink-0 w-8 h-8 rounded-md flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500"
+          :class="copiado === ct.key
+            ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+            : 'text-slate-400 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-500/10'"
+          @click="copiar(ct.key, ct.valor)"
+        >
+          <i :class="['fa-solid', copiado === ct.key ? 'fa-check' : 'fa-copy', 'text-[13px]']" aria-hidden="true" />
+        </button>
       </div>
     </div>
 

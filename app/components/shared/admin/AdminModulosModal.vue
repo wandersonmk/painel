@@ -22,6 +22,7 @@ export interface ModulosEmpresa {
   maxMacros: number
   maxAcoesMacro: number
   maxPedidosMes: number
+  maxProdutosVitrine: number
 }
 
 const props = defineProps<{
@@ -42,6 +43,7 @@ const props = defineProps<{
   maxMacrosAtual: number
   maxAcoesMacroAtual: number
   maxPedidosMesAtual: number
+  maxProdutosVitrineAtual: number
 }>()
 const emit = defineEmits<{
   close: []
@@ -65,6 +67,8 @@ const maxMacros = ref(5)
 const maxAcoesMacro = ref(5)
 // 0 = sem limite de pedidos/mês. Mesma faixa usual de maxEnviosMes.
 const maxPedidosMes = ref(0)
+// Produtos da Vitrine ("Produtos" no menu do app). 0 = sem limite.
+const maxProdutosVitrine = ref(0)
 
 // Faixas usuais na venda, viram só atalhos: o teto de fato é digitável (como
 // profissionais/clientes), pra caber contrato fora das três faixas. Valor em R$
@@ -80,11 +84,13 @@ const fmtMil = new Intl.NumberFormat('pt-BR')
 // perceber (nada é removido, mas ela ficaria travada pra cadastrar).
 const profissionaisEmUso = ref<number | null>(null)
 const clientesEmUso = ref<number | null>(null)
+const produtosVitrineEmUso = ref<number | null>(null)
 
 watch(() => props.show, async (open) => {
   if (!open) {
     profissionaisEmUso.value = null
     clientesEmUso.value = null
+    produtosVitrineEmUso.value = null
     return
   }
   roteamento.value = props.roteamentoAtual
@@ -101,18 +107,21 @@ watch(() => props.show, async (open) => {
   maxMacros.value = props.maxMacrosAtual ?? 5
   maxAcoesMacro.value = props.maxAcoesMacroAtual ?? 5
   maxPedidosMes.value = props.maxPedidosMesAtual ?? 0
+  maxProdutosVitrine.value = props.maxProdutosVitrineAtual ?? 0
 
   if (!props.clienteId) return
   try {
-    const resp = await $fetch<{ success: boolean; data?: { profissionais: number; clientes: number } }>('/api/admin/empresa-uso', {
+    const resp = await $fetch<{ success: boolean; data?: { profissionais: number; clientes: number; produtosVitrine?: number } }>('/api/admin/empresa-uso', {
       query: { empresaId: props.clienteId },
       headers: await useAdminAuthHeaders(),
     })
     profissionaisEmUso.value = resp.success && resp.data ? (resp.data.profissionais ?? null) : null
     clientesEmUso.value = resp.success && resp.data ? (resp.data.clientes ?? null) : null
+    produtosVitrineEmUso.value = resp.success && resp.data ? (resp.data.produtosVitrine ?? null) : null
   } catch {
     profissionaisEmUso.value = null
     clientesEmUso.value = null
+    produtosVitrineEmUso.value = null
   }
 })
 
@@ -121,6 +130,10 @@ const profAbaixoDoUso = computed(() =>
 )
 const clientesAbaixoDoUso = computed(() =>
   clientesEmUso.value !== null && maxClientes.value < clientesEmUso.value
+)
+// 0 = sem limite, então só alerta com teto de verdade abaixo do que já existe.
+const produtosVitrineAbaixoDoUso = computed(() =>
+  produtosVitrineEmUso.value !== null && maxProdutosVitrine.value > 0 && maxProdutosVitrine.value < produtosVitrineEmUso.value
 )
 
 const MODULOS = [
@@ -227,6 +240,18 @@ const LIMITES = [
     max: 50,
     ajuda: 'Quantas ações cada macro pode ter (padrão 5)',
   },
+  {
+    key: 'produtosVitrine' as const,
+    modelo: maxProdutosVitrine,
+    emUso: produtosVitrineEmUso,
+    alerta: produtosVitrineAbaixoDoUso,
+    label: 'Produtos (Vitrine)',
+    icon: 'fa-store',
+    iconCls: 'text-emerald-500',
+    min: 0,
+    max: 100000,
+    ajuda: 'Quantos produtos pode cadastrar em "Produtos" (0 = sem limite)',
+  },
 ]
 
 // Ligar o add-on já preenche a faixa padrão (nunca "ligado sem teto"); desligar
@@ -264,10 +289,18 @@ function submeter() {
     maxMacros: maxMacros.value,
     maxAcoesMacro: maxAcoesMacro.value,
     maxPedidosMes: delivery.value ? pedidosMesValido() : 0,
+    maxProdutosVitrine: produtosVitrineValido(),
   })
 }
 
 // Campo livre (0 = sem limite): fora da faixa cai em 0, nunca manda lixo.
+// Campo livre (0 = sem limite): fora da faixa cai em 0, nunca manda lixo.
+function produtosVitrineValido() {
+  const n = Math.trunc(Number(maxProdutosVitrine.value))
+  if (!Number.isFinite(n) || n < 0) return 0
+  return Math.min(n, 100_000)
+}
+
 function pedidosMesValido() {
   const n = Math.trunc(Number(maxPedidosMes.value))
   if (!Number.isFinite(n) || n < 0) return 0
@@ -488,6 +521,11 @@ function pedidosMesValido() {
       <p v-if="profAbaixoDoUso" class="text-[11px] leading-snug text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
         <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true" />
         <span>Abaixo dos {{ profissionaisEmUso }} profissionais já cadastrados. Ninguém é removido, mas a empresa não poderá cadastrar novos até ficar dentro do limite.</span>
+      </p>
+
+      <p v-if="produtosVitrineAbaixoDoUso" class="text-[11px] leading-snug text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
+        <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true" />
+        <span>Abaixo dos {{ produtosVitrineEmUso }} produtos já cadastrados na Vitrine. Nenhum é removido, mas a empresa não poderá cadastrar novos até ficar dentro do limite.</span>
       </p>
 
       <p v-if="clientesAbaixoDoUso" class="text-[11px] leading-snug text-amber-600 dark:text-amber-400 flex items-start gap-1.5">

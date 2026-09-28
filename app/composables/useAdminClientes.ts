@@ -59,6 +59,7 @@ export interface AdminCliente {
   max_macros?: number
   max_acoes_macro?: number
   max_pedidos_mes?: number
+  max_produtos_vitrine?: number
 }
 
 export interface AdminStats {

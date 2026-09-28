@@ -58,6 +58,7 @@ const clienteModulos = ref<{
   max_macros: number
   max_acoes_macro: number
   max_pedidos_mes: number
+  max_produtos_vitrine: number
 } | null>(null)
 
 const searchQuery = ref('')
@@ -368,6 +369,7 @@ function handleModulos(id: string) {
       max_macros: c.max_macros ?? 5,
       max_acoes_macro: c.max_acoes_macro ?? 5,
       max_pedidos_mes: c.max_pedidos_mes ?? 0,
+      max_produtos_vitrine: c.max_produtos_vitrine ?? 0,
     }
     showModulosModal.value = true
   }
@@ -389,6 +391,7 @@ async function confirmModulos(modulos: {
   maxMacros: number
   maxAcoesMacro: number
   maxPedidosMes: number
+  maxProdutosVitrine: number
 }) {
   if (!clienteModulos.value) return
   try {
@@ -414,6 +417,7 @@ async function confirmModulos(modulos: {
       c.max_macros = modulos.maxMacros
       c.max_acoes_macro = modulos.maxAcoesMacro
       c.max_pedidos_mes = modulos.maxPedidosMes
+      c.max_produtos_vitrine = modulos.maxProdutosVitrine
     }
     toast?.success('Módulos atualizados')
   } catch { toast?.error('Erro ao atualizar módulos') }
@@ -740,6 +744,7 @@ function abrirModulosDeUso(id: string) {
         :max-macros-atual="clienteModulos?.max_macros ?? 5"
         :max-acoes-macro-atual="clienteModulos?.max_acoes_macro ?? 5"
         :max-pedidos-mes-atual="clienteModulos?.max_pedidos_mes ?? 0"
+        :max-produtos-vitrine-atual="clienteModulos?.max_produtos_vitrine ?? 0"
         @close="showModulosModal = false; clienteModulos = null"
         @confirm="confirmModulos"
       />

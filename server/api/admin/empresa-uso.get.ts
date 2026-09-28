@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
 
   const [
     agentesResp, webhooksResp, webhooksSaidaResp, profissionaisResp, clientesResp,
-    instanciasResp, macrosResp, enviosResp, pedidosResp,
+    instanciasResp, macrosResp, enviosResp, pedidosResp, produtosVitrineResp,
   ] = await Promise.all([
     supabase.from('agente_configuracoes').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId),
     supabase.from('webhooks_entrada').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId),
@@ -39,6 +39,9 @@ export default defineEventHandler(async (event) => {
     supabase.from('delivery_pedidos').select('id', { count: 'exact', head: true })
       .eq('empresa_id', empresaId)
       .gte('created_at', de).lt('created_at', ate),
+    // Produtos da Vitrine (ativos e inativos) — o mesmo que o app conta pra
+    // empresas.max_produtos_vitrine (POST /api/vitrine/produtos no app).
+    supabase.from('vitrine_produtos').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId),
   ])
 
   return {
@@ -53,6 +56,7 @@ export default defineEventHandler(async (event) => {
       macros: macrosResp.count ?? 0,
       enviosMes: enviosResp.count ?? 0,
       pedidosMes: pedidosResp.count ?? 0,
+      produtosVitrine: produtosVitrineResp.count ?? 0,
     },
   }
 })

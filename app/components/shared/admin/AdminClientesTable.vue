@@ -51,6 +51,19 @@ function diasRestantesText(c: AdminCliente) {
   return formatDiasVencimento(c)
 }
 
+// Resumo pro cartão "Módulos do app" do menu de ações (28/09/2026). Antes o
+// selo "Restrito" só olhava o Roteamento; agora conta todos os gates comuns
+// desligados e mostra quais add-ons pagos estão ligados.
+function resumoModulos(c: AdminCliente) {
+  const gates = [
+    c.roteamento_habilitado, c.agendamentos_habilitado, c.pagina_agendamento_habilitada,
+    c.api_assistente_habilitada, c.webhooks_habilitado, c.documentacao_habilitada, c.vitrine_habilitada,
+  ]
+  const desligados = gates.filter(v => v === false).length
+  const addons = [c.envios_habilitado ? 'Disparos' : '', c.delivery_modulo_ativo ? 'Delivery' : ''].filter(Boolean)
+  return { desligados, addons }
+}
+
 // Badge de cancelamento da assinatura no Stripe.
 // `cancel_at_period_end` = cliente cancelou no Stripe, mantém acesso até o fim do período.
 // `subscription_status === 'canceled'` = assinatura já encerrada.
@@ -278,15 +291,17 @@ function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: str
         <div v-if="menuCliente" class="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center sm:p-4" role="dialog" aria-modal="true">
           <!-- Backdrop -->
           <div class="absolute inset-0 bg-black/60 sm:backdrop-blur-sm" @click="closeMenu" aria-hidden="true" />
-          <!-- Sheet (mobile) / painel central (desktop) -->
-          <div class="relative bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-2xl border-t sm:border border-slate-200 dark:border-slate-800 shadow-2xl pb-[max(env(safe-area-inset-bottom),1rem)] sm:pb-2 animate-slide-up sm:w-full sm:max-w-sm">
+          <!-- Sheet (mobile) / painel central (desktop). Desktop mais largo, ações
+               em cartões de 2 colunas por grupo (28/09/2026): antes era uma lista
+               comprida e estreita. Mobile segue bottom sheet, 1 coluna. -->
+          <div class="relative bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-2xl border-t sm:border border-slate-200 dark:border-slate-800 shadow-2xl pb-[max(env(safe-area-inset-bottom),1rem)] sm:pb-4 animate-slide-up sm:w-full sm:max-w-2xl max-h-[92vh] flex flex-col">
             <!-- Drag handle (mobile) -->
             <div class="flex justify-center py-2 sm:hidden">
               <div class="w-10 h-1 rounded-full bg-slate-300 dark:bg-slate-700" />
             </div>
-            <div class="hidden sm:block pt-3" />
+            <div class="hidden sm:block pt-4" />
             <!-- Header -->
-            <div class="px-5 pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div class="px-5 pb-3.5 border-b border-slate-100 dark:border-slate-800">
               <div class="flex items-center gap-3">
                 <div class="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-bold text-white"
                   :class="menuCliente.ativo ? 'bg-purple-600' : 'bg-slate-400 dark:bg-slate-600'">
@@ -316,119 +331,136 @@ function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: str
                     <template v-if="menuCliente.nome_cliente">{{ menuCliente.nome_cliente }} · </template>{{ getPlanLabel(menuCliente.subscription_plan) }} · {{ diasRestantesText(menuCliente) }}
                   </p>
                 </div>
+                <button
+                  type="button"
+                  @click="closeMenu"
+                  class="hidden sm:flex shrink-0 w-8 h-8 rounded-lg items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-300 transition-colors"
+                  aria-label="Fechar"
+                >
+                  <i class="fa-solid fa-xmark" aria-hidden="true" />
+                </button>
               </div>
             </div>
-            <!-- Action list -->
-            <div class="py-2">
-              <button
-                @click="emitAction('editar', menuCliente.id)"
-                class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                type="button"
-              >
-                <i class="fa-solid fa-pen-to-square text-blue-600 dark:text-blue-400 w-5" aria-hidden="true" />
-                <span class="text-sm font-medium text-slate-800 dark:text-slate-200">Editar cliente</span>
-              </button>
+            <div class="overflow-y-auto px-4 pt-4 space-y-4">
+              <!-- Conta e plano -->
+              <section>
+                <p class="px-1 mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Conta e plano</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button type="button" @click="emitAction('editar', menuCliente.id)" class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-purple-300 dark:hover:border-purple-500/40 hover:bg-purple-50/40 dark:hover:bg-purple-500/5">
+                    <span class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"><i class="fa-solid fa-pen-to-square" aria-hidden="true" /></span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-semibold text-slate-800 dark:text-slate-200">Editar cliente</span>
+                      <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">Nome, contato, valor e token</span>
+                    </span>
+                  </button>
+                  <button type="button" @click="emitAction('renovar', menuCliente.id)" class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-purple-300 dark:hover:border-purple-500/40 hover:bg-purple-50/40 dark:hover:bg-purple-500/5">
+                    <span class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"><i class="fa-solid fa-calendar-check" aria-hidden="true" /></span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-semibold text-slate-800 dark:text-slate-200">Renovar assinatura</span>
+                      <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">{{ diasRestantesText(menuCliente) }}</span>
+                    </span>
+                  </button>
+                  <button type="button" @click="emitAction('limite-instancias', menuCliente.id)" class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-purple-300 dark:hover:border-purple-500/40 hover:bg-purple-50/40 dark:hover:bg-purple-500/5">
+                    <span class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400"><i class="fa-solid fa-mobile-screen" aria-hidden="true" /></span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-semibold text-slate-800 dark:text-slate-200">Canais WhatsApp</span>
+                      <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">{{ menuCliente.max_instancias ?? 1 }} {{ (menuCliente.max_instancias ?? 1) === 1 ? 'canal liberado' : 'canais liberados' }}</span>
+                    </span>
+                  </button>
+                  <button type="button" @click="emitAction('modulos', menuCliente.id)" class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-purple-300 dark:hover:border-purple-500/40 hover:bg-purple-50/40 dark:hover:bg-purple-500/5">
+                    <span class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400"><i class="fa-solid fa-puzzle-piece" aria-hidden="true" /></span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-semibold text-slate-800 dark:text-slate-200">Módulos do app</span>
+                      <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">
+                        <template v-if="resumoModulos(menuCliente).desligados > 0">
+                          <span class="font-semibold text-amber-600 dark:text-amber-400">{{ resumoModulos(menuCliente).desligados }} desligado{{ resumoModulos(menuCliente).desligados > 1 ? 's' : '' }}</span>
+                        </template>
+                        <template v-else>Todos os módulos liberados</template>
+                        <template v-if="resumoModulos(menuCliente).addons.length"> · <span class="text-purple-600 dark:text-purple-400 font-medium">+ {{ resumoModulos(menuCliente).addons.join(', ') }}</span></template>
+                      </span>
+                    </span>
+                  </button>
+                </div>
+              </section>
 
-              <button
-                @click="emitAction('limite-instancias', menuCliente.id)"
-                class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                type="button"
-              >
-                <i class="fa-solid fa-mobile-screen text-purple-600 dark:text-purple-400 w-5" aria-hidden="true" />
-                <span class="text-sm font-medium text-slate-800 dark:text-slate-200">Canais WhatsApp</span>
-                <span class="ml-auto text-xs text-slate-500">{{ menuCliente.max_instancias ?? 1 }}</span>
-              </button>
+              <!-- Parceria (não vale pro superAdmin) -->
+              <section v-if="menuCliente.role !== 'superAdmin'">
+                <p class="px-1 mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Parceria</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button type="button" @click="emitAction('atribuir-parceiro', menuCliente.id)" class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-purple-300 dark:hover:border-purple-500/40 hover:bg-purple-50/40 dark:hover:bg-purple-500/5">
+                    <span class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-teal-50 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400"><i class="fa-solid fa-handshake" aria-hidden="true" /></span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-semibold text-slate-800 dark:text-slate-200">{{ menuCliente.parceiro_nome ? 'Trocar parceiro' : 'Atribuir a parceiro' }}</span>
+                      <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">{{ menuCliente.parceiro_nome ? `Hoje: ${menuCliente.parceiro_nome}` : 'Sem parceiro vinculado' }}</span>
+                    </span>
+                  </button>
+                  <button
+                    v-if="menuCliente.parceiro_nome"
+                    type="button"
+                    @click="emitAction('remover-parceiro', menuCliente.id)"
+                    class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-orange-300 dark:hover:border-orange-500/40 hover:bg-orange-50/40 dark:hover:bg-orange-500/5"
+                  >
+                    <span class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400"><i class="fa-solid fa-link-slash" aria-hidden="true" /></span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-semibold text-slate-800 dark:text-slate-200">Remover do parceiro</span>
+                      <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">Desvincula de {{ menuCliente.parceiro_nome }}</span>
+                    </span>
+                  </button>
+                  <button type="button" @click="emitAction('tornar-parceiro', menuCliente.id)" class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-purple-300 dark:hover:border-purple-500/40 hover:bg-purple-50/40 dark:hover:bg-purple-500/5">
+                    <span class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"><i class="fa-solid fa-user-tie" aria-hidden="true" /></span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-semibold text-slate-800 dark:text-slate-200">Tornar empresa parceira</span>
+                      <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">Passa a revender a Agzap</span>
+                    </span>
+                  </button>
+                </div>
+              </section>
 
-              <button
-                @click="emitAction('modulos', menuCliente.id)"
-                class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                type="button"
-              >
-                <i class="fa-solid fa-puzzle-piece text-violet-600 dark:text-violet-400 w-5" aria-hidden="true" />
-                <span class="text-sm font-medium text-slate-800 dark:text-slate-200">Módulos do app</span>
-                <span
-                  v-if="menuCliente.roteamento_habilitado === false"
-                  class="ml-auto text-xs text-amber-600 dark:text-amber-400 font-semibold"
-                >Restrito</span>
-              </button>
-
-              <button
-                @click="emitAction('renovar', menuCliente.id)"
-                class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                type="button"
-              >
-                <i class="fa-solid fa-calendar-check text-emerald-600 dark:text-emerald-400 w-5" aria-hidden="true" />
-                <span class="text-sm font-medium text-slate-800 dark:text-slate-200">Renovar assinatura</span>
-              </button>
-
-
-              <button
-                v-if="menuCliente.role !== 'superAdmin'"
-                @click="emitAction('atribuir-parceiro', menuCliente.id)"
-                class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                type="button"
-              >
-                <i class="fa-solid fa-handshake text-teal-600 dark:text-teal-400 w-5" aria-hidden="true" />
-                <span class="text-sm font-medium text-slate-800 dark:text-slate-200">
-                  {{ menuCliente.parceiro_nome ? 'Trocar parceiro' : 'Atribuir a parceiro' }}
-                </span>
-                <span v-if="menuCliente.parceiro_nome" class="ml-auto text-xs text-slate-500 truncate max-w-[100px]">{{ menuCliente.parceiro_nome }}</span>
-              </button>
-
-              <!-- Só faz sentido quando existe vínculo -->
-              <button
-                v-if="menuCliente.parceiro_nome && menuCliente.role !== 'superAdmin'"
-                @click="emitAction('remover-parceiro', menuCliente.id)"
-                class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                type="button"
-              >
-                <i class="fa-solid fa-link-slash text-orange-600 dark:text-orange-400 w-5" aria-hidden="true" />
-                <span class="text-sm font-medium text-slate-800 dark:text-slate-200">Remover do parceiro</span>
-                <span class="ml-auto text-xs text-slate-500 truncate max-w-[100px]">{{ menuCliente.parceiro_nome }}</span>
-              </button>
-
-              <button
-                v-if="menuCliente.role !== 'superAdmin'"
-                @click="emitAction('tornar-parceiro', menuCliente.id)"
-                class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                type="button"
-              >
-                <i class="fa-solid fa-user-tie text-indigo-600 dark:text-indigo-400 w-5" aria-hidden="true" />
-                <span class="text-sm font-medium text-slate-800 dark:text-slate-200">Tornar empresa parceira</span>
-              </button>
-
-              <button
-                v-if="menuCliente.ativo && menuCliente.role !== 'superAdmin'"
-                @click="emitAction('desativar', menuCliente.id)"
-                class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                type="button"
-              >
-                <i class="fa-solid fa-circle-xmark text-amber-600 dark:text-amber-400 w-5" aria-hidden="true" />
-                <span class="text-sm font-medium text-slate-800 dark:text-slate-200">Desativar cliente</span>
-              </button>
-
-              <button
-                v-if="!menuCliente.ativo && menuCliente.role !== 'superAdmin'"
-                @click="emitAction('reativar', menuCliente.id)"
-                class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                type="button"
-              >
-                <i class="fa-solid fa-circle-check text-emerald-600 dark:text-emerald-400 w-5" aria-hidden="true" />
-                <span class="text-sm font-medium text-slate-800 dark:text-slate-200">Reativar cliente</span>
-              </button>
-
-              <button
-                v-if="menuCliente.role !== 'superAdmin'"
-                @click="emitAction('excluir', menuCliente.id)"
-                class="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
-                type="button"
-              >
-                <i class="fa-solid fa-trash text-red-500 dark:text-red-400 w-5" aria-hidden="true" />
-                <span class="text-sm font-medium text-red-600 dark:text-red-400">Excluir cliente</span>
-              </button>
+              <!-- Situação da conta -->
+              <section v-if="menuCliente.role !== 'superAdmin'">
+                <p class="px-1 mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Situação da conta</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    v-if="menuCliente.ativo"
+                    type="button"
+                    @click="emitAction('desativar', menuCliente.id)"
+                    class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-amber-300 dark:hover:border-amber-500/40 hover:bg-amber-50/40 dark:hover:bg-amber-500/5"
+                  >
+                    <span class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400"><i class="fa-solid fa-circle-pause" aria-hidden="true" /></span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-semibold text-slate-800 dark:text-slate-200">Desativar cliente</span>
+                      <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">Bloqueia o acesso; dá pra reativar</span>
+                    </span>
+                  </button>
+                  <button
+                    v-else
+                    type="button"
+                    @click="emitAction('reativar', menuCliente.id)"
+                    class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-emerald-300 dark:hover:border-emerald-500/40 hover:bg-emerald-50/40 dark:hover:bg-emerald-500/5"
+                  >
+                    <span class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"><i class="fa-solid fa-circle-check" aria-hidden="true" /></span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-semibold text-slate-800 dark:text-slate-200">Reativar cliente</span>
+                      <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">Libera o acesso de novo</span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    @click="emitAction('excluir', menuCliente.id)"
+                    class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors border-red-200 dark:border-red-500/30 hover:border-red-300 dark:hover:border-red-500/50 hover:bg-red-50 dark:hover:bg-red-500/10"
+                  >
+                    <span class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400"><i class="fa-solid fa-trash" aria-hidden="true" /></span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-semibold text-red-600 dark:text-red-400">Excluir cliente</span>
+                      <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">Apaga a empresa (pede confirmação)</span>
+                    </span>
+                  </button>
+                </div>
+              </section>
             </div>
-            <!-- Cancel -->
-            <div class="px-3 pt-1">
+
+            <!-- Cancelar: só no celular (no desktop tem o X) -->
+            <div class="px-3 pt-3 sm:hidden">
               <button
                 @click="closeMenu"
                 class="w-full py-3 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-sm"

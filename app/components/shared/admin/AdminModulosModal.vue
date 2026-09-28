@@ -56,7 +56,8 @@ const emit = defineEmits<{
   confirm: [modulos: ModulosEmpresa]
 }>()
 
-const roteamento = ref(true)
+// Roteamento virou add-on pago em 28/09/2026: nasce desligado (aba Add-ons).
+const roteamento = ref(false)
 const agendamentos = ref(true)
 const paginaAgendamento = ref(true)
 const apiAssistente = ref(true)
@@ -162,13 +163,6 @@ const MODULOS = [
     descricao: 'Link público onde o cliente final marca horário',
   },
   {
-    key: 'roteamento' as const,
-    label: 'Roteamento',
-    icon: 'fa-route',
-    iconCls: 'text-violet-500',
-    descricao: 'Página de Roteamento de Leads no menu lateral do app',
-  },
-  {
     key: 'apiAssistente' as const,
     label: 'Integração API',
     icon: 'fa-plug',
@@ -209,7 +203,7 @@ const valores = {
 }
 
 // Selo nas abas: quantos add-ons ligados / limite abaixo do uso atual.
-const addonsLigados = computed(() => Number(envios.value) + Number(delivery.value))
+const addonsLigados = computed(() => Number(roteamento.value) + Number(envios.value) + Number(delivery.value))
 const algumLimiteAbaixo = computed(() =>
   profAbaixoDoUso.value || clientesAbaixoDoUso.value || produtosVitrineAbaixoDoUso.value)
 
@@ -425,7 +419,37 @@ function pedidosMesValido() {
         </template>
 
         <template v-else-if="aba === 'addons'">
-          <!-- Disparos: card à parte — é o único add-on pago e nasce bloqueado. -->
+          <!-- Roteamento: add-on pago desde 28/09/2026 (nasce bloqueado). -->
+          <div class="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 px-3 py-2.5">
+            <div class="flex items-center justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 flex-wrap">
+                  <i class="fa-solid fa-route text-violet-500 text-[10px]" aria-hidden="true" />
+                  Roteamento
+                  <span class="px-1.5 py-px rounded-full bg-violet-100 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300 text-[9px] font-bold uppercase tracking-wide">Add-on</span>
+                </p>
+                <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
+                  Distribui os leads entre franquias (Configurações › Sistema no app). Módulo pago, nasce bloqueado.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                :aria-checked="roteamento"
+                :aria-label="`${roteamento ? 'Bloquear' : 'Liberar'} módulo de Roteamento`"
+                @click="roteamento = !roteamento"
+                class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+                :class="roteamento ? 'bg-violet-500' : 'bg-slate-300 dark:bg-slate-700'"
+              >
+                <span
+                  class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
+                  :class="roteamento ? 'translate-x-[18px]' : 'translate-x-0.5'"
+                />
+              </button>
+            </div>
+          </div>
+
+          <!-- Disparos: card à parte — add-on pago, nasce bloqueado. -->
           <div class="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 px-3 py-2.5">
             <div class="flex items-center justify-between gap-3">
               <div class="min-w-0 flex-1">

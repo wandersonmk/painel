@@ -3,9 +3,9 @@ import { requireSuperAdmin, getServiceClient } from '~~/server/utils/requireSupe
 // Habilita/desabilita módulos do app por empresa (gates de admin).
 //
 // Todos os campos são opcionais: o body só carrega o que mudou, e quem não é
-// informado fica como está. Os gates nascem TRUE no banco — exceto
-// envios_habilitado, add-on pago que nasce FALSE (só liberado após contato
-// comercial).
+// informado fica como está. Os gates nascem TRUE no banco — exceto os add-ons
+// pagos (envios_habilitado, delivery_modulo_ativo e, desde 28/09/2026,
+// roteamento_habilitado), que nascem FALSE (só liberados após contratação).
 
 // key do body -> coluna em `empresas`
 const FLAGS: Record<string, string> = {

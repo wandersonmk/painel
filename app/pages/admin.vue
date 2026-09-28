@@ -369,7 +369,8 @@ function handleModulos(id: string) {
     clienteModulos.value = {
       id: c.id,
       nome: c.nome,
-      roteamento_habilitado: c.roteamento_habilitado ?? true,
+      // Add-on pago desde 28/09/2026 (igual envios/delivery): ausente = bloqueado.
+      roteamento_habilitado: c.roteamento_habilitado === true,
       agendamentos_habilitado: c.agendamentos_habilitado ?? true,
       pagina_agendamento_habilitada: c.pagina_agendamento_habilitada ?? true,
       api_assistente_habilitada: c.api_assistente_habilitada ?? true,
@@ -728,7 +729,7 @@ function abrirModulosDeUso(id: string) {
         :show="showModulosModal"
         :cliente-id="clienteModulos?.id || ''"
         :cliente-nome="clienteModulos?.nome || ''"
-        :roteamento-atual="clienteModulos?.roteamento_habilitado ?? true"
+        :roteamento-atual="clienteModulos?.roteamento_habilitado ?? false"
         :agendamentos-atual="clienteModulos?.agendamentos_habilitado ?? true"
         :pagina-agendamento-atual="clienteModulos?.pagina_agendamento_habilitada ?? true"
         :api-assistente-atual="clienteModulos?.api_assistente_habilitada ?? true"

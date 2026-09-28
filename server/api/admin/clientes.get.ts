@@ -63,7 +63,8 @@ export default defineEventHandler(async (event) => {
         max_profissionais: emp.max_profissionais ?? 20,
         max_clientes: emp.max_clientes ?? 100000,
         cancel_at_period_end: emp.cancel_at_period_end || false,
-        roteamento_habilitado: emp.roteamento_habilitado ?? true,
+        // Add-on pago desde 28/09/2026: ausente = bloqueado.
+        roteamento_habilitado: emp.roteamento_habilitado ?? false,
         agendamentos_habilitado: emp.agendamentos_habilitado ?? true,
         pagina_agendamento_habilitada: emp.pagina_agendamento_habilitada ?? true,
         api_assistente_habilitada: emp.api_assistente_habilitada ?? true,

@@ -56,11 +56,16 @@ function diasRestantesText(c: AdminCliente) {
 // desligados e mostra quais add-ons pagos estão ligados.
 function resumoModulos(c: AdminCliente) {
   const gates = [
-    c.roteamento_habilitado, c.agendamentos_habilitado, c.pagina_agendamento_habilitada,
+    c.agendamentos_habilitado, c.pagina_agendamento_habilitada,
     c.api_assistente_habilitada, c.webhooks_habilitado, c.documentacao_habilitada, c.vitrine_habilitada,
   ]
   const desligados = gates.filter(v => v === false).length
-  const addons = [c.envios_habilitado ? 'Disparos' : '', c.delivery_modulo_ativo ? 'Delivery' : ''].filter(Boolean)
+  // Roteamento é add-on pago desde 28/09/2026 (junto de Disparos e Delivery).
+  const addons = [
+    c.roteamento_habilitado === true ? 'Roteamento' : '',
+    c.envios_habilitado ? 'Disparos' : '',
+    c.delivery_modulo_ativo ? 'Delivery' : '',
+  ].filter(Boolean)
   return { desligados, addons }
 }
 

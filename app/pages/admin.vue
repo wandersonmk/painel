@@ -456,30 +456,14 @@ function abrirModulosDeUso(id: string) {
 </script>
 
 <template>
-  <div class="p-4 sm:p-6 md:p-10">
-    <div class="max-w-[1400px] mx-auto space-y-6 sm:space-y-8">
-      <!-- Header da página -->
-      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div class="space-y-1">
-          <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Clientes</h1>
-          <p class="text-slate-500 dark:text-slate-400 text-sm">Gerencie clientes e assinaturas em tempo real.</p>
-        </div>
-        <div class="flex items-center gap-3">
-          <button
-            @click="refreshData"
-            :disabled="isRefreshing"
-            class="inline-flex items-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded text-sm font-semibold transition-colors"
-            type="button"
-          >
-            <i class="fa-solid fa-arrows-rotate" :class="{ 'animate-spin': isRefreshing }" aria-hidden="true" />
-            <span>Atualizar</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Abas da página (pedido do dono, 28/09/2026) -->
-      <div class="border-b border-slate-200 dark:border-slate-800">
-        <nav class="-mb-px flex gap-6 overflow-x-auto" role="tablist" aria-label="Seções de clientes">
+  <div class="px-4 py-4 sm:px-6 md:px-10 md:py-6">
+    <div class="max-w-[1400px] mx-auto space-y-5">
+      <h1 class="sr-only">Clientes</h1>
+      <!-- Abas da página (pedido do dono, 28/09/2026). Sem título "Clientes"
+           em cima: as abas já dizem onde se está, e o conteúdo sobe. O
+           atualizar virou ícone na ponta da linha das abas. -->
+      <div class="flex items-end gap-3 border-b border-slate-200 dark:border-slate-800">
+        <nav class="-mb-px flex flex-1 min-w-0 gap-6 overflow-x-auto" role="tablist" aria-label="Seções de clientes">
           <button
             v-for="aba in abas"
             :key="aba.value"
@@ -505,6 +489,16 @@ function abrirModulosDeUso(id: string) {
             >{{ aba.count }}</span>
           </button>
         </nav>
+        <button
+          @click="refreshData"
+          :disabled="isRefreshing"
+          type="button"
+          title="Atualizar"
+          aria-label="Atualizar"
+          class="mb-1.5 inline-flex items-center justify-center w-8 h-8 flex-shrink-0 rounded-lg text-slate-500 dark:text-slate-400 hover:text-purple-700 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-500/10 disabled:opacity-50 transition-colors"
+        >
+          <i class="fa-solid fa-arrows-rotate text-sm" :class="{ 'animate-spin': isRefreshing }" aria-hidden="true" />
+        </button>
       </div>
 
       <!-- Aba: Estatísticas -->
@@ -559,56 +553,31 @@ function abrirModulosDeUso(id: string) {
 
       <!-- Abas de lista: Clientes em dia / Vencidos -->
       <template v-else>
-        <!-- Filtros -->
-        <div class="space-y-4">
-          <!-- Busca + plano + contagem -->
-          <div class="flex flex-col sm:flex-row gap-4 sm:items-end justify-between">
-            <div class="relative flex-1 sm:max-w-md">
-              <label for="search" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Pesquisar</label>
-              <div class="relative">
-                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
-                <input
-                  id="search"
-                  v-model="searchQuery"
-                  type="search"
-                  placeholder="Buscar por nome, email ou whatsapp..."
-                  class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-sm text-slate-900 dark:text-white"
-                />
-              </div>
-            </div>
-            <div class="flex items-end gap-4">
-              <div class="w-44 sm:w-48">
-                <label for="plan" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Plano</label>
-                <select
-                  id="plan"
-                  v-model="filterPlan"
-                  class="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-sm text-slate-900 dark:text-white"
-                >
-                  <option value="all">Todos</option>
-                  <option value="free">Gratuito</option>
-                  <option value="basic">Básico</option>
-                  <option value="pro">Pro</option>
-                  <option value="enterprise">Enterprise</option>
-                </select>
-              </div>
-              <div class="hidden sm:flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 pb-2.5 whitespace-nowrap">
-                <span class="font-semibold text-slate-900 dark:text-white tabular-nums">{{ filteredClientes.length }}</span>
-                de
-                <span class="font-semibold text-slate-900 dark:text-white tabular-nums">{{ clientesDaAba.length }}</span>
-              </div>
-            </div>
+        <!-- Filtros numa linha só: busca, chips de status, plano e contagem
+             (quebra de linha só quando a tela não comporta). -->
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="relative flex-1 min-w-[220px] max-w-sm">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm" aria-hidden="true" />
+            <input
+              id="search"
+              v-model="searchQuery"
+              type="search"
+              aria-label="Pesquisar cliente"
+              placeholder="Buscar por nome, email ou whatsapp..."
+              class="w-full h-9 pl-9 pr-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white"
+            />
           </div>
 
           <!-- Chips de status. Só na aba "Em dia": a lista de vencidos é curta e
                serve pra cobrar, não pra fatiar por status. -->
-          <div v-if="abaAtiva === 'em-dia'" class="flex flex-wrap gap-2" role="group" aria-label="Filtrar por status">
+          <div v-if="abaAtiva === 'em-dia'" class="flex flex-wrap items-center gap-2" role="group" aria-label="Filtrar por status">
             <button
               v-for="chip in statusChips"
               :key="chip.value"
               type="button"
               @click="filterStatus = chip.value"
               :aria-pressed="filterStatus === chip.value"
-              class="inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full text-xs font-semibold border transition-colors"
+              class="inline-flex items-center gap-1.5 h-9 pl-3 pr-2 rounded-full text-xs font-semibold border transition-colors"
               :class="filterStatus === chip.value
                 ? 'bg-purple-600 border-purple-600 text-white'
                 : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/60'"
@@ -622,6 +591,25 @@ function abrirModulosDeUso(id: string) {
                   : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'"
               >{{ statusCounts[chip.value] }}</span>
             </button>
+          </div>
+
+          <select
+            id="plan"
+            v-model="filterPlan"
+            aria-label="Filtrar por plano"
+            class="h-9 w-44 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white"
+          >
+            <option value="all">Todos os planos</option>
+            <option value="free">Gratuito</option>
+            <option value="basic">Básico</option>
+            <option value="pro">Pro</option>
+            <option value="enterprise">Enterprise</option>
+          </select>
+
+          <div class="hidden sm:flex items-center gap-1.5 ml-auto text-sm text-slate-500 dark:text-slate-400 whitespace-nowrap">
+            <span class="font-semibold text-slate-900 dark:text-white tabular-nums">{{ filteredClientes.length }}</span>
+            de
+            <span class="font-semibold text-slate-900 dark:text-white tabular-nums">{{ clientesDaAba.length }}</span>
           </div>
         </div>
 

@@ -64,24 +64,37 @@ const clienteModulos = ref<{
 const searchQuery = ref('')
 const filterStatus = ref('all')
 const filterPlan = ref('all')
-const statsExpanded = ref(true)
 const isRefreshing = ref(false)
 
-// Vencidos ficam numa aba própria: a lista é ordenada por dias restantes, então
-// eles subiam pro topo e empurravam a carteira em dia (a que se olha no dia a
-// dia) pra baixo. Separar deixa cada leitura com um objetivo só.
-type Aba = 'em-dia' | 'vencidos'
-const abaAtiva = ref<Aba>('em-dia')
+// A página inteira em abas (pedido do dono, 28/09/2026): antes as
+// estatísticas e o token ficavam empilhados em cima da lista, e a lista
+// (que é o que se usa no dia a dia) ficava lá embaixo. Cada aba tem um
+// objetivo só:
+//  - Clientes em dia / Vencidos: a lista, separada porque é ordenada por
+//    dias restantes — os vencidos subiam pro topo e empurravam a carteira;
+//  - Estatísticas: os indicadores e a distribuição por plano;
+//  - Token OpenAI: a configuração do token global.
+// A aba vai na URL (?aba=), então um F5 volta pra mesma aba.
+type Aba = 'em-dia' | 'vencidos' | 'estatisticas' | 'token'
+const ABAS_VALIDAS: Aba[] = ['em-dia', 'vencidos', 'estatisticas', 'token']
+const rotaAdmin = useRoute()
+const roteadorAdmin = useRouter()
+const abaDaUrl = String(rotaAdmin.query.aba || '') as Aba
+const abaAtiva = ref<Aba>(ABAS_VALIDAS.includes(abaDaUrl) ? abaDaUrl : 'em-dia')
+const ehAbaDeLista = computed(() => abaAtiva.value === 'em-dia' || abaAtiva.value === 'vencidos')
 
 const clientesDaAba = computed(() =>
   clientes.value.filter(c => isVencido(c) === (abaAtiva.value === 'vencidos')),
 )
 
-const abas = computed(() => {
+// count null = aba sem contador (Estatísticas e Token não são listas)
+const abas = computed<{ value: Aba; label: string; icon: string; count: number | null; tone: '' | 'red' }[]>(() => {
   const vencidos = clientes.value.filter(c => isVencido(c)).length
   return [
-    { value: 'em-dia' as Aba, label: 'Em dia', count: clientes.value.length - vencidos, tone: '' },
-    { value: 'vencidos' as Aba, label: 'Vencidos', count: vencidos, tone: 'red' },
+    { value: 'em-dia', label: 'Clientes em dia', icon: 'fa-users', count: clientes.value.length - vencidos, tone: '' },
+    { value: 'vencidos', label: 'Vencidos', icon: 'fa-triangle-exclamation', count: vencidos, tone: 'red' },
+    { value: 'estatisticas', label: 'Estatísticas', icon: 'fa-chart-pie', count: null, tone: '' },
+    { value: 'token', label: 'Token OpenAI', icon: 'fa-key', count: null, tone: '' },
   ]
 })
 
@@ -90,6 +103,7 @@ const abas = computed(() => {
 function selecionarAba(v: Aba) {
   abaAtiva.value = v
   filterStatus.value = 'all'
+  roteadorAdmin.replace({ query: { ...rotaAdmin.query, aba: v === 'em-dia' ? undefined : v } })
 }
 
 async function refreshData() {
@@ -463,72 +477,9 @@ function abrirModulosDeUso(id: string) {
         </div>
       </div>
 
-      <!-- Stats -->
-      <div>
-        <button
-          @click="statsExpanded = !statsExpanded"
-          class="flex items-center gap-2 text-sm font-semibold text-slate-500 dark:text-slate-400 mb-4 hover:text-slate-700 dark:hover:text-slate-200"
-          type="button"
-          :aria-expanded="statsExpanded"
-        >
-          <i class="fa-solid text-xs" :class="statsExpanded ? 'fa-chevron-down' : 'fa-chevron-right'" aria-hidden="true" />
-          <span>Estatísticas</span>
-          <span class="text-xs bg-slate-200 dark:bg-slate-800 px-2.5 py-0.5 rounded-full font-medium tabular-nums">
-            {{ stats.totalClientes }} clientes
-          </span>
-        </button>
-        <div v-show="statsExpanded" class="space-y-4">
-          <!-- KPIs de ação: 2 de visão geral + 2 que exigem atenção -->
-          <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <AdminStatsCard
-              title="Total de Clientes" :value="stats.totalClientes" icon="fa-users" color="indigo"
-              :subtitle="stats.clientesEssaSemana ? `+${stats.clientesEssaSemana} essa semana` : ''"
-            />
-            <AdminStatsCard
-              title="Clientes Ativos" :value="stats.clientesAtivos" icon="fa-circle-check" color="emerald"
-              :subtitle="stats.totalClientes ? `${Math.round((stats.clientesAtivos / stats.totalClientes) * 100)}% da base` : ''"
-            />
-            <AdminStatsCard
-              title="Vencendo Hoje" :value="stats.clientesVencendoHoje" icon="fa-bell" color="orange" highlighted
-              :subtitle="stats.clientesVencendoHoje ? 'precisa renovar' : 'tudo em dia'"
-            />
-            <AdminStatsCard
-              title="Clientes Vencidos" :value="stats.clientesVencidos" icon="fa-triangle-exclamation" color="red" highlighted
-              :subtitle="stats.clientesVencidos ? 'ação urgente' : 'nenhum vencido'"
-            />
-          </div>
-
-          <!-- Distribuição de planos: barra empilhada (substitui os cards Pro/Básico/Enterprise) -->
-          <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm px-4 py-3.5">
-            <div class="flex items-center justify-between mb-2.5">
-              <p class="text-[11px] sm:text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Distribuição por plano</p>
-            </div>
-            <div class="flex h-2.5 w-full rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800">
-              <div
-                v-for="seg in planDistribution.filter(s => s.value > 0)"
-                :key="seg.key"
-                class="h-full transition-all"
-                :class="seg.bar"
-                :style="{ width: seg.pct + '%' }"
-                :title="`${seg.label}: ${seg.value}`"
-              />
-            </div>
-            <div class="flex flex-wrap gap-x-5 gap-y-1.5 mt-3">
-              <div v-for="seg in planDistribution" :key="seg.key" class="flex items-center gap-1.5">
-                <span class="w-2 h-2 rounded-full" :class="seg.dot" aria-hidden="true" />
-                <span class="text-xs text-slate-600 dark:text-slate-400">{{ seg.label }}</span>
-                <span class="text-xs font-semibold text-slate-900 dark:text-white tabular-nums">{{ seg.value }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <AdminTokenGlobalCard />
-
-      <!-- Abas: carteira em dia x vencidos (listas com objetivos diferentes) -->
+      <!-- Abas da página (pedido do dono, 28/09/2026) -->
       <div class="border-b border-slate-200 dark:border-slate-800">
-        <nav class="-mb-px flex gap-6" role="tablist" aria-label="Situação da assinatura">
+        <nav class="-mb-px flex gap-6 overflow-x-auto" role="tablist" aria-label="Seções de clientes">
           <button
             v-for="aba in abas"
             :key="aba.value"
@@ -536,15 +487,17 @@ function abrirModulosDeUso(id: string) {
             role="tab"
             :aria-selected="abaAtiva === aba.value"
             @click="selecionarAba(aba.value)"
-            class="inline-flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-semibold transition-colors"
+            class="inline-flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-semibold transition-colors whitespace-nowrap"
             :class="abaAtiva === aba.value
               ? 'border-purple-600 text-purple-700 dark:text-purple-400'
               : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700'"
           >
+            <i :class="['fa-solid', aba.icon, 'text-xs']" aria-hidden="true" />
             {{ aba.label }}
             <span
+              v-if="aba.count !== null"
               class="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full text-[10px] font-bold tabular-nums"
-              :class="(aba.tone === 'red' && aba.count > 0)
+              :class="(aba.tone === 'red' && (aba.count ?? 0) > 0)
                 ? 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400'
                 : abaAtiva === aba.value
                   ? 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300'
@@ -554,91 +507,144 @@ function abrirModulosDeUso(id: string) {
         </nav>
       </div>
 
-      <!-- Filtros -->
-      <div class="space-y-4">
-        <!-- Busca + plano + contagem -->
-        <div class="flex flex-col sm:flex-row gap-4 sm:items-end justify-between">
-          <div class="relative flex-1 sm:max-w-md">
-            <label for="search" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Pesquisar</label>
-            <div class="relative">
-              <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
-              <input
-                id="search"
-                v-model="searchQuery"
-                type="search"
-                placeholder="Buscar por nome, email ou whatsapp..."
-                class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-sm text-slate-900 dark:text-white"
-              />
-            </div>
+      <!-- Aba: Estatísticas -->
+      <div v-if="abaAtiva === 'estatisticas'" class="space-y-4">
+        <!-- KPIs de ação: 2 de visão geral + 2 que exigem atenção -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <AdminStatsCard
+            title="Total de Clientes" :value="stats.totalClientes" icon="fa-users" color="indigo"
+            :subtitle="stats.clientesEssaSemana ? `+${stats.clientesEssaSemana} essa semana` : ''"
+          />
+          <AdminStatsCard
+            title="Clientes Ativos" :value="stats.clientesAtivos" icon="fa-circle-check" color="emerald"
+            :subtitle="stats.totalClientes ? `${Math.round((stats.clientesAtivos / stats.totalClientes) * 100)}% da base` : ''"
+          />
+          <AdminStatsCard
+            title="Vencendo Hoje" :value="stats.clientesVencendoHoje" icon="fa-bell" color="orange" highlighted
+            :subtitle="stats.clientesVencendoHoje ? 'precisa renovar' : 'tudo em dia'"
+          />
+          <AdminStatsCard
+            title="Clientes Vencidos" :value="stats.clientesVencidos" icon="fa-triangle-exclamation" color="red" highlighted
+            :subtitle="stats.clientesVencidos ? 'ação urgente' : 'nenhum vencido'"
+          />
+        </div>
+
+        <!-- Distribuição de planos: barra empilhada (substitui os cards Pro/Básico/Enterprise) -->
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm px-4 py-3.5">
+          <div class="flex items-center justify-between mb-2.5">
+            <p class="text-[11px] sm:text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Distribuição por plano</p>
           </div>
-          <div class="flex items-end gap-4">
-            <div class="w-44 sm:w-48">
-              <label for="plan" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Plano</label>
-              <select
-                id="plan"
-                v-model="filterPlan"
-                class="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-sm text-slate-900 dark:text-white"
-              >
-                <option value="all">Todos</option>
-                <option value="free">Gratuito</option>
-                <option value="basic">Básico</option>
-                <option value="pro">Pro</option>
-                <option value="enterprise">Enterprise</option>
-              </select>
-            </div>
-            <div class="hidden sm:flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 pb-2.5 whitespace-nowrap">
-              <span class="font-semibold text-slate-900 dark:text-white tabular-nums">{{ filteredClientes.length }}</span>
-              de
-              <span class="font-semibold text-slate-900 dark:text-white tabular-nums">{{ clientesDaAba.length }}</span>
+          <div class="flex h-2.5 w-full rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800">
+            <div
+              v-for="seg in planDistribution.filter(s => s.value > 0)"
+              :key="seg.key"
+              class="h-full transition-all"
+              :class="seg.bar"
+              :style="{ width: seg.pct + '%' }"
+              :title="`${seg.label}: ${seg.value}`"
+            />
+          </div>
+          <div class="flex flex-wrap gap-x-5 gap-y-1.5 mt-3">
+            <div v-for="seg in planDistribution" :key="seg.key" class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full" :class="seg.dot" aria-hidden="true" />
+              <span class="text-xs text-slate-600 dark:text-slate-400">{{ seg.label }}</span>
+              <span class="text-xs font-semibold text-slate-900 dark:text-white tabular-nums">{{ seg.value }}</span>
             </div>
           </div>
         </div>
+      </div>
 
-        <!-- Chips de status. Só na aba "Em dia": a lista de vencidos é curta e
-             serve pra cobrar, não pra fatiar por status. -->
-        <div v-if="abaAtiva === 'em-dia'" class="flex flex-wrap gap-2" role="group" aria-label="Filtrar por status">
-          <button
-            v-for="chip in statusChips"
-            :key="chip.value"
-            type="button"
-            @click="filterStatus = chip.value"
-            :aria-pressed="filterStatus === chip.value"
-            class="inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full text-xs font-semibold border transition-colors"
-            :class="filterStatus === chip.value
-              ? 'bg-purple-600 border-purple-600 text-white'
-              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/60'"
-          >
-            {{ chip.label }}
-            <span
-              class="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full text-[10px] font-bold tabular-nums"
+      <!-- Aba: Token OpenAI global -->
+      <AdminTokenGlobalCard v-else-if="abaAtiva === 'token'" />
+
+      <!-- Abas de lista: Clientes em dia / Vencidos -->
+      <template v-else>
+        <!-- Filtros -->
+        <div class="space-y-4">
+          <!-- Busca + plano + contagem -->
+          <div class="flex flex-col sm:flex-row gap-4 sm:items-end justify-between">
+            <div class="relative flex-1 sm:max-w-md">
+              <label for="search" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Pesquisar</label>
+              <div class="relative">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                <input
+                  id="search"
+                  v-model="searchQuery"
+                  type="search"
+                  placeholder="Buscar por nome, email ou whatsapp..."
+                  class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-sm text-slate-900 dark:text-white"
+                />
+              </div>
+            </div>
+            <div class="flex items-end gap-4">
+              <div class="w-44 sm:w-48">
+                <label for="plan" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Plano</label>
+                <select
+                  id="plan"
+                  v-model="filterPlan"
+                  class="w-full px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded text-sm text-slate-900 dark:text-white"
+                >
+                  <option value="all">Todos</option>
+                  <option value="free">Gratuito</option>
+                  <option value="basic">Básico</option>
+                  <option value="pro">Pro</option>
+                  <option value="enterprise">Enterprise</option>
+                </select>
+              </div>
+              <div class="hidden sm:flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 pb-2.5 whitespace-nowrap">
+                <span class="font-semibold text-slate-900 dark:text-white tabular-nums">{{ filteredClientes.length }}</span>
+                de
+                <span class="font-semibold text-slate-900 dark:text-white tabular-nums">{{ clientesDaAba.length }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Chips de status. Só na aba "Em dia": a lista de vencidos é curta e
+               serve pra cobrar, não pra fatiar por status. -->
+          <div v-if="abaAtiva === 'em-dia'" class="flex flex-wrap gap-2" role="group" aria-label="Filtrar por status">
+            <button
+              v-for="chip in statusChips"
+              :key="chip.value"
+              type="button"
+              @click="filterStatus = chip.value"
+              :aria-pressed="filterStatus === chip.value"
+              class="inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full text-xs font-semibold border transition-colors"
               :class="filterStatus === chip.value
-                ? 'bg-white/25 text-white'
-                : (chip.tone === 'orange' && statusCounts[chip.value] > 0) ? 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400'
-                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'"
-            >{{ statusCounts[chip.value] }}</span>
-          </button>
+                ? 'bg-purple-600 border-purple-600 text-white'
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/60'"
+            >
+              {{ chip.label }}
+              <span
+                class="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full text-[10px] font-bold tabular-nums"
+                :class="filterStatus === chip.value
+                  ? 'bg-white/25 text-white'
+                  : (chip.tone === 'orange' && statusCounts[chip.value] > 0) ? 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400'
+                  : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'"
+              >{{ statusCounts[chip.value] }}</span>
+            </button>
+          </div>
         </div>
-      </div>
 
-      <div v-if="error" role="alert" class="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-md p-4 text-red-700 dark:text-red-400 text-sm">
-        {{ error }}
-      </div>
+        <div v-if="error" role="alert" class="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-md p-4 text-red-700 dark:text-red-400 text-sm">
+          {{ error }}
+        </div>
 
-      <AdminClientesTable
-        :clientes="filteredClientes"
-        :loading="loading"
-        @desativar="handleDesativar"
-        @reativar="handleReativar"
-        @renovar="handleRenovar"
-        @editar="handleEditar"
-        @excluir="handleExcluir"
-        @limite-instancias="handleLimiteInstancias"
-        @atribuir-parceiro="handleAtribuirParceiro"
-        @remover-parceiro="handleRemoverParceiro"
-        @tornar-parceiro="handleTornarParceiro"
-        @modulos="handleModulos"
-        @ver-uso="handleVerUso"
-      />
+        <AdminClientesTable
+          :clientes="filteredClientes"
+          :loading="loading"
+          @desativar="handleDesativar"
+          @reativar="handleReativar"
+          @renovar="handleRenovar"
+          @editar="handleEditar"
+          @excluir="handleExcluir"
+          @limite-instancias="handleLimiteInstancias"
+          @atribuir-parceiro="handleAtribuirParceiro"
+          @remover-parceiro="handleRemoverParceiro"
+          @tornar-parceiro="handleTornarParceiro"
+          @modulos="handleModulos"
+          @ver-uso="handleVerUso"
+        />
+      </template>
 
       <AdminEditarClienteModal
         :show="showEditarModal"

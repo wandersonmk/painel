@@ -18,6 +18,8 @@ const FLAGS: Record<string, string> = {
   enviosHabilitado: 'envios_habilitado',
   // Add-on pago, mesmo padrão de enviosHabilitado: nasce FALSE no banco.
   deliveryModuloAtivo: 'delivery_modulo_ativo',
+  // Vitrine ("Produtos" no app): gate comum, nasce TRUE (28/09/2026).
+  vitrineHabilitada: 'vitrine_habilitada',
 }
 
 export default defineEventHandler(async (event) => {

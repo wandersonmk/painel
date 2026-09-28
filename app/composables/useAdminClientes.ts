@@ -60,6 +60,8 @@ export interface AdminCliente {
   max_acoes_macro?: number
   max_pedidos_mes?: number
   max_produtos_vitrine?: number
+  // Gate da Vitrine ("Produtos" no app). Ausente = true (permissivo).
+  vitrine_habilitada?: boolean
 }
 
 export interface AdminStats {

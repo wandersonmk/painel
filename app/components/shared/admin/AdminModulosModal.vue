@@ -23,6 +23,7 @@ export interface ModulosEmpresa {
   maxAcoesMacro: number
   maxPedidosMes: number
   maxProdutosVitrine: number
+  vitrineHabilitada: boolean
 }
 
 const props = defineProps<{
@@ -44,7 +45,12 @@ const props = defineProps<{
   maxAcoesMacroAtual: number
   maxPedidosMesAtual: number
   maxProdutosVitrineAtual: number
+  vitrineAtual?: boolean
 }>()
+
+// Abas (pedido do dono, 28/09/2026): o modal empilhava tudo e precisava rolar.
+type Aba = 'modulos' | 'addons' | 'limites'
+const aba = ref<Aba>('modulos')
 const emit = defineEmits<{
   close: []
   confirm: [modulos: ModulosEmpresa]
@@ -69,6 +75,8 @@ const maxAcoesMacro = ref(5)
 const maxPedidosMes = ref(0)
 // Produtos da Vitrine ("Produtos" no menu do app). 0 = sem limite.
 const maxProdutosVitrine = ref(0)
+// Gate da Vitrine (28/09/2026): comum, nasce ligado — igual Webhooks.
+const vitrine = ref(true)
 
 // Faixas usuais na venda, viram só atalhos: o teto de fato é digitável (como
 // profissionais/clientes), pra caber contrato fora das três faixas. Valor em R$
@@ -108,6 +116,8 @@ watch(() => props.show, async (open) => {
   maxAcoesMacro.value = props.maxAcoesMacroAtual ?? 5
   maxPedidosMes.value = props.maxPedidosMesAtual ?? 0
   maxProdutosVitrine.value = props.maxProdutosVitrineAtual ?? 0
+  vitrine.value = props.vitrineAtual ?? true
+  aba.value = 'modulos'
 
   if (!props.clienteId) return
   try {
@@ -179,6 +189,13 @@ const MODULOS = [
     iconCls: 'text-rose-500',
     descricao: 'Aba Documentação em Configurações',
   },
+  {
+    key: 'vitrine' as const,
+    label: 'Produtos (Vitrine)',
+    icon: 'fa-store',
+    iconCls: 'text-emerald-500',
+    descricao: 'Catálogo "Produtos", vitrine online e produtos no assistente',
+  },
 ]
 
 const valores = {
@@ -188,7 +205,13 @@ const valores = {
   apiAssistente,
   webhooks,
   documentacao,
+  vitrine,
 }
+
+// Selo nas abas: quantos add-ons ligados / limite abaixo do uso atual.
+const addonsLigados = computed(() => Number(envios.value) + Number(delivery.value))
+const algumLimiteAbaixo = computed(() =>
+  profAbaixoDoUso.value || clientesAbaixoDoUso.value || produtosVitrineAbaixoDoUso.value)
 
 // Limites numéricos, na mesma lista pra não duplicar markup
 const LIMITES = [
@@ -274,6 +297,16 @@ function tetoEnviosValido() {
 }
 
 function submeter() {
+  // Os campos de limite só existem no DOM na aba Limites: valida aqui e, se
+  // algum estiver fora da faixa, abre a aba pra mostrar o erro no campo.
+  const limiteInvalido = LIMITES.some(l => {
+    const v = l.modelo.value
+    return !Number.isInteger(v) || v < l.min || v > l.max
+  })
+  if (limiteInvalido && aba.value !== 'limites') {
+    aba.value = 'limites'
+    return
+  }
   emit('confirm', {
     enviosHabilitado: envios.value,
     maxEnviosMes: envios.value ? tetoEnviosValido() : 0,
@@ -290,6 +323,7 @@ function submeter() {
     maxAcoesMacro: maxAcoesMacro.value,
     maxPedidosMes: delivery.value ? pedidosMesValido() : 0,
     maxProdutosVitrine: produtosVitrineValido(),
+    vitrineHabilitada: vitrine.value,
   })
 }
 
@@ -312,7 +346,7 @@ function pedidosMesValido() {
   <BaseModal :show="show" title="Módulos do app" max-width="max-w-2xl" @close="$emit('close')">
 
     <!-- Header do cliente -->
-    <div class="flex items-center gap-2.5 pb-3 mb-3 border-b border-slate-200 dark:border-slate-800">
+    <div class="flex items-center gap-2.5 pb-1">
       <div class="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center shrink-0 shadow">
         <span class="text-white font-bold text-xs">{{ clienteNome.charAt(0).toUpperCase() }}</span>
       </div>
@@ -323,225 +357,259 @@ function pedidosMesValido() {
     </div>
 
     <form @submit.prevent="submeter" class="space-y-3">
-      <!-- Gates simples do app: 2 colunas pra deixar o modal mais baixo. -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <div
-          v-for="m in MODULOS"
-          :key="m.key"
-          class="flex items-center justify-between gap-3 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 px-3 py-2.5"
+      <!-- Abas (28/09/2026): o modal empilhava tudo e precisava rolar -->
+      <div class="flex gap-5 border-b border-slate-200 dark:border-slate-800" role="tablist" aria-label="Seções dos módulos">
+        <button
+          v-for="t in [
+            { id: 'modulos', label: 'Módulos', icon: 'fa-toggle-on' },
+            { id: 'addons', label: 'Add-ons', icon: 'fa-puzzle-piece' },
+            { id: 'limites', label: 'Limites', icon: 'fa-sliders' },
+          ]"
+          :key="t.id"
+          type="button"
+          role="tab"
+          :aria-selected="aba === t.id"
+          class="-mb-px inline-flex items-center gap-1.5 border-b-2 px-0.5 py-2.5 text-[13px] font-semibold transition-colors"
+          :class="aba === t.id
+            ? 'border-purple-600 text-purple-700 dark:text-purple-400'
+            : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
+          @click="aba = t.id as Aba"
         >
-          <div class="min-w-0 flex-1">
-            <p class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-              <i :class="['fa-solid', m.icon, m.iconCls, 'text-[10px]']" aria-hidden="true" />
-              {{ m.label }}
-            </p>
-            <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">{{ m.descricao }}</p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            :aria-checked="valores[m.key].value"
-            :aria-label="`${valores[m.key].value ? 'Desabilitar' : 'Habilitar'} módulo ${m.label}`"
-            @click="valores[m.key].value = !valores[m.key].value"
-            class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
-            :class="valores[m.key].value ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'"
-          >
-            <span
-              class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
-              :class="valores[m.key].value ? 'translate-x-[18px]' : 'translate-x-0.5'"
-            />
-          </button>
-        </div>
+          <i :class="['fa-solid', t.icon, 'text-[11px]']" aria-hidden="true" />
+          {{ t.label }}
+          <span
+            v-if="t.id === 'addons' && addonsLigados > 0"
+            class="inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300"
+          >{{ addonsLigados }}</span>
+          <i v-if="t.id === 'limites' && algumLimiteAbaixo" class="fa-solid fa-triangle-exclamation text-amber-500 text-[10px]" aria-hidden="true" />
+        </button>
       </div>
 
-      <!-- Disparos: card à parte — é o único add-on pago e nasce bloqueado. -->
-      <div class="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 px-3 py-2.5">
-        <div class="flex items-center justify-between gap-3">
-          <div class="min-w-0 flex-1">
-            <p class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 flex-wrap">
-              <i class="fa-solid fa-paper-plane text-fuchsia-500 text-[10px]" aria-hidden="true" />
-              Disparos
-              <span class="px-1.5 py-px rounded-full bg-fuchsia-100 dark:bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300 text-[9px] font-bold uppercase tracking-wide">Add-on</span>
-            </p>
-            <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
-              Módulo pago. Nasce bloqueado: só ligue depois que a empresa contratar.
-            </p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            :aria-checked="envios"
-            :aria-label="`${envios ? 'Bloquear' : 'Liberar'} módulo de Disparos`"
-            @click="alternarEnvios"
-            class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
-            :class="envios ? 'bg-fuchsia-500' : 'bg-slate-300 dark:bg-slate-700'"
-          >
-            <span
-              class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
-              :class="envios ? 'translate-x-[18px]' : 'translate-x-0.5'"
-            />
-          </button>
-        </div>
-
-        <!-- Faixa contratada: teto digitável (mesma pegada de profissionais),
-             com as faixas usuais viradas em atalho. Só com o gate ligado. -->
-        <div v-if="envios" class="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800">
-          <div class="flex items-center justify-between gap-3">
-            <div class="min-w-0 flex-1">
-              <label for="max-envios-mes" class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <i class="fa-solid fa-gauge-high text-fuchsia-500 text-[10px]" aria-hidden="true" />
-                Faixa contratada
-              </label>
-              <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
-                Teto de mensagens por mês (via API oficial da Meta). Os valores de cada faixa são passados no WhatsApp na contratação.
-              </p>
-            </div>
-            <div class="shrink-0 text-center">
-              <input
-                id="max-envios-mes"
-                v-model.number="maxEnviosMes"
-                type="number"
-                :min="1"
-                :max="MAX_ENVIOS_TETO"
-                required
-                class="w-24 px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-[13px] text-slate-900 dark:text-white tabular-nums text-center font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-              <span class="block text-[9px] uppercase tracking-wide text-slate-400 dark:text-slate-600 mt-0.5">msg/mês</span>
-            </div>
-          </div>
-          <div class="flex items-center flex-wrap gap-1.5 mt-2">
-            <span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400 dark:text-slate-600">Faixas usuais</span>
-            <button
-              v-for="f in FAIXAS_ENVIO"
-              :key="f"
-              type="button"
-              @click="maxEnviosMes = f"
-              class="rounded border px-2 py-0.5 text-[11px] font-semibold tabular-nums transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500"
-              :class="maxEnviosMes === f
-                ? 'border-fuchsia-500 bg-fuchsia-50 dark:bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300'
-                : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'"
+      <!-- Corpo com altura fixa: trocar de aba não muda o tamanho do modal -->
+      <div class="h-[380px] max-h-[55vh] overflow-y-auto pr-1 space-y-3">
+        <template v-if="aba === 'modulos'">
+          <!-- Gates simples do app: 2 colunas pra deixar o modal mais baixo. -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div
+              v-for="m in MODULOS"
+              :key="m.key"
+              class="flex items-center justify-between gap-3 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 px-3 py-2.5"
             >
-              {{ fmtMil.format(f) }}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Delivery: card à parte, mesmo padrão de add-on pago dos Disparos. -->
-      <div class="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 px-3 py-2.5">
-        <div class="flex items-center justify-between gap-3">
-          <div class="min-w-0 flex-1">
-            <p class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 flex-wrap">
-              <i class="fa-solid fa-motorcycle text-orange-500 text-[10px]" aria-hidden="true" />
-              Delivery
-              <span class="px-1.5 py-px rounded-full bg-orange-100 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300 text-[9px] font-bold uppercase tracking-wide">Add-on</span>
-            </p>
-            <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
-              Cardápio, pedidos e pizza com múltiplos sabores. Módulo pago, nasce bloqueado.
-            </p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            :aria-checked="delivery"
-            :aria-label="`${delivery ? 'Bloquear' : 'Liberar'} módulo de Delivery`"
-            @click="delivery = !delivery"
-            class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
-            :class="delivery ? 'bg-orange-500' : 'bg-slate-300 dark:bg-slate-700'"
-          >
-            <span
-              class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
-              :class="delivery ? 'translate-x-[18px]' : 'translate-x-0.5'"
-            />
-          </button>
-        </div>
-
-        <!-- Cota de pedidos/mês: soma WhatsApp + site (mesma função de
-             criação nos dois canais). 0 = sem limite. Só com o gate ligado. -->
-        <div v-if="delivery" class="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800">
-          <div class="flex items-center justify-between gap-3">
-            <div class="min-w-0 flex-1">
-              <label for="max-pedidos-mes" class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <i class="fa-solid fa-cart-shopping text-orange-500 text-[10px]" aria-hidden="true" />
-                Pedidos por mês
-              </label>
-              <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
-                Teto de pedidos (WhatsApp + site somados) por mês. 0 = sem limite.
-              </p>
+              <div class="min-w-0 flex-1">
+                <p class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <i :class="['fa-solid', m.icon, m.iconCls, 'text-[10px]']" aria-hidden="true" />
+                  {{ m.label }}
+                </p>
+                <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">{{ m.descricao }}</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                :aria-checked="valores[m.key].value"
+                :aria-label="`${valores[m.key].value ? 'Desabilitar' : 'Habilitar'} módulo ${m.label}`"
+                @click="valores[m.key].value = !valores[m.key].value"
+                class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+                :class="valores[m.key].value ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'"
+              >
+                <span
+                  class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
+                  :class="valores[m.key].value ? 'translate-x-[18px]' : 'translate-x-0.5'"
+                />
+              </button>
             </div>
-            <div class="shrink-0 text-center">
+          </div>
+          <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 flex items-start gap-1.5">
+            <i class="fa-solid fa-circle-info mt-0.5" aria-hidden="true" />
+            <span>Ao desabilitar, o item continua visível no app com um cadeado e o clique convida a contratar. Pode reabilitar a qualquer momento.</span>
+          </p>
+        </template>
+
+        <template v-else-if="aba === 'addons'">
+          <!-- Disparos: card à parte — é o único add-on pago e nasce bloqueado. -->
+          <div class="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 px-3 py-2.5">
+            <div class="flex items-center justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 flex-wrap">
+                  <i class="fa-solid fa-paper-plane text-fuchsia-500 text-[10px]" aria-hidden="true" />
+                  Disparos
+                  <span class="px-1.5 py-px rounded-full bg-fuchsia-100 dark:bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300 text-[9px] font-bold uppercase tracking-wide">Add-on</span>
+                </p>
+                <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
+                  Módulo pago. Nasce bloqueado: só ligue depois que a empresa contratar.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                :aria-checked="envios"
+                :aria-label="`${envios ? 'Bloquear' : 'Liberar'} módulo de Disparos`"
+                @click="alternarEnvios"
+                class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+                :class="envios ? 'bg-fuchsia-500' : 'bg-slate-300 dark:bg-slate-700'"
+              >
+                <span
+                  class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
+                  :class="envios ? 'translate-x-[18px]' : 'translate-x-0.5'"
+                />
+              </button>
+            </div>
+
+            <!-- Faixa contratada: teto digitável (mesma pegada de profissionais),
+                 com as faixas usuais viradas em atalho. Só com o gate ligado. -->
+            <div v-if="envios" class="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <label for="max-envios-mes" class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <i class="fa-solid fa-gauge-high text-fuchsia-500 text-[10px]" aria-hidden="true" />
+                    Faixa contratada
+                  </label>
+                  <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
+                    Teto de mensagens por mês (via API oficial da Meta). Os valores de cada faixa são passados no WhatsApp na contratação.
+                  </p>
+                </div>
+                <div class="shrink-0 text-center">
+                  <input
+                    id="max-envios-mes"
+                    v-model.number="maxEnviosMes"
+                    type="number"
+                    :min="1"
+                    :max="MAX_ENVIOS_TETO"
+                    required
+                    class="w-24 px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-[13px] text-slate-900 dark:text-white tabular-nums text-center font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                  <span class="block text-[9px] uppercase tracking-wide text-slate-400 dark:text-slate-600 mt-0.5">msg/mês</span>
+                </div>
+              </div>
+              <div class="flex items-center flex-wrap gap-1.5 mt-2">
+                <span class="text-[10px] uppercase tracking-wide font-semibold text-slate-400 dark:text-slate-600">Faixas usuais</span>
+                <button
+                  v-for="f in FAIXAS_ENVIO"
+                  :key="f"
+                  type="button"
+                  @click="maxEnviosMes = f"
+                  class="rounded border px-2 py-0.5 text-[11px] font-semibold tabular-nums transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  :class="maxEnviosMes === f
+                    ? 'border-fuchsia-500 bg-fuchsia-50 dark:bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'"
+                >
+                  {{ fmtMil.format(f) }}
+                </button>
+              </div>
+            </div>
+          </div>
+          <!-- Delivery: card à parte, mesmo padrão de add-on pago dos Disparos. -->
+          <div class="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 px-3 py-2.5">
+            <div class="flex items-center justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 flex-wrap">
+                  <i class="fa-solid fa-motorcycle text-orange-500 text-[10px]" aria-hidden="true" />
+                  Delivery
+                  <span class="px-1.5 py-px rounded-full bg-orange-100 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300 text-[9px] font-bold uppercase tracking-wide">Add-on</span>
+                </p>
+                <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
+                  Cardápio, pedidos e pizza com múltiplos sabores. Módulo pago, nasce bloqueado.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                :aria-checked="delivery"
+                :aria-label="`${delivery ? 'Bloquear' : 'Liberar'} módulo de Delivery`"
+                @click="delivery = !delivery"
+                class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+                :class="delivery ? 'bg-orange-500' : 'bg-slate-300 dark:bg-slate-700'"
+              >
+                <span
+                  class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
+                  :class="delivery ? 'translate-x-[18px]' : 'translate-x-0.5'"
+                />
+              </button>
+            </div>
+
+            <!-- Cota de pedidos/mês: soma WhatsApp + site (mesma função de
+                 criação nos dois canais). 0 = sem limite. Só com o gate ligado. -->
+            <div v-if="delivery" class="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <label for="max-pedidos-mes" class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <i class="fa-solid fa-cart-shopping text-orange-500 text-[10px]" aria-hidden="true" />
+                    Pedidos por mês
+                  </label>
+                  <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
+                    Teto de pedidos (WhatsApp + site somados) por mês. 0 = sem limite.
+                  </p>
+                </div>
+                <div class="shrink-0 text-center">
+                  <input
+                    id="max-pedidos-mes"
+                    v-model.number="maxPedidosMes"
+                    type="number"
+                    :min="0"
+                    :max="200000"
+                    required
+                    class="w-24 px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-[13px] text-slate-900 dark:text-white tabular-nums text-center font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                  <span class="block text-[9px] uppercase tracking-wide text-slate-400 dark:text-slate-600 mt-0.5">pedidos/mês</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <template v-else>
+          <!-- Limites: moram aqui (e não em "Canais WhatsApp") porque na venda são
+               negociados junto dos módulos. 2 colunas, mesma pegada dos gates. -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div
+              v-for="l in LIMITES"
+              :key="l.key"
+              class="flex items-center justify-between gap-3 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 px-3 py-2.5"
+            >
+              <div class="min-w-0 flex-1">
+                <label :for="`max-${l.key}`" class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <i :class="['fa-solid', l.icon, l.iconCls, 'text-[10px]']" aria-hidden="true" />
+                  {{ l.label }}
+                </label>
+                <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
+                  <template v-if="l.emUso.value !== null">
+                    Em uso: <span class="tabular-nums font-semibold text-slate-600 dark:text-slate-400">{{ l.emUso.value }}</span> ·
+                  </template>
+                  {{ l.ajuda }}
+                </p>
+              </div>
               <input
-                id="max-pedidos-mes"
-                v-model.number="maxPedidosMes"
+                :id="`max-${l.key}`"
+                v-model.number="l.modelo.value"
                 type="number"
-                :min="0"
-                :max="200000"
+                :min="l.min"
+                :max="l.max"
                 required
-                class="w-24 px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-[13px] text-slate-900 dark:text-white tabular-nums text-center font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
+                class="w-20 px-2 py-1.5 bg-white dark:bg-slate-900 border rounded text-[13px] text-slate-900 dark:text-white tabular-nums text-center font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
+                :class="l.alerta.value ? 'border-amber-400 dark:border-amber-500' : 'border-slate-200 dark:border-slate-700'"
               />
-              <span class="block text-[9px] uppercase tracking-wide text-slate-400 dark:text-slate-600 mt-0.5">pedidos/mês</span>
             </div>
           </div>
-        </div>
+
+          <p v-if="profAbaixoDoUso" class="text-[11px] leading-snug text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
+            <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true" />
+            <span>Abaixo dos {{ profissionaisEmUso }} profissionais já cadastrados. Ninguém é removido, mas a empresa não poderá cadastrar novos até ficar dentro do limite.</span>
+          </p>
+
+          <p v-if="produtosVitrineAbaixoDoUso" class="text-[11px] leading-snug text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
+            <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true" />
+            <span>Abaixo dos {{ produtosVitrineEmUso }} produtos já cadastrados na Vitrine. Nenhum é removido, mas a empresa não poderá cadastrar novos até ficar dentro do limite.</span>
+          </p>
+
+          <p v-if="clientesAbaixoDoUso" class="text-[11px] leading-snug text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
+            <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true" />
+            <span>Abaixo dos {{ clientesEmUso }} clientes já cadastrados. Nada é removido, mas a empresa não poderá cadastrar novos na mão até ficar dentro do limite.</span>
+          </p>
+          <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 flex items-start gap-1.5">
+            <i class="fa-solid fa-comment-dots mt-0.5" aria-hidden="true" />
+            <span>O limite de clientes vale só para cadastro manual. Contato que chega sozinho por mensagem no WhatsApp nunca é bloqueado.</span>
+          </p>
+        </template>
       </div>
-
-      <!-- Limites: moram aqui (e não em "Canais WhatsApp") porque na venda são
-           negociados junto dos módulos. 2 colunas, mesma pegada dos gates. -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <div
-          v-for="l in LIMITES"
-          :key="l.key"
-          class="flex items-center justify-between gap-3 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 px-3 py-2.5"
-        >
-          <div class="min-w-0 flex-1">
-            <label :for="`max-${l.key}`" class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-              <i :class="['fa-solid', l.icon, l.iconCls, 'text-[10px]']" aria-hidden="true" />
-              {{ l.label }}
-            </label>
-            <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
-              <template v-if="l.emUso.value !== null">
-                Em uso: <span class="tabular-nums font-semibold text-slate-600 dark:text-slate-400">{{ l.emUso.value }}</span> ·
-              </template>
-              {{ l.ajuda }}
-            </p>
-          </div>
-          <input
-            :id="`max-${l.key}`"
-            v-model.number="l.modelo.value"
-            type="number"
-            :min="l.min"
-            :max="l.max"
-            required
-            class="w-20 px-2 py-1.5 bg-white dark:bg-slate-900 border rounded text-[13px] text-slate-900 dark:text-white tabular-nums text-center font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
-            :class="l.alerta.value ? 'border-amber-400 dark:border-amber-500' : 'border-slate-200 dark:border-slate-700'"
-          />
-        </div>
-      </div>
-
-      <p v-if="profAbaixoDoUso" class="text-[11px] leading-snug text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
-        <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true" />
-        <span>Abaixo dos {{ profissionaisEmUso }} profissionais já cadastrados. Ninguém é removido, mas a empresa não poderá cadastrar novos até ficar dentro do limite.</span>
-      </p>
-
-      <p v-if="produtosVitrineAbaixoDoUso" class="text-[11px] leading-snug text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
-        <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true" />
-        <span>Abaixo dos {{ produtosVitrineEmUso }} produtos já cadastrados na Vitrine. Nenhum é removido, mas a empresa não poderá cadastrar novos até ficar dentro do limite.</span>
-      </p>
-
-      <p v-if="clientesAbaixoDoUso" class="text-[11px] leading-snug text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
-        <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true" />
-        <span>Abaixo dos {{ clientesEmUso }} clientes já cadastrados. Nada é removido, mas a empresa não poderá cadastrar novos na mão até ficar dentro do limite.</span>
-      </p>
-
-      <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 flex items-start gap-1.5">
-        <i class="fa-solid fa-circle-info mt-0.5" aria-hidden="true" />
-        <span>Ao desabilitar, o item continua visível no app com um cadeado e o clique convida a contratar. Pode reabilitar a qualquer momento.</span>
-      </p>
-
-      <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 flex items-start gap-1.5">
-        <i class="fa-solid fa-comment-dots mt-0.5" aria-hidden="true" />
-        <span>O limite de clientes vale só para cadastro manual. Contato que chega sozinho por mensagem no WhatsApp nunca é bloqueado.</span>
-      </p>
 
       <div class="flex gap-2 pt-1">
         <button

@@ -16,13 +16,14 @@ const emit = defineEmits<{
   'tornar-parceiro': [clienteId: string]
   modulos: [clienteId: string]
   'ver-uso': [clienteId: string]
+  'saldo-indicacao': [clienteId: string]
 }>()
 
 // Menu de ações (bottom sheet no mobile, painel central no desktop)
 const menuCliente = ref<AdminCliente | null>(null)
 function openMenu(c: AdminCliente) { menuCliente.value = c }
 function closeMenu() { menuCliente.value = null }
-function emitAction(action: 'editar' | 'limite-instancias' | 'renovar' | 'desativar' | 'reativar' | 'excluir' | 'atribuir-parceiro' | 'remover-parceiro' | 'tornar-parceiro' | 'modulos', id: string) {
+function emitAction(action: 'editar' | 'limite-instancias' | 'renovar' | 'desativar' | 'reativar' | 'excluir' | 'atribuir-parceiro' | 'remover-parceiro' | 'tornar-parceiro' | 'modulos' | 'saldo-indicacao', id: string) {
   emit(action as any, id)
   closeMenu()
 }
@@ -363,6 +364,13 @@ function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: str
                     <span class="min-w-0">
                       <span class="block text-sm font-semibold text-slate-800 dark:text-slate-200">Renovar assinatura</span>
                       <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">{{ diasRestantesText(menuCliente) }}</span>
+                    </span>
+                  </button>
+                  <button type="button" @click="emitAction('saldo-indicacao', menuCliente.id)" class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-purple-300 dark:hover:border-purple-500/40 hover:bg-purple-50/40 dark:hover:bg-purple-500/5">
+                    <span class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"><i class="fa-solid fa-gift" aria-hidden="true" /></span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-semibold text-slate-800 dark:text-slate-200">Saldo de indicação</span>
+                      <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">Ver e usar em desconto ou serviço</span>
                     </span>
                   </button>
                   <button type="button" @click="emitAction('limite-instancias', menuCliente.id)" class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-purple-300 dark:hover:border-purple-500/40 hover:bg-purple-50/40 dark:hover:bg-purple-500/5">

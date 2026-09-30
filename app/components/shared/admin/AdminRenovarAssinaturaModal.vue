@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch, computed } from 'vue'
 
-defineProps<{ show: boolean; clienteNome: string }>()
+const props = defineProps<{ show: boolean; clienteNome: string; clienteId?: string | null; precoMensal?: number | null; precoAnual?: number | null }>()
 const emit = defineEmits<{
   close: []
-  confirm: [plan: string, period: string]
+  // abater = quanto do saldo de indicação foi usado nesta renovação (0 = nada)
+  confirm: [plan: string, period: string, abater: number]
 }>()
 
 const periodPlanMap: Record<string, { plan: string; label: string }> = {
@@ -20,9 +21,37 @@ const periodPlanMap: Record<string, { plan: string; label: string }> = {
 
 const selected = ref<string>('1month')
 
+// Saldo de indicação disponível (cliente de Pix): dá pra abater aqui na
+// renovação — o painel registra o uso e você cobra só a diferença.
+const saldoDisponivel = ref(0)
+const usarSaldo = ref(false)
+const valorAbater = ref<number | null>(null)
+watch(() => [props.show, props.clienteId], async ([s]) => {
+  saldoDisponivel.value = 0
+  usarSaldo.value = false
+  if (!s || !props.clienteId) return
+  try {
+    const r = await $fetch<{ disponivel: number }>('/api/admin/indicacao-saldo', { query: { empresaId: props.clienteId }, headers: await useAdminAuthHeaders() })
+    saldoDisponivel.value = r.disponivel || 0
+    usarSaldo.value = saldoDisponivel.value > 0
+  } catch { saldoDisponivel.value = 0 }
+}, { immediate: true })
+const precoPeriodo = computed(() => {
+  if (selected.value === '1month') return Number(props.precoMensal || 0)
+  if (selected.value === '6months' || selected.value === '12months') return Number(props.precoAnual || 0)
+  return 0
+})
+watch([saldoDisponivel, () => selected.value], () => {
+  valorAbater.value = precoPeriodo.value > 0 ? Math.min(saldoDisponivel.value, precoPeriodo.value) : saldoDisponivel.value
+})
+function brl(v: number) { return (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
+
 function handleSubmit() {
   const { plan } = periodPlanMap[selected.value] || { plan: 'basic' }
-  emit('confirm', plan, selected.value)
+  const abater = !selected.value.startsWith('trial') && usarSaldo.value && valorAbater.value
+    ? Math.min(Math.round(Number(valorAbater.value) * 100) / 100, saldoDisponivel.value)
+    : 0
+  emit('confirm', plan, selected.value, abater > 0 ? abater : 0)
 }
 </script>
 
@@ -46,6 +75,17 @@ function handleSubmit() {
             <input v-model="selected" type="radio" :value="key" class="text-purple-600" />
             <span class="text-sm font-medium text-slate-900 dark:text-white">{{ p.label }}</span>
           </label>
+        </div>
+      </div>
+      <div v-if="saldoDisponivel > 0 && !selected.startsWith('trial')" class="rounded-lg border border-emerald-300 dark:border-emerald-500/40 bg-emerald-50 dark:bg-emerald-500/10 px-4 py-3 space-y-2">
+        <label class="flex items-center gap-2 text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+          <input v-model="usarSaldo" type="checkbox" class="text-emerald-600" />
+          Abater o saldo de indicação ({{ brl(saldoDisponivel) }} disponível)
+        </label>
+        <div v-if="usarSaldo" class="flex items-center gap-2 text-sm">
+          <span class="text-emerald-800 dark:text-emerald-300">Abater</span>
+          <input v-model.number="valorAbater" type="number" min="0.01" step="0.01" :max="saldoDisponivel" class="w-28 px-2 py-1.5 rounded-md border border-emerald-300 dark:border-emerald-500/40 bg-white dark:bg-slate-900 text-sm" />
+          <span v-if="precoPeriodo > 0" class="text-xs text-emerald-800 dark:text-emerald-300">→ cobrar {{ brl(Math.max(0, precoPeriodo - (valorAbater || 0))) }} de {{ brl(precoPeriodo) }}</span>
         </div>
       </div>
       <div class="flex gap-2 pt-2">

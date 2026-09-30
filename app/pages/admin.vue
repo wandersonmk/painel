@@ -20,6 +20,14 @@ onMounted(async () => {
 })
 
 const showRenovarModal = ref(false)
+// Saldo de indicação (ver/usar em desconto ou serviço)
+const showSaldoIndicacao = ref(false)
+const clienteSaldoIndicacao = ref<{ id: string; nome: string } | null>(null)
+function handleSaldoIndicacao(id: string) {
+  const c = clientes.value.find(x => x.id === id)
+  if (c) { clienteSaldoIndicacao.value = { id: c.id, nome: c.nome }; showSaldoIndicacao.value = true }
+}
+const clienteRenovar = computed(() => clientes.value.find(x => x.id === selectedCliente.value?.id) || null)
 const showExcluirModal = ref(false)
 const showEditarModal = ref(false)
 const showDesativarModal = ref(false)
@@ -208,11 +216,24 @@ function handleRenovar(id: string) {
   const c = clientes.value.find(x => x.id === id)
   if (c) { selectedCliente.value = { id: c.id, nome: c.nome }; showRenovarModal.value = true }
 }
-async function confirmRenovar(plan: string, period: string) {
+async function confirmRenovar(plan: string, period: string, abater = 0) {
   if (!selectedCliente.value) return
   try {
     await renovarAssinatura(selectedCliente.value.id, plan as any, period as any)
-    toast?.success('Assinatura renovada')
+    if (abater > 0) {
+      // Desconto do saldo de indicação nesta renovação (cliente de Pix)
+      try {
+        await $fetch('/api/admin/indicacao-usar-saldo', {
+          method: 'POST', headers: await useAdminAuthHeaders(),
+          body: { empresaId: selectedCliente.value.id, valor: abater, descricao: `Desconto na renovação (${period}) de ${new Date().toLocaleDateString('pt-BR')}` },
+        })
+        toast?.success(`Assinatura renovada · ${abater.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} de saldo de indicação abatido`)
+      } catch (e: any) {
+        toast?.error(`Renovada, mas não registrei o desconto da indicação: ${e?.data?.statusMessage || 'erro'}`)
+      }
+    } else {
+      toast?.success('Assinatura renovada')
+    }
   } catch { toast?.error('Erro ao renovar assinatura') }
   showRenovarModal.value = false
   selectedCliente.value = null
@@ -636,6 +657,7 @@ function abrirModulosDeUso(id: string) {
           @tornar-parceiro="handleTornarParceiro"
           @modulos="handleModulos"
           @ver-uso="handleVerUso"
+          @saldo-indicacao="handleSaldoIndicacao"
         />
       </template>
 
@@ -649,6 +671,9 @@ function abrirModulosDeUso(id: string) {
       <AdminRenovarAssinaturaModal
         :show="showRenovarModal"
         :cliente-nome="selectedCliente?.nome || ''"
+        :cliente-id="selectedCliente?.id || null"
+        :preco-mensal="clienteRenovar?.subscription_price ?? null"
+        :preco-anual="clienteRenovar?.subscription_price_anual ?? null"
         @close="showRenovarModal = false; selectedCliente = null"
         @confirm="confirmRenovar"
       />
@@ -747,6 +772,14 @@ function abrirModulosDeUso(id: string) {
         :vitrine-atual="clienteModulos?.vitrine_habilitada ?? true"
         @close="showModulosModal = false; clienteModulos = null"
         @confirm="confirmModulos"
+      />
+
+      <AdminSaldoIndicacaoModal
+        :show="showSaldoIndicacao"
+        :cliente-id="clienteSaldoIndicacao?.id || null"
+        :cliente-nome="clienteSaldoIndicacao?.nome || ''"
+        @close="showSaldoIndicacao = false; clienteSaldoIndicacao = null"
+        @usado="(v) => toast?.success(`Uso de ${v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} registrado`)"
       />
 
       <AdminUsoEmpresaModal

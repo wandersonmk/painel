@@ -62,6 +62,10 @@ export interface AdminCliente {
   max_produtos_vitrine?: number
   // Gate da Vitrine ("Produtos" no app). Ausente = true (permissivo).
   vitrine_habilitada?: boolean
+  // Imóveis é add-on pago (01/10/2026): ausente = false (bloqueado).
+  imoveis_modulo_ativo?: boolean
+  // Limite de imóveis cadastrados. Padrão 100, 0 = sem limite.
+  max_imoveis?: number
 }
 
 export interface AdminStats {

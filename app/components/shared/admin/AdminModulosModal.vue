@@ -24,6 +24,8 @@ export interface ModulosEmpresa {
   maxPedidosMes: number
   maxProdutosVitrine: number
   vitrineHabilitada: boolean
+  imoveisModuloAtivo: boolean
+  maxImoveis: number
 }
 
 const props = defineProps<{
@@ -46,6 +48,8 @@ const props = defineProps<{
   maxPedidosMesAtual: number
   maxProdutosVitrineAtual: number
   vitrineAtual?: boolean
+  imoveisAtual?: boolean
+  maxImoveisAtual?: number
 }>()
 
 // Abas (pedido do dono, 28/09/2026): o modal empilhava tudo e precisava rolar.
@@ -78,6 +82,10 @@ const maxPedidosMes = ref(0)
 const maxProdutosVitrine = ref(0)
 // Gate da Vitrine (28/09/2026): comum, nasce ligado — igual Webhooks.
 const vitrine = ref(true)
+// Imóveis (01/10/2026): add-on pago, mesmo padrão de Delivery — nasce desligado.
+const imoveis = ref(false)
+// Limite de imóveis cadastrados. Padrão 100, 0 = sem limite.
+const maxImoveis = ref(100)
 
 // Faixas usuais na venda, viram só atalhos: o teto de fato é digitável (como
 // profissionais/clientes), pra caber contrato fora das três faixas. Valor em R$
@@ -94,12 +102,14 @@ const fmtMil = new Intl.NumberFormat('pt-BR')
 const profissionaisEmUso = ref<number | null>(null)
 const clientesEmUso = ref<number | null>(null)
 const produtosVitrineEmUso = ref<number | null>(null)
+const imoveisEmUso = ref<number | null>(null)
 
 watch(() => props.show, async (open) => {
   if (!open) {
     profissionaisEmUso.value = null
     clientesEmUso.value = null
     produtosVitrineEmUso.value = null
+    imoveisEmUso.value = null
     return
   }
   roteamento.value = props.roteamentoAtual
@@ -118,21 +128,25 @@ watch(() => props.show, async (open) => {
   maxPedidosMes.value = props.maxPedidosMesAtual ?? 0
   maxProdutosVitrine.value = props.maxProdutosVitrineAtual ?? 0
   vitrine.value = props.vitrineAtual ?? true
+  imoveis.value = props.imoveisAtual ?? false
+  maxImoveis.value = props.maxImoveisAtual ?? 100
   aba.value = 'modulos'
 
   if (!props.clienteId) return
   try {
-    const resp = await $fetch<{ success: boolean; data?: { profissionais: number; clientes: number; produtosVitrine?: number } }>('/api/admin/empresa-uso', {
+    const resp = await $fetch<{ success: boolean; data?: { profissionais: number; clientes: number; produtosVitrine?: number; imoveis?: number } }>('/api/admin/empresa-uso', {
       query: { empresaId: props.clienteId },
       headers: await useAdminAuthHeaders(),
     })
     profissionaisEmUso.value = resp.success && resp.data ? (resp.data.profissionais ?? null) : null
     clientesEmUso.value = resp.success && resp.data ? (resp.data.clientes ?? null) : null
     produtosVitrineEmUso.value = resp.success && resp.data ? (resp.data.produtosVitrine ?? null) : null
+    imoveisEmUso.value = resp.success && resp.data ? (resp.data.imoveis ?? null) : null
   } catch {
     profissionaisEmUso.value = null
     clientesEmUso.value = null
     produtosVitrineEmUso.value = null
+    imoveisEmUso.value = null
   }
 })
 
@@ -145,6 +159,10 @@ const clientesAbaixoDoUso = computed(() =>
 // 0 = sem limite, então só alerta com teto de verdade abaixo do que já existe.
 const produtosVitrineAbaixoDoUso = computed(() =>
   produtosVitrineEmUso.value !== null && maxProdutosVitrine.value > 0 && maxProdutosVitrine.value < produtosVitrineEmUso.value
+)
+// Mesma regra (0 = sem limite) pros imóveis.
+const imoveisAbaixoDoUso = computed(() =>
+  imoveisEmUso.value !== null && maxImoveis.value > 0 && maxImoveis.value < imoveisEmUso.value
 )
 
 const MODULOS = [
@@ -203,9 +221,10 @@ const valores = {
 }
 
 // Selo nas abas: quantos add-ons ligados / limite abaixo do uso atual.
-const addonsLigados = computed(() => Number(roteamento.value) + Number(envios.value) + Number(delivery.value))
+const addonsLigados = computed(() =>
+  Number(roteamento.value) + Number(envios.value) + Number(delivery.value) + Number(imoveis.value))
 const algumLimiteAbaixo = computed(() =>
-  profAbaixoDoUso.value || clientesAbaixoDoUso.value || produtosVitrineAbaixoDoUso.value)
+  profAbaixoDoUso.value || clientesAbaixoDoUso.value || produtosVitrineAbaixoDoUso.value || imoveisAbaixoDoUso.value)
 
 // Limites numéricos, na mesma lista pra não duplicar markup
 const LIMITES = [
@@ -269,6 +288,18 @@ const LIMITES = [
     max: 100000,
     ajuda: 'Quantos produtos pode cadastrar em "Produtos" (0 = sem limite)',
   },
+  {
+    key: 'imoveis' as const,
+    modelo: maxImoveis,
+    emUso: imoveisEmUso,
+    alerta: imoveisAbaixoDoUso,
+    label: 'Imóveis',
+    icon: 'fa-house',
+    iconCls: 'text-sky-500',
+    min: 0,
+    max: 100000,
+    ajuda: 'Quantos imóveis pode cadastrar (padrão 100, 0 = sem limite)',
+  },
 ]
 
 // Ligar o add-on já preenche a faixa padrão (nunca "ligado sem teto"); desligar
@@ -318,6 +349,8 @@ function submeter() {
     maxPedidosMes: delivery.value ? pedidosMesValido() : 0,
     maxProdutosVitrine: produtosVitrineValido(),
     vitrineHabilitada: vitrine.value,
+    imoveisModuloAtivo: imoveis.value,
+    maxImoveis: imoveisValido(),
   })
 }
 
@@ -325,6 +358,13 @@ function submeter() {
 // Campo livre (0 = sem limite): fora da faixa cai em 0, nunca manda lixo.
 function produtosVitrineValido() {
   const n = Math.trunc(Number(maxProdutosVitrine.value))
+  if (!Number.isFinite(n) || n < 0) return 0
+  return Math.min(n, 100_000)
+}
+
+// Mesmo tratamento (0 = sem limite) pro limite de imóveis.
+function imoveisValido() {
+  const n = Math.trunc(Number(maxImoveis.value))
   if (!Number.isFinite(n) || n < 0) return 0
   return Math.min(n, 100_000)
 }
@@ -578,6 +618,37 @@ function pedidosMesValido() {
               </div>
             </div>
           </div>
+
+          <!-- Imóveis (01/10/2026): add-on pago, mesmo padrão do Delivery.
+               O limite de imóveis fica na aba Limites (0 = sem limite). -->
+          <div class="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 px-3 py-2.5">
+            <div class="flex items-center justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 flex-wrap">
+                  <i class="fa-solid fa-house text-sky-500 text-[10px]" aria-hidden="true" />
+                  Imóveis
+                  <span class="px-1.5 py-px rounded-full bg-sky-100 dark:bg-sky-500/15 text-sky-700 dark:text-sky-300 text-[9px] font-bold uppercase tracking-wide">Add-on</span>
+                </p>
+                <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
+                  Cadastro de imóveis, página da imobiliária com filtros por cidade e bairro, e IA que qualifica o lead e passa pro corretor. Módulo pago, nasce bloqueado.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                :aria-checked="imoveis"
+                :aria-label="`${imoveis ? 'Bloquear' : 'Liberar'} módulo de Imóveis`"
+                @click="imoveis = !imoveis"
+                class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+                :class="imoveis ? 'bg-sky-500' : 'bg-slate-300 dark:bg-slate-700'"
+              >
+                <span
+                  class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
+                  :class="imoveis ? 'translate-x-[18px]' : 'translate-x-0.5'"
+                />
+              </button>
+            </div>
+          </div>
         </template>
 
         <template v-else>
@@ -622,6 +693,11 @@ function pedidosMesValido() {
           <p v-if="produtosVitrineAbaixoDoUso" class="text-[11px] leading-snug text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
             <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true" />
             <span>Abaixo dos {{ produtosVitrineEmUso }} produtos já cadastrados na Vitrine. Nenhum é removido, mas a empresa não poderá cadastrar novos até ficar dentro do limite.</span>
+          </p>
+
+          <p v-if="imoveisAbaixoDoUso" class="text-[11px] leading-snug text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
+            <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true" />
+            <span>Abaixo dos {{ imoveisEmUso }} imóveis já cadastrados. Nenhum é removido, mas a empresa não poderá cadastrar novos até ficar dentro do limite.</span>
           </p>
 
           <p v-if="clientesAbaixoDoUso" class="text-[11px] leading-snug text-amber-600 dark:text-amber-400 flex items-start gap-1.5">

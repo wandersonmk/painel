@@ -18,6 +18,7 @@ export default defineEventHandler(async (event) => {
   const [
     agentesResp, webhooksResp, webhooksSaidaResp, profissionaisResp, clientesResp,
     instanciasResp, macrosResp, enviosResp, pedidosResp, produtosVitrineResp,
+    imoveisResp,
   ] = await Promise.all([
     supabase.from('agente_configuracoes').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId),
     supabase.from('webhooks_entrada').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId),
@@ -42,6 +43,12 @@ export default defineEventHandler(async (event) => {
     // Produtos da Vitrine (ativos e inativos) — o mesmo que o app conta pra
     // empresas.max_produtos_vitrine (POST /api/vitrine/produtos no app).
     supabase.from('vitrine_produtos').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId),
+    // Imóveis (todos, inativos inclusos) — o mesmo que POST /api/imoveis do app
+    // conta pra empresas.max_imoveis. Tolerante: se a tabela ainda não existir
+    // (migration do módulo não aplicada), o PostgREST devolve erro com count
+    // null e cai em 0; o catch cobre falha de rede pra não derrubar o resto.
+    supabase.from('imoveis').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId)
+      .then(r => r, () => ({ count: null })),
   ])
 
   return {
@@ -57,6 +64,7 @@ export default defineEventHandler(async (event) => {
       enviosMes: enviosResp.count ?? 0,
       pedidosMes: pedidosResp.count ?? 0,
       produtosVitrine: produtosVitrineResp.count ?? 0,
+      imoveis: imoveisResp.count ?? 0,
     },
   }
 })

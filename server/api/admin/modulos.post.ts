@@ -4,8 +4,9 @@ import { requireSuperAdmin, getServiceClient } from '~~/server/utils/requireSupe
 //
 // Todos os campos são opcionais: o body só carrega o que mudou, e quem não é
 // informado fica como está. Os gates nascem TRUE no banco — exceto os add-ons
-// pagos (envios_habilitado, delivery_modulo_ativo e, desde 28/09/2026,
-// roteamento_habilitado), que nascem FALSE (só liberados após contratação).
+// pagos (envios_habilitado, delivery_modulo_ativo, desde 28/09/2026
+// roteamento_habilitado e, desde 01/10/2026, imoveis_modulo_ativo), que nascem
+// FALSE (só liberados após contratação).
 
 // key do body -> coluna em `empresas`
 const FLAGS: Record<string, string> = {
@@ -18,6 +19,8 @@ const FLAGS: Record<string, string> = {
   enviosHabilitado: 'envios_habilitado',
   // Add-on pago, mesmo padrão de enviosHabilitado: nasce FALSE no banco.
   deliveryModuloAtivo: 'delivery_modulo_ativo',
+  // Imóveis (01/10/2026): add-on pago, mesmo padrão de Delivery — nasce FALSE.
+  imoveisModuloAtivo: 'imoveis_modulo_ativo',
   // Vitrine ("Produtos" no app): gate comum, nasce TRUE (28/09/2026).
   vitrineHabilitada: 'vitrine_habilitada',
 }
@@ -61,6 +64,9 @@ export default defineEventHandler(async (event) => {
     // Espelha o CHECK de empresas.max_produtos_vitrine; quem trava de fato é
     // POST /api/vitrine/produtos no app.
     maxProdutosVitrine: { coluna: 'max_produtos_vitrine', min: 0, max: 100_000 },
+    // Imóveis cadastrados (módulo Imóveis no app). 0 = sem limite, padrão 100.
+    // Quem trava de fato é POST /api/imoveis no app (conta todos, inativos inclusos).
+    maxImoveis: { coluna: 'max_imoveis', min: 0, max: 100_000 },
   }
 
   for (const [campo, regra] of Object.entries(LIMITES)) {

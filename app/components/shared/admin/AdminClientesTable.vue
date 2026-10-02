@@ -61,11 +61,13 @@ function resumoModulos(c: AdminCliente) {
     c.api_assistente_habilitada, c.webhooks_habilitado, c.documentacao_habilitada, c.vitrine_habilitada,
   ]
   const desligados = gates.filter(v => v === false).length
-  // Roteamento é add-on pago desde 28/09/2026 (junto de Disparos e Delivery).
+  // Roteamento é add-on pago desde 28/09/2026 (junto de Disparos e Delivery);
+  // Imóveis entrou como add-on pago em 01/10/2026.
   const addons = [
     c.roteamento_habilitado === true ? 'Roteamento' : '',
     c.envios_habilitado ? 'Disparos' : '',
     c.delivery_modulo_ativo ? 'Delivery' : '',
+    c.imoveis_modulo_ativo === true ? 'Imóveis' : '',
   ].filter(Boolean)
   return { desligados, addons }
 }

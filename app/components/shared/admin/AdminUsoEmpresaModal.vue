@@ -39,6 +39,7 @@ interface Uso {
   enviosMes: number
   pedidosMes: number
   produtosVitrine?: number
+  imoveis?: number
 }
 
 const uso = ref<Uso | null>(null)
@@ -102,6 +103,11 @@ const metricas = computed<Metrica[]>(() => {
   }
   if (c.delivery_modulo_ativo) {
     lista.push({ key: 'pedidos', label: 'Pedidos Delivery (mês)', icon: 'fa-motorcycle', iconCls: 'text-orange-500', usado: u.pedidosMes, max: c.max_pedidos_mes ?? 0, semLimiteQuando0: true })
+  }
+  // Imóveis: add-on pago (01/10/2026), mesmo critério — só com o módulo ligado.
+  // Padrão 100, 0 = sem limite.
+  if (c.imoveis_modulo_ativo) {
+    lista.push({ key: 'imoveis', label: 'Imóveis', icon: 'fa-house', iconCls: 'text-sky-500', usado: u.imoveis ?? 0, max: c.max_imoveis ?? 100, semLimiteQuando0: true })
   }
 
   return lista

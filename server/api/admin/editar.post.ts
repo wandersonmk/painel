@@ -33,9 +33,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Preço anual inválido' })
   }
   // Limpar/zerar restaura o preço padrão em vez de deixar o app sem anual.
+  // Padrão = default da coluna empresas.subscription_price_anual (R$ 2.897 desde 05/10/2026).
   const precoAnual = precoAnualRecebido != null && precoAnualRecebido > 0
     ? Number(precoAnualRecebido.toFixed(2))
-    : 2299
+    : 2897
 
   const supabase = getServiceClient()
   const { error } = await supabase

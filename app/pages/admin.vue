@@ -27,6 +27,25 @@ function handleSaldoIndicacao(id: string) {
   const c = clientes.value.find(x => x.id === id)
   if (c) { clienteSaldoIndicacao.value = { id: c.id, nome: c.nome }; showSaldoIndicacao.value = true }
 }
+// Quem indicou este cliente (badge "Indicação de …"): ver e remover
+const showIndicacaoVinculo = ref(false)
+const clienteIndicacaoVinculo = ref<{ id: string; nome: string } | null>(null)
+function handleVerIndicacao(id: string) {
+  const c = clientes.value.find(x => x.id === id)
+  if (!c) return
+  showUsoModal.value = false
+  clienteIndicacaoVinculo.value = { id: c.id, nome: c.nome }
+  showIndicacaoVinculo.value = true
+}
+async function onIndicacaoRemovida(r: { mesesCancelados: number; valorCancelado: number; indicadora: string }) {
+  showIndicacaoVinculo.value = false
+  clienteIndicacaoVinculo.value = null
+  const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+  toast?.success(r.mesesCancelados > 0
+    ? `Indicação de ${r.indicadora} removida. ${r.mesesCancelados} ${r.mesesCancelados === 1 ? 'mês cancelado' : 'meses cancelados'} (${brl(r.valorCancelado)}).`
+    : `Indicação de ${r.indicadora} removida.`)
+  await loadClientes()
+}
 const clienteRenovar = computed(() => clientes.value.find(x => x.id === selectedCliente.value?.id) || null)
 const showExcluirModal = ref(false)
 const showEditarModal = ref(false)
@@ -667,6 +686,7 @@ function abrirModulosDeUso(id: string) {
           @modulos="handleModulos"
           @ver-uso="handleVerUso"
           @saldo-indicacao="handleSaldoIndicacao"
+          @ver-indicacao="handleVerIndicacao"
         />
       </template>
 
@@ -798,6 +818,15 @@ function abrirModulosDeUso(id: string) {
         :cliente="clienteUso"
         @close="showUsoModal = false; clienteUso = null"
         @editar-modulos="abrirModulosDeUso"
+        @ver-indicacao="handleVerIndicacao"
+      />
+
+      <AdminIndicacaoVinculoModal
+        :show="showIndicacaoVinculo"
+        :cliente-id="clienteIndicacaoVinculo?.id || null"
+        :cliente-nome="clienteIndicacaoVinculo?.nome || ''"
+        @close="showIndicacaoVinculo = false; clienteIndicacaoVinculo = null"
+        @removida="onIndicacaoRemovida"
       />
     </div>
   </div>

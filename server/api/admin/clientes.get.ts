@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   try {
     const { data: empresas, error } = await supabase
       .from('empresas')
-      .select('id, nome, nome_cliente, email, whatsapp, subscription_status, subscription_plan, subscription_period, trial_ends_at, subscription_renews_at, subscription_price, subscription_price_anual, ativo, created_at, auth_user_id, max_instancias, max_agentes, max_webhooks_entrada, max_webhooks_saida, max_profissionais, max_clientes, cancel_at_period_end, roteamento_habilitado, agendamentos_habilitado, pagina_agendamento_habilitada, api_assistente_habilitada, webhooks_habilitado, documentacao_habilitada, envios_habilitado, max_envios_mes, delivery_modulo_ativo, max_macros, max_acoes_macro, max_pedidos_mes, max_produtos_vitrine, vitrine_habilitada, imoveis_modulo_ativo, max_imoveis')
+      .select('id, nome, nome_cliente, email, whatsapp, subscription_status, subscription_plan, subscription_period, trial_ends_at, subscription_renews_at, subscription_price, subscription_price_anual, ativo, created_at, auth_user_id, max_instancias, max_agentes, max_webhooks_entrada, max_webhooks_saida, max_profissionais, max_clientes, cancel_at_period_end, roteamento_habilitado, agendamentos_habilitado, pagina_agendamento_habilitada, api_assistente_habilitada, webhooks_habilitado, documentacao_habilitada, envios_habilitado, max_envios_mes, delivery_modulo_ativo, max_macros, max_acoes_macro, max_pedidos_mes, max_produtos_vitrine, vitrine_habilitada, imoveis_modulo_ativo, max_imoveis, indicado_por_empresa_id')
       .order('created_at', { ascending: false })
     if (error) throw error
 
@@ -35,9 +35,14 @@ export default defineEventHandler(async (event) => {
       for (const u of (usuarios || []) as any[]) rolePorAuthId.set(u.auth_user_id, u.role)
     }
 
+    // Indicação cliente → cliente: quem indicou também é empresa desta lista,
+    // então resolve o nome sem query extra.
+    const empresaPorId = new Map<string, any>((empresas || []).map((e: any) => [e.id, e]))
+
     const clientesComRole = (empresas || []).map((emp) => {
       const userRole = emp.auth_user_id ? (rolePorAuthId.get(emp.auth_user_id) || 'user') : 'user'
       const vinculo = vinculoPorEmpresa.get(emp.id)
+      const indicadora = emp.indicado_por_empresa_id ? empresaPorId.get(emp.indicado_por_empresa_id) : null
       return {
         id: emp.id,
         nome: emp.nome,
@@ -93,6 +98,9 @@ export default defineEventHandler(async (event) => {
         // vínculo antigo é histórico, não situação atual do cliente.
         parceiro_bloqueio_origem: vinculo?.ativo ? (vinculo.bloqueio_origem ?? null) : null,
         parceiro_bloqueado_em: vinculo?.ativo ? (vinculo.bloqueado_em ?? null) : null,
+        indicado_por_empresa_id: emp.indicado_por_empresa_id ?? null,
+        indicado_por_nome: indicadora?.nome ?? null,
+        indicado_por_responsavel: indicadora?.nome_cliente?.trim() || null,
       }
     })
 

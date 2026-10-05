@@ -15,6 +15,8 @@ const emit = defineEmits<{
   close: []
   // Deixa abrir direto o modal de edição de módulos a partir daqui.
   editarModulos: [clienteId: string]
+  // Badge "Indicação de …": abre quem indicou / remover indicação.
+  verIndicacao: [clienteId: string]
 }>()
 
 const { formatDate, getPlanLabel, getDataVencimento, formatDiasVencimento } = useAdminClientes()
@@ -229,6 +231,17 @@ const dinheiro = (v: number | null) => (v == null ? 'Não definido' : mask(brl(v
         </div>
         <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">
           {{ getPlanLabel(cliente.subscription_plan) }} · {{ cobranca?.periodo }}<template v-if="cliente.parceiro_nome"> · via {{ cliente.parceiro_nome }}</template>
+        </p>
+        <p v-if="cliente.indicado_por_empresa_id" class="mt-1">
+          <button
+            type="button"
+            class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-pink-100 text-pink-700 hover:bg-pink-200 dark:bg-pink-500/15 dark:text-pink-400 dark:hover:bg-pink-500/25 transition-colors"
+            title="Ver quem indicou ou remover a indicação"
+            @click="emit('verIndicacao', cliente.id)"
+          >
+            <i class="fa-solid fa-gift" aria-hidden="true" />
+            Indicação de {{ cliente.indicado_por_responsavel ? `${cliente.indicado_por_responsavel} · ${cliente.indicado_por_nome || ''}` : (cliente.indicado_por_nome || 'cliente') }}
+          </button>
         </p>
       </div>
       <div v-if="cobranca" class="shrink-0 text-right">

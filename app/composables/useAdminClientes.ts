@@ -43,6 +43,11 @@ export interface AdminCliente {
   // 'parceiro' = bloqueio comercial do parceiro, 'admin' = desativação pela Agzap.
   parceiro_bloqueio_origem?: 'parceiro' | 'admin' | null
   parceiro_bloqueado_em?: string | null
+  // Indicação cliente → cliente (empresas.indicado_por_empresa_id): quem
+  // indicou ganha 10%/5% da própria mensalidade a cada mês pago por este.
+  indicado_por_empresa_id?: string | null
+  indicado_por_nome?: string | null
+  indicado_por_responsavel?: string | null
   // Gates de módulo do app (Painel Admin). Ausente = true (permissivo).
   // CRM Kanban não tem gate: fica sempre liberado.
   roteamento_habilitado?: boolean

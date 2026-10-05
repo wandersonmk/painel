@@ -8,8 +8,8 @@ const props = defineProps<{ show: boolean; clienteId: string | null; clienteNome
 const emit = defineEmits<{ close: []; usado: [valor: number] }>()
 
 interface Saldo {
-  disponivel: number; pendente: number; naFatura: number; utilizado: number
-  itens: { id: string; status: string; valor: number; tipo: string; indicada: string | null; liberarEm: string | null; liberadoEm: string | null; utilizadoEm: string | null; utilizadoDescricao: string | null }[]
+  disponivel: number; pendente: number; programado: number; naFatura: number; utilizado: number
+  itens: { id: string; status: string; valor: number; valorBase: number; percentual: number; parcela: number | null; parcelasTotal: number | null; tipo: string; indicada: string | null; liberarEm: string | null; liberadoEm: string | null; utilizadoEm: string | null; utilizadoDescricao: string | null }[]
 }
 const saldo = ref<Saldo | null>(null)
 const carregando = ref(false)
@@ -21,6 +21,15 @@ const salvando = ref(false)
 function brl(v: number) { return (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
 function data(iso: string | null) { return iso ? new Date(iso).toLocaleDateString('pt-BR') : '' }
 const ROTULO: Record<string, string> = { pendente_liberacao: 'Em carência', liberado: 'Disponível', creditado: 'Na fatura (Stripe)', utilizado: 'Utilizado' }
+function rotulo(i: Saldo['itens'][number]) {
+  if (i.status === 'pendente_liberacao' && Number(i.parcela || 1) > 1) return 'Programado'
+  return ROTULO[i.status] || i.status
+}
+function mes(i: Saldo['itens'][number]) {
+  const total = Number(i.parcelasTotal || 1)
+  if (total > 1) return `mês ${i.parcela}/${total}`
+  return i.tipo === 'primeira' ? '1ª mensalidade' : 'recorrente'
+}
 
 async function carregar() {
   if (!props.clienteId) return
@@ -73,13 +82,13 @@ async function usar() {
           <p class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Em carência</p>
           <p class="text-lg font-bold text-amber-600">{{ brl(saldo.pendente) }}</p>
         </div>
-        <div class="rounded-xl border border-slate-200 dark:border-slate-800 p-3" title="Já está no saldo do Stripe: desconta sozinho na próxima fatura do cartão">
-          <p class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Na fatura</p>
-          <p class="text-lg font-bold text-slate-800 dark:text-slate-200">{{ brl(saldo.naFatura) }}</p>
+        <div class="rounded-xl border border-slate-200 dark:border-slate-800 p-3" title="Meses seguintes do plano anual das indicadas: liberam um por mês, na data da renovação">
+          <p class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Próximos meses</p>
+          <p class="text-lg font-bold text-violet-600">{{ brl(saldo.programado) }}</p>
         </div>
-        <div class="rounded-xl border border-slate-200 dark:border-slate-800 p-3">
+        <div class="rounded-xl border border-slate-200 dark:border-slate-800 p-3" :title="saldo.naFatura > 0 ? `Inclui ${brl(saldo.naFatura)} que foram pro saldo do Stripe (regra antiga)` : ''">
           <p class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Utilizado</p>
-          <p class="text-lg font-bold text-sky-600">{{ brl(saldo.utilizado) }}</p>
+          <p class="text-lg font-bold text-sky-600">{{ brl(saldo.utilizado + saldo.naFatura) }}</p>
         </div>
       </div>
 
@@ -100,9 +109,9 @@ async function usar() {
       <div v-if="saldo.itens.length" class="rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-200 dark:divide-slate-800">
         <div v-for="i in saldo.itens" :key="i.id" class="flex items-center justify-between gap-3 px-3 py-2 text-xs">
           <div class="min-w-0">
-            <p class="font-semibold text-slate-800 dark:text-slate-200 truncate">{{ i.indicada || 'Indicada' }} · {{ i.tipo === 'primeira' ? '1ª mensalidade' : 'recorrente' }}</p>
+            <p class="font-semibold text-slate-800 dark:text-slate-200 truncate">{{ i.indicada || 'Indicada' }} · {{ mes(i) }}</p>
             <p class="text-slate-500 truncate">
-              {{ ROTULO[i.status] || i.status }}
+              {{ rotulo(i) }}<template v-if="i.valorBase > 0"> · {{ i.percentual }}% de {{ brl(i.valorBase) }}</template>
               <template v-if="i.status === 'pendente_liberacao' && i.liberarEm"> · libera em {{ data(i.liberarEm) }}</template>
               <template v-else-if="i.status === 'utilizado'"> · {{ data(i.utilizadoEm) }} · {{ i.utilizadoDescricao }}</template>
             </p>

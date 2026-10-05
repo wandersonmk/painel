@@ -17,13 +17,14 @@ const emit = defineEmits<{
   modulos: [clienteId: string]
   'ver-uso': [clienteId: string]
   'saldo-indicacao': [clienteId: string]
+  'ver-indicacao': [clienteId: string]
 }>()
 
 // Menu de ações (bottom sheet no mobile, painel central no desktop)
 const menuCliente = ref<AdminCliente | null>(null)
 function openMenu(c: AdminCliente) { menuCliente.value = c }
 function closeMenu() { menuCliente.value = null }
-function emitAction(action: 'editar' | 'limite-instancias' | 'renovar' | 'desativar' | 'reativar' | 'excluir' | 'atribuir-parceiro' | 'remover-parceiro' | 'tornar-parceiro' | 'modulos' | 'saldo-indicacao', id: string) {
+function emitAction(action: 'editar' | 'limite-instancias' | 'renovar' | 'desativar' | 'reativar' | 'excluir' | 'atribuir-parceiro' | 'remover-parceiro' | 'tornar-parceiro' | 'modulos' | 'saldo-indicacao' | 'ver-indicacao', id: string) {
   emit(action as any, id)
   closeMenu()
 }
@@ -197,6 +198,16 @@ function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: str
                       <i class="fa-solid fa-handshake" aria-hidden="true" />
                       <span class="truncate max-w-[110px]">{{ c.parceiro_nome }}</span>
                     </span>
+                    <button
+                      v-if="c.indicado_por_empresa_id"
+                      type="button"
+                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-pink-100 text-pink-700 hover:bg-pink-200 dark:bg-pink-500/15 dark:text-pink-400 dark:hover:bg-pink-500/25 transition-colors"
+                      :title="`Indicação de ${c.indicado_por_responsavel ? `${c.indicado_por_responsavel} (${c.indicado_por_nome || 'empresa'})` : (c.indicado_por_nome || 'outro cliente')}. Clique para ver ou remover`"
+                      @click.stop="$emit('ver-indicacao', c.id)"
+                    >
+                      <i class="fa-solid fa-gift" aria-hidden="true" />
+                      <span class="truncate max-w-[150px]">Indicação de {{ c.indicado_por_responsavel || c.indicado_por_nome || 'cliente' }}</span>
+                    </button>
                   </div>
                   <p class="hidden md:block text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                     <template v-if="c.nome_cliente"><i class="fa-solid fa-user text-[10px] text-slate-400 dark:text-slate-500" aria-hidden="true" /> <span class="font-medium text-slate-600 dark:text-slate-300">{{ c.nome_cliente }}</span> · </template>{{ c.email }}<template v-if="formatPhone(c.whatsapp)"> · {{ formatPhone(c.whatsapp) }} <a
@@ -334,6 +345,16 @@ function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: str
                       <i class="fa-solid fa-handshake" aria-hidden="true" />
                       <span class="truncate max-w-[110px]">{{ menuCliente.parceiro_nome }}</span>
                     </span>
+                    <button
+                      v-if="menuCliente.indicado_por_empresa_id"
+                      type="button"
+                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-pink-100 text-pink-700 hover:bg-pink-200 dark:bg-pink-500/15 dark:text-pink-400 dark:hover:bg-pink-500/25 transition-colors"
+                      :title="`Indicação de ${menuCliente.indicado_por_nome || 'outro cliente'}. Clique para ver ou remover`"
+                      @click="emitAction('ver-indicacao', menuCliente.id)"
+                    >
+                      <i class="fa-solid fa-gift" aria-hidden="true" />
+                      <span class="truncate max-w-[150px]">Indicação de {{ menuCliente.indicado_por_responsavel || menuCliente.indicado_por_nome || 'cliente' }}</span>
+                    </button>
                   </div>
                   <p class="text-xs text-slate-500 dark:text-slate-400 truncate">
                     <template v-if="menuCliente.nome_cliente">{{ menuCliente.nome_cliente }} · </template>{{ getPlanLabel(menuCliente.subscription_plan) }} · {{ diasRestantesText(menuCliente) }}

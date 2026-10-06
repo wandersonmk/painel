@@ -12,6 +12,7 @@ interface AulaForm {
   trilha_id: string
   titulo: string
   descricao: string | null
+  secao?: string | null
   video_url: string | null
   thumbnail_url: string | null
   duracao_segundos: number
@@ -27,6 +28,8 @@ const props = defineProps<{
   /** trilha pré-selecionada e ordem sugerida ao criar */
   trilhaIdPadrao?: string
   ordemSugerida?: number
+  /** Seções já usadas em cada trilha (sugestões do campo Seção). */
+  secoesPorTrilha?: Record<string, string[]>
 }>()
 
 const emit = defineEmits<{ close: []; saved: [] }>()
@@ -36,6 +39,7 @@ let toast: Awaited<ReturnType<typeof useToastSafe>> | null = null
 const trilhaId = ref('')
 const titulo = ref('')
 const descricao = ref('')
+const secao = ref('')
 const videoUrl = ref('')
 const thumbnailUrl = ref('')
 const duracaoMin = ref(0)
@@ -52,6 +56,7 @@ watch(() => props.show, (aberto) => {
     trilhaId.value = props.aula.trilha_id
     titulo.value = props.aula.titulo
     descricao.value = props.aula.descricao || ''
+    secao.value = props.aula.secao || ''
     videoUrl.value = props.aula.video_url || ''
     thumbnailUrl.value = props.aula.thumbnail_url || ''
     duracaoMin.value = Math.floor(props.aula.duracao_segundos / 60)
@@ -62,6 +67,7 @@ watch(() => props.show, (aberto) => {
     trilhaId.value = props.trilhaIdPadrao || props.trilhas[0]?.id || ''
     titulo.value = ''
     descricao.value = ''
+    secao.value = ''
     videoUrl.value = ''
     thumbnailUrl.value = ''
     duracaoMin.value = 0
@@ -96,6 +102,9 @@ const videoHint = computed(() => {
 
 watch(videoUrl, () => { showPreview.value = false })
 
+const sugestoesSecao = computed(() => props.secoesPorTrilha?.[trilhaId.value] || [])
+const mudouDeTrilha = computed(() => !!props.aula && trilhaId.value !== props.aula.trilha_id)
+
 // ───────── Salvar ─────────
 const podeSalvar = computed(() =>
   titulo.value.trim().length > 0
@@ -116,6 +125,7 @@ async function salvar() {
         trilhaId: trilhaId.value,
         titulo: titulo.value,
         descricao: descricao.value,
+        secao: secao.value,
         videoUrl: videoUrl.value,
         thumbnailUrl: thumbnailUrl.value,
         duracaoSegundos: (Number(duracaoMin.value) || 0) * 60 + (Number(duracaoSeg.value) || 0),
@@ -143,12 +153,22 @@ const labelCls = 'block text-xs font-semibold text-slate-700 dark:text-slate-300
   <BaseModal :show="show" :title="aula ? 'Editar aula' : 'Nova aula'" max-width="max-w-2xl" @close="emit('close')">
     <form @submit.prevent="salvar" class="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
 
-      <!-- Trilha (escolhível só na criação — mover aula de trilha bagunça a sequência) -->
-      <div>
-        <label for="sa-trilha" :class="labelCls">Trilha</label>
-        <select id="sa-trilha" v-model="trilhaId" :disabled="!!aula" :class="[inputCls, aula ? 'opacity-60 cursor-not-allowed' : '']">
-          <option v-for="t in trilhas" :key="t.id" :value="t.id">{{ t.nome }} ({{ t.nivel_label }})</option>
-        </select>
+      <!-- Trilha + seção. Trocar de trilha mantém o progresso dos clientes (mesmo id). -->
+      <div class="grid sm:grid-cols-2 gap-3">
+        <div>
+          <label for="sa-trilha" :class="labelCls">Trilha</label>
+          <select id="sa-trilha" v-model="trilhaId" :class="inputCls">
+            <option v-for="t in trilhas" :key="t.id" :value="t.id">{{ t.nome }} ({{ t.nivel_label }})</option>
+          </select>
+          <p v-if="mudouDeTrilha" class="text-[11px] mt-1 text-amber-600 dark:text-amber-400">A aula vai mudar de trilha. O progresso e as anotações dos clientes continuam. Confira a posição abaixo.</p>
+        </div>
+        <div>
+          <label for="sa-secao" :class="labelCls">Seção <span class="font-normal text-slate-400">(opcional)</span></label>
+          <input id="sa-secao" v-model="secao" type="text" list="sa-secoes" placeholder="Ex.: Básico, Configuração, Operação" :class="inputCls" />
+          <datalist id="sa-secoes">
+            <option v-for="s in sugestoesSecao" :key="s" :value="s" />
+          </datalist>
+        </div>
       </div>
 
       <div>

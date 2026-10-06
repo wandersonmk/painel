@@ -7,53 +7,91 @@ interface TrilhaForm {
   nome: string
   nivel_label: string
   descricao: string | null
+  icone: string
+  cor: string
+  grupo: string
   ordem: number
   ativo: boolean
 }
 
-const props = defineProps<{ show: boolean; trilha: TrilhaForm | null }>()
-const emit = defineEmits<{ close: []; saved: [] }>()
+// null = criar trilha nova
+const props = defineProps<{ show: boolean; trilha: TrilhaForm | null; ordemSugerida?: number }>()
+const emit = defineEmits<{ close: []; saved: [id?: string] }>()
 
 let toast: Awaited<ReturnType<typeof useToastSafe>> | null = null
+
+// Mesmos grupos e cores da página de Aulas do app (useSuporteVideos.ts).
+const GRUPOS = [
+  { id: 'comece', nome: 'Comece por aqui' },
+  { id: 'atendimento', nome: 'Atendimento e vendas' },
+  { id: 'ia', nome: 'Inteligência Artificial' },
+  { id: 'modulos', nome: 'Módulos' },
+  { id: 'avancado', nome: 'Integrações e gestão' },
+  { id: 'crescimento', nome: 'Parcerias' },
+]
+const CORES: { id: string; bg: string }[] = [
+  { id: 'emerald', bg: 'bg-emerald-500' }, { id: 'sky', bg: 'bg-sky-500' }, { id: 'indigo', bg: 'bg-indigo-500' },
+  { id: 'orange', bg: 'bg-orange-500' }, { id: 'teal', bg: 'bg-teal-500' }, { id: 'violet', bg: 'bg-violet-500' },
+  { id: 'rose', bg: 'bg-rose-500' }, { id: 'cyan', bg: 'bg-cyan-500' }, { id: 'amber', bg: 'bg-amber-500' },
+  { id: 'pink', bg: 'bg-pink-500' }, { id: 'slate', bg: 'bg-slate-500' }, { id: 'fuchsia', bg: 'bg-fuchsia-500' },
+  { id: 'lime', bg: 'bg-lime-500' },
+]
+const ICONES = [
+  'fa-rocket', 'fa-comments', 'fa-table-columns', 'fa-paper-plane', 'fa-calendar-check', 'fa-robot',
+  'fa-motorcycle', 'fa-store', 'fa-house', 'fa-bullseye', 'fa-plug', 'fa-share-nodes', 'fa-user-gear',
+  'fa-gift', 'fa-handshake', 'fa-graduation-cap', 'fa-chart-line', 'fa-bolt', 'fa-headset', 'fa-cart-shopping',
+]
 
 const nome = ref('')
 const nivelLabel = ref('')
 const descricao = ref('')
+const icone = ref('fa-graduation-cap')
+const cor = ref('violet')
+const grupo = ref('modulos')
 const ordem = ref(0)
 const ativo = ref(true)
 const saving = ref(false)
 
 watch(() => props.show, (aberto) => {
-  if (!aberto || !props.trilha) return
-  nome.value = props.trilha.nome
-  nivelLabel.value = props.trilha.nivel_label
-  descricao.value = props.trilha.descricao || ''
-  ordem.value = props.trilha.ordem
-  ativo.value = props.trilha.ativo
+  if (!aberto) return
+  const t = props.trilha
+  nome.value = t?.nome || ''
+  nivelLabel.value = t?.nivel_label || 'Módulo'
+  descricao.value = t?.descricao || ''
+  icone.value = t?.icone || 'fa-graduation-cap'
+  cor.value = t?.cor || 'violet'
+  grupo.value = t?.grupo || 'modulos'
+  ordem.value = t?.ordem ?? props.ordemSugerida ?? 0
+  ativo.value = t?.ativo ?? true
 })
 
-const podeSalvar = computed(() => nome.value.trim().length > 0 && nivelLabel.value.trim().length > 0 && !saving.value)
+const iconeValido = computed(() => /^fa-[a-z0-9-]+$/.test(icone.value.trim()))
+const podeSalvar = computed(() => nome.value.trim().length > 0 && nivelLabel.value.trim().length > 0 && iconeValido.value && !saving.value)
+const corAtual = computed(() => CORES.find(c => c.id === cor.value)?.bg || 'bg-violet-500')
 
 async function salvar() {
-  if (!podeSalvar.value || !props.trilha) return
+  if (!podeSalvar.value) return
   saving.value = true
   toast = toast || await useToastSafe()
   try {
-    const resp = await $fetch<{ success: boolean; error?: string }>('/api/admin/suporte/trilha-salvar', {
+    const resp = await $fetch<{ success: boolean; id?: string; error?: string }>('/api/admin/suporte/trilha-salvar', {
       method: 'POST',
       body: {
-        id: props.trilha.id,
+        id: props.trilha?.id,
         nome: nome.value,
         nivelLabel: nivelLabel.value,
         descricao: descricao.value,
+        icone: icone.value.trim(),
+        cor: cor.value,
+        grupo: grupo.value,
         ordem: ordem.value,
         ativo: ativo.value,
       },
       headers: await useAdminAuthHeaders(),
     })
     if (!resp.success) throw new Error(resp.error || 'Erro ao salvar')
-    toast?.success('Trilha atualizada')
-    emit('saved')
+    toast?.success(props.trilha ? 'Trilha atualizada' : 'Trilha criada')
+    emit('saved', resp.id)
     emit('close')
   } catch (err: any) {
     toast?.error(err?.data?.statusMessage || err?.message || 'Erro ao salvar trilha')
@@ -67,34 +105,80 @@ const labelCls = 'block text-xs font-semibold text-slate-700 dark:text-slate-300
 </script>
 
 <template>
-  <BaseModal :show="show" title="Editar trilha" @close="emit('close')">
-    <form @submit.prevent="salvar" class="space-y-4">
+  <BaseModal :show="show" :title="trilha ? 'Editar trilha' : 'Nova trilha'" max-width="max-w-2xl" @close="emit('close')">
+    <form @submit.prevent="salvar" class="space-y-4 max-h-[72vh] overflow-y-auto pr-1">
 
-      <!-- slug é referência fixa do app — exibido apenas para contexto -->
-      <div class="px-3 py-2 rounded bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 flex items-center gap-2">
-        <i class="fa-solid fa-link text-slate-400 text-xs" aria-hidden="true" />
-        <span class="text-xs text-slate-500 dark:text-slate-400">Slug (fixo): <code class="font-mono font-semibold text-slate-700 dark:text-slate-300">{{ trilha?.slug }}</code></span>
+      <!-- Prévia -->
+      <div class="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.03]">
+        <span class="w-11 h-11 rounded-lg flex items-center justify-center text-white text-lg shrink-0" :class="corAtual">
+          <i class="fa-solid" :class="iconeValido ? icone : 'fa-question'" aria-hidden="true" />
+        </span>
+        <div class="min-w-0">
+          <p class="font-semibold text-slate-900 dark:text-white truncate">{{ nome || 'Nome da trilha' }}</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400">{{ GRUPOS.find(g => g.id === grupo)?.nome }} · {{ nivelLabel || 'Selo' }}</p>
+        </div>
+        <span v-if="trilha" class="ml-auto text-[11px] text-slate-400 font-mono truncate" title="Endereço da trilha no app (não muda)">?trilha={{ trilha.slug }}</span>
       </div>
 
-      <div>
-        <label for="st-nome" :class="labelCls">Nome</label>
-        <input id="st-nome" v-model="nome" type="text" required :class="inputCls" />
-      </div>
-
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid sm:grid-cols-2 gap-3">
         <div>
-          <label for="st-nivel" :class="labelCls">Nível (selo)</label>
-          <input id="st-nivel" v-model="nivelLabel" type="text" required placeholder="Ex.: Iniciante" :class="inputCls" />
+          <label for="st-nome" :class="labelCls">Nome</label>
+          <input id="st-nome" v-model="nome" type="text" required placeholder="Ex.: Delivery" :class="inputCls" />
         </div>
         <div>
-          <label for="st-ordem" :class="labelCls">Ordem de exibição</label>
+          <label for="st-nivel" :class="labelCls">Selo</label>
+          <input id="st-nivel" v-model="nivelLabel" type="text" required placeholder="Ex.: Módulo, Avançado, Do básico ao avançado" :class="inputCls" />
+        </div>
+      </div>
+
+      <div class="grid sm:grid-cols-[1fr_120px] gap-3">
+        <div>
+          <label for="st-grupo" :class="labelCls">Grupo na página de Aulas</label>
+          <select id="st-grupo" v-model="grupo" :class="inputCls">
+            <option v-for="g in GRUPOS" :key="g.id" :value="g.id">{{ g.nome }}</option>
+          </select>
+        </div>
+        <div>
+          <label for="st-ordem" :class="labelCls">Ordem</label>
           <input id="st-ordem" v-model.number="ordem" type="number" min="0" :class="[inputCls, 'text-center tabular-nums']" />
         </div>
       </div>
 
       <div>
         <label for="st-desc" :class="labelCls">Descrição</label>
-        <textarea id="st-desc" v-model="descricao" rows="2" :class="[inputCls, 'resize-none']" />
+        <textarea id="st-desc" v-model="descricao" rows="2" placeholder="O que o cliente aprende nesta trilha" :class="[inputCls, 'resize-none']" />
+      </div>
+
+      <div>
+        <span :class="labelCls">Cor</span>
+        <div class="flex flex-wrap gap-1.5">
+          <button
+            v-for="c in CORES"
+            :key="c.id"
+            type="button"
+            @click="cor = c.id"
+            class="w-7 h-7 rounded-full transition-transform"
+            :class="[c.bg, cor === c.id ? 'ring-2 ring-offset-2 ring-slate-900 dark:ring-white dark:ring-offset-slate-900 scale-110' : 'hover:scale-110']"
+            :title="c.id"
+            :aria-label="`Cor ${c.id}`"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label for="st-icone" :class="labelCls">Ícone <span class="font-normal text-slate-400">(Font Awesome)</span></label>
+        <div class="flex flex-wrap gap-1.5 mb-2">
+          <button
+            v-for="i in ICONES"
+            :key="i"
+            type="button"
+            @click="icone = i"
+            class="w-8 h-8 rounded flex items-center justify-center border transition-colors"
+            :class="icone === i ? 'border-purple-500 bg-purple-50 dark:bg-purple-500/15 text-purple-600 dark:text-purple-300' : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'"
+            :title="i"
+          ><i class="fa-solid text-sm" :class="i" aria-hidden="true" /></button>
+        </div>
+        <input id="st-icone" v-model="icone" type="text" placeholder="fa-robot" :class="[inputCls, 'font-mono', iconeValido ? '' : 'border-red-400']" />
       </div>
 
       <button
@@ -117,7 +201,7 @@ const labelCls = 'block text-xs font-semibold text-slate-700 dark:text-slate-300
         <button type="submit" :disabled="!podeSalvar"
           class="flex-1 px-4 py-2.5 rounded-lg font-semibold text-sm bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white transition-colors flex items-center justify-center gap-2">
           <i v-if="saving" class="fa-solid fa-circle-notch animate-spin text-xs" aria-hidden="true" />
-          {{ saving ? 'Salvando…' : 'Salvar alterações' }}
+          {{ saving ? 'Salvando…' : (trilha ? 'Salvar alterações' : 'Criar trilha') }}
         </button>
       </div>
     </form>

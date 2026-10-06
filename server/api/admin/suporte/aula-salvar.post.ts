@@ -7,6 +7,7 @@ export default defineEventHandler(async (event) => {
     trilhaId?: string
     titulo: string
     descricao?: string | null
+    secao?: string | null
     videoUrl?: string | null
     thumbnailUrl?: string | null
     duracaoSegundos?: number
@@ -20,7 +21,7 @@ export default defineEventHandler(async (event) => {
 
   const supabase = getServiceClient()
   // video_url vazio vira NULL — o app mostra a capa "Em breve"
-  const payload = {
+  const payload: Record<string, unknown> = {
     titulo: body.titulo.trim(),
     descricao: body.descricao?.trim() || null,
     video_url: body.videoUrl?.trim() || null,
@@ -29,8 +30,13 @@ export default defineEventHandler(async (event) => {
     ordem: Number.isFinite(body.ordem) ? Number(body.ordem) : 0,
     ativo: body.ativo ?? true,
   }
+  // Seção só muda quando vem no pedido (ex.: ocultar/mostrar não mexe nela).
+  if (body.secao !== undefined) payload.secao = body.secao?.trim() || null
 
   if (body.id) {
+    // Trocar de trilha mantém o id da aula: progresso, anotações e favoritos
+    // dos clientes continuam valendo (06/10/2026).
+    if (body.trilhaId) payload.trilha_id = body.trilhaId
     const { error } = await supabase.from('suporte_aulas').update(payload).eq('id', body.id)
     if (error) return { success: false, error: error.message }
   } else {

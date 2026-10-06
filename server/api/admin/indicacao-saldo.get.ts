@@ -15,9 +15,9 @@ export default defineEventHandler(async (event) => {
   const supabase = getServiceClient()
   const { data, error } = await supabase
     .from('indicacoes_comissoes')
-    .select('id, status, valor_credito, valor_base, percentual_aplicado, tipo, parcela, parcelas_total, liberar_em, liberado_em, creditado_em, utilizado_em, utilizado_descricao, created_at, indicada:empresas!indicacoes_comissoes_empresa_indicada_id_fkey ( nome )')
+    .select('id, status, valor_credito, valor_base, percentual_aplicado, tipo, parcela, parcelas_total, liberar_em, liberado_em, creditado_em, utilizado_em, utilizado_descricao, motivo_estorno, estornado_em, created_at, indicada:empresas!indicacoes_comissoes_empresa_indicada_id_fkey ( nome )')
     .eq('empresa_indicadora_id', empresaId)
-    .in('status', ['pendente_liberacao', 'liberado', 'creditado', 'utilizado'])
+    .in('status', ['pendente_liberacao', 'liberado', 'creditado', 'utilizado', 'cancelado', 'estornado'])
     .order('liberar_em', { ascending: true })
     .limit(200)
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
@@ -48,6 +48,8 @@ export default defineEventHandler(async (event) => {
       creditadoEm: l.creditado_em,
       utilizadoEm: l.utilizado_em,
       utilizadoDescricao: l.utilizado_descricao,
+      motivo: l.motivo_estorno ?? null,
+      estornadoEm: l.estornado_em ?? null,
     })),
   }
 })

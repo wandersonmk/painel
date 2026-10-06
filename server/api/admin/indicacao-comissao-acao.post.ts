@@ -2,29 +2,33 @@ import { requireSuperAdmin, getServiceClient } from '~~/server/utils/requireSupe
 
 /**
  * POST /api/admin/indicacao-comissao-acao { comissaoId, acao, descricao }
- * Ação em UMA parcela (mês) do saldo de indicação, pelo modal "Saldo de
- * indicação" (pedido do dono, 05/10/2026):
- *  - acao 'utilizar': dá baixa no ganho já LIBERADO (virou desconto na
- *    mensalidade). Vira 'utilizado' com a descrição — ex.: "Desconto na
- *    mensalidade de novembro/2026". A indicadora vê isso no Registro de ganhos.
- *  - acao 'cancelar': cancela um ganho que não vale (estorno, chargeback,
- *    erro). Em carência/programado → 'cancelado'; liberado → 'estornado'.
- *    O motivo aparece para a indicadora.
+ * Ação em UMA parcela (mês) do saldo de indicação, pelo menu "⋯" do modal
+ * "Saldo de indicação" (pedido do dono, 05/10/2026):
+ *  - acao 'liberar': antecipa a liberação — mês em carência ou programado
+ *    vira 'liberado' (disponível) na hora. Descrição opcional.
+ *  - acao 'utilizar' ("Marcar como pago"): dá baixa no mês — o desconto foi
+ *    aplicado na mensalidade, inclusive ANTECIPADO (vale para carência e
+ *    programado). Vira 'utilizado' com a descrição, que a indicadora vê no
+ *    Registro de ganhos.
+ *  - acao 'cancelar': o ganho não vale (estorno, chargeback, erro). Em
+ *    carência/programado → 'cancelado'; liberado → 'estornado'. Com motivo.
  * O desconto em si é aplicado à parte (na cobrança); aqui é só o registro.
  */
+type Acao = 'liberar' | 'utilizar' | 'cancelar'
+
 export default defineEventHandler(async (event) => {
   const adminUserId = await requireSuperAdmin(event)
-  const { comissaoId, acao, descricao } = await readBody<{ comissaoId: string; acao: 'utilizar' | 'cancelar'; descricao: string }>(event)
+  const { comissaoId, acao, descricao } = await readBody<{ comissaoId: string; acao: Acao; descricao?: string }>(event)
   const texto = String(descricao || '').trim().slice(0, 200)
-  if (!comissaoId || !['utilizar', 'cancelar'].includes(acao)) {
-    throw createError({ statusCode: 400, statusMessage: 'comissaoId e acao (utilizar|cancelar) são obrigatórios' })
+  if (!comissaoId || !['liberar', 'utilizar', 'cancelar'].includes(acao)) {
+    throw createError({ statusCode: 400, statusMessage: 'comissaoId e acao (liberar|utilizar|cancelar) são obrigatórios' })
   }
-  if (!texto) throw createError({ statusCode: 400, statusMessage: 'Informe a descrição / o motivo' })
+  if (acao !== 'liberar' && !texto) throw createError({ statusCode: 400, statusMessage: 'Informe a descrição / o motivo' })
 
   const supabase = getServiceClient()
   const { data: linha, error } = await supabase
     .from('indicacoes_comissoes')
-    .select('id, status, valor_credito, empresa_indicadora_id')
+    .select('id, status, valor_credito, liberado_em')
     .eq('id', comissaoId)
     .maybeSingle()
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
@@ -34,16 +38,28 @@ export default defineEventHandler(async (event) => {
   let patch: Record<string, any>
   let statusEsperado: string[]
 
-  if (acao === 'utilizar') {
-    statusEsperado = ['liberado']
-    if (linha.status !== 'liberado') {
-      throw createError({ statusCode: 409, statusMessage: 'Só dá para dar baixa em parcela já liberada (disponível)' })
+  if (acao === 'liberar') {
+    statusEsperado = ['pendente_liberacao']
+    if (linha.status !== 'pendente_liberacao') {
+      throw createError({ statusCode: 409, statusMessage: 'Só dá para liberar um mês em carência ou programado' })
     }
-    patch = { status: 'utilizado', utilizado_em: agora, utilizado_descricao: texto, updated_at: agora }
+    patch = { status: 'liberado', liberado_em: agora, updated_at: agora }
+  } else if (acao === 'utilizar') {
+    statusEsperado = ['pendente_liberacao', 'liberado']
+    if (!statusEsperado.includes(linha.status)) {
+      throw createError({ statusCode: 409, statusMessage: 'Esse mês já foi utilizado ou cancelado' })
+    }
+    patch = {
+      status: 'utilizado',
+      liberado_em: linha.liberado_em ?? agora,
+      utilizado_em: agora,
+      utilizado_descricao: texto,
+      updated_at: agora,
+    }
   } else {
     statusEsperado = ['pendente_liberacao', 'liberado']
     if (!statusEsperado.includes(linha.status)) {
-      throw createError({ statusCode: 409, statusMessage: 'Essa parcela já foi utilizada ou cancelada' })
+      throw createError({ statusCode: 409, statusMessage: 'Esse mês já foi utilizado ou cancelado' })
     }
     patch = {
       status: linha.status === 'liberado' ? 'estornado' : 'cancelado',
@@ -62,8 +78,8 @@ export default defineEventHandler(async (event) => {
     .select('id, status')
     .maybeSingle()
   if (upErr) throw createError({ statusCode: 500, statusMessage: upErr.message })
-  if (!atualizada) throw createError({ statusCode: 409, statusMessage: 'A parcela mudou de situação agora há pouco. Recarregue e tente de novo.' })
+  if (!atualizada) throw createError({ statusCode: 409, statusMessage: 'O mês mudou de situação agora há pouco. Recarregue e tente de novo.' })
 
-  console.log(`[admin/indicacao-comissao-acao] admin=${adminUserId} comissao=${comissaoId} acao=${acao} valor=${linha.valor_credito} -> ${atualizada.status}`)
+  console.log(`[admin/indicacao-comissao-acao] admin=${adminUserId} comissao=${comissaoId} acao=${acao} valor=${linha.valor_credito} ${linha.status} -> ${atualizada.status}${texto ? ` (${texto})` : ''}`)
   return { success: true, data: { status: atualizada.status, valor: Number(linha.valor_credito) } }
 })

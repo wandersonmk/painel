@@ -71,10 +71,6 @@ async function carregar() {
     carregando.value = false
   }
 }
-watch(() => [props.show, props.clienteId], ([s]) => {
-  if (s) { descricao.value = ''; aviso.value = ''; acaoEm.value = null; void carregar() }
-}, { immediate: true })
-
 // Baixa por VALOR (consome os meses disponíveis do mais antigo; divide se precisar).
 async function usar() {
   if (!props.clienteId || !valor.value || !descricao.value.trim() || salvando.value) return
@@ -96,17 +92,26 @@ async function usar() {
   }
 }
 
-// Ação em UM mês: dar baixa (utilizado) ou cancelar.
-const acaoEm = ref<{ id: string; acao: 'utilizar' | 'cancelar' } | null>(null)
+// Menu "⋯" de cada mês: Marcar como pago (baixa, inclusive antecipada),
+// Liberar crédito (tira da carência / antecipa o programado) e Cancelar.
+type Acao = 'utilizar' | 'liberar' | 'cancelar'
+const menuEm = ref<string | null>(null)
+const acaoEm = ref<{ id: string; acao: Acao } | null>(null)
 const textoAcao = ref('')
 const salvandoAcao = ref(false)
-function abrirAcao(i: Item, acao: 'utilizar' | 'cancelar') {
+const temMenu = (i: Item) => i.status === 'liberado' || i.status === 'pendente_liberacao'
+function alternarMenu(i: Item) {
+  acaoEm.value = null
+  menuEm.value = menuEm.value === i.id ? null : i.id
+}
+function abrirAcao(i: Item, acao: Acao) {
   acaoEm.value = { id: i.id, acao }
   textoAcao.value = ''
   erro.value = ''
 }
 async function confirmarAcao(i: Item) {
-  if (!acaoEm.value || !textoAcao.value.trim() || salvandoAcao.value) return
+  if (!acaoEm.value || salvandoAcao.value) return
+  if (acaoEm.value.acao !== 'liberar' && !textoAcao.value.trim()) return
   salvandoAcao.value = true
   erro.value = ''
   try {
@@ -115,10 +120,10 @@ async function confirmarAcao(i: Item) {
       body: { comissaoId: i.id, acao: acaoEm.value.acao, descricao: textoAcao.value.trim() },
     })
     if (acaoEm.value.acao === 'utilizar') emit('usado', i.valor)
-    aviso.value = acaoEm.value.acao === 'utilizar'
-      ? `${mes(i)} (${brl(i.valor)}) marcado como utilizado.`
-      : `${mes(i)} (${brl(i.valor)}) cancelado.`
+    const feito = { utilizar: 'marcado como pago', liberar: 'liberado (disponível)', cancelar: 'cancelado' }[acaoEm.value.acao]
+    aviso.value = `${mes(i)} (${brl(i.valor)}) ${feito}.`
     acaoEm.value = null
+    menuEm.value = null
     await carregar()
   } catch (e: any) {
     erro.value = e?.data?.statusMessage || e?.statusMessage || 'Não foi possível salvar'
@@ -126,6 +131,11 @@ async function confirmarAcao(i: Item) {
     salvandoAcao.value = false
   }
 }
+
+// No fim: o callback (immediate) usa refs declaradas acima.
+watch(() => [props.show, props.clienteId], ([s]) => {
+  if (s) { descricao.value = ''; aviso.value = ''; acaoEm.value = null; menuEm.value = null; void carregar() }
+}, { immediate: true })
 </script>
 
 <template>
@@ -177,41 +187,60 @@ async function confirmarAcao(i: Item) {
               <span class="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap" :class="situacao(i).cls">{{ situacao(i).texto }}</span>
               <span class="flex-1 min-w-0 truncate text-slate-500" :title="i.utilizadoDescricao || i.motivo || ''">{{ i.utilizadoDescricao || i.motivo || '' }}</span>
               <span class="shrink-0 font-semibold text-slate-800 dark:text-slate-200 tabular-nums">{{ brl(i.valor) }}</span>
-              <span class="shrink-0 flex gap-1 w-[118px] justify-end">
+              <span class="shrink-0 w-8 flex justify-end">
                 <button
-                  v-if="i.status === 'liberado'"
+                  v-if="temMenu(i)"
                   type="button"
-                  class="px-1.5 py-0.5 rounded border border-emerald-300 dark:border-emerald-500/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
-                  title="Marcar como usado em desconto"
-                  @click="abrirAcao(i, 'utilizar')"
-                >Dar baixa</button>
-                <button
-                  v-if="i.status === 'liberado' || i.status === 'pendente_liberacao'"
-                  type="button"
-                  class="px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
-                  title="Cancelar este mês (estorno, chargeback, erro)"
-                  @click="abrirAcao(i, 'cancelar')"
-                >Cancelar</button>
+                  class="w-7 h-6 rounded-md flex items-center justify-center text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200"
+                  :class="menuEm === i.id ? 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200' : ''"
+                  title="Ações deste mês"
+                  aria-label="Ações deste mês"
+                  @click="alternarMenu(i)"
+                >
+                  <i class="fa-solid fa-ellipsis" aria-hidden="true" />
+                </button>
               </span>
             </div>
-            <form v-if="acaoEm?.id === i.id" class="flex flex-col sm:flex-row gap-2 px-3 pb-2" @submit.prevent="confirmarAcao(i)">
-              <input
-                v-model="textoAcao"
-                type="text"
-                maxlength="200"
-                :placeholder="acaoEm.acao === 'utilizar' ? 'Ex.: Desconto na mensalidade de novembro/2026' : 'Motivo. Ex.: Chargeback da indicada'"
-                class="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent text-xs"
-              />
-              <div class="flex gap-2">
-                <button type="button" class="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs" :disabled="salvandoAcao" @click="acaoEm = null">Voltar</button>
-                <button
-                  type="submit"
-                  class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
-                  :class="acaoEm.acao === 'utilizar' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'"
-                  :disabled="salvandoAcao || !textoAcao.trim()"
-                >
-                  {{ salvandoAcao ? 'Salvando…' : acaoEm.acao === 'utilizar' ? `Dar baixa de ${brl(i.valor)}` : `Cancelar ${brl(i.valor)}` }}
-                </button>
+
+            <!-- Opções do "⋯" (abre embaixo da linha: não é cortado pela rolagem) -->
+            <div v-if="menuEm === i.id && acaoEm?.id !== i.id" class="flex flex-wrap gap-1.5 px-3 pb-2 text-xs">
+              <button type="button" class="px-2.5 py-1 rounded-lg border border-emerald-300 dark:border-emerald-500/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10" @click="abrirAcao(i, 'utilizar')">
+                <i class="fa-solid fa-circle-check mr-1" aria-hidden="true" />Marcar como pago
+              </button>
+              <button v-if="i.status === 'pendente_liberacao'" type="button" class="px-2.5 py-1 rounded-lg border border-violet-300 dark:border-violet-500/40 text-violet-700 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-500/10" @click="abrirAcao(i, 'liberar')">
+                <i class="fa-solid fa-unlock mr-1" aria-hidden="true" />Liberar crédito
+              </button>
+              <button type="button" class="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800" @click="abrirAcao(i, 'cancelar')">
+                <i class="fa-solid fa-ban mr-1" aria-hidden="true" />Cancelar
+              </button>
+            </div>
+
+            <form v-if="acaoEm?.id === i.id" class="px-3 pb-2 space-y-1.5" @submit.prevent="confirmarAcao(i)">
+              <p class="text-[11px] text-slate-500">
+                <template v-if="acaoEm.acao === 'utilizar'">Dá baixa em {{ brl(i.valor) }}: o desconto foi aplicado na mensalidade{{ i.status === 'pendente_liberacao' ? ' (antecipado)' : '' }}.</template>
+                <template v-else-if="acaoEm.acao === 'liberar'">Antecipa a liberação: {{ brl(i.valor) }} fica disponível agora, sem esperar {{ ehProgramado(i) ? 'a data programada' : 'a carência' }}.</template>
+                <template v-else>Cancela {{ brl(i.valor) }}: esse mês deixa de valer.</template>
+              </p>
+              <div class="flex flex-col sm:flex-row gap-2">
+                <input
+                  v-if="acaoEm.acao !== 'liberar'"
+                  v-model="textoAcao"
+                  type="text"
+                  maxlength="200"
+                  :placeholder="acaoEm.acao === 'utilizar' ? 'Ex.: Desconto na mensalidade de novembro/2026' : 'Motivo. Ex.: Chargeback da indicada'"
+                  class="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent text-xs"
+                />
+                <div class="flex gap-2" :class="acaoEm.acao === 'liberar' ? 'ml-auto' : ''">
+                  <button type="button" class="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs" :disabled="salvandoAcao" @click="acaoEm = null">Voltar</button>
+                  <button
+                    type="submit"
+                    class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
+                    :class="acaoEm.acao === 'utilizar' ? 'bg-emerald-600 hover:bg-emerald-700' : acaoEm.acao === 'liberar' ? 'bg-violet-600 hover:bg-violet-700' : 'bg-red-600 hover:bg-red-700'"
+                    :disabled="salvandoAcao || (acaoEm.acao !== 'liberar' && !textoAcao.trim())"
+                  >
+                    {{ salvandoAcao ? 'Salvando…' : acaoEm.acao === 'utilizar' ? `Marcar ${brl(i.valor)} como pago` : acaoEm.acao === 'liberar' ? `Liberar ${brl(i.valor)}` : `Cancelar ${brl(i.valor)}` }}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 definePageMeta({
   middleware: ['auth', 'super-admin'],
@@ -21,11 +21,24 @@ export interface ParceiroAdmin {
 
 let toast: Awaited<ReturnType<typeof useToastSafe>> | null = null
 
-const abaAtiva = ref<'licencas' | 'materiais'>('licencas')
+type Aba = 'licencas' | 'indicacoes' | 'materiais'
+const ABAS: Aba[] = ['licencas', 'indicacoes', 'materiais']
+
+// A aba fica na URL (?aba=indicacoes) para dar para abrir a consulta direto.
+const route = useRoute()
+const router = useRouter()
+const abaDaUrl = String(route.query.aba ?? '') as Aba
+const abaAtiva = ref<Aba>(ABAS.includes(abaDaUrl) ? abaDaUrl : 'licencas')
+watch(abaAtiva, (aba) => {
+  router.replace({ query: { ...route.query, aba: aba === 'licencas' ? undefined : aba } })
+})
+
 const materiaisCount = ref(0)
+const indicacoesCount = ref(0)
 const isRefreshing = ref(false)
 
 const licencasRef = ref<{ carregar: () => Promise<void> } | null>(null)
+const indicacoesRef = ref<{ carregar: () => Promise<void> } | null>(null)
 
 async function recarregarLicencas() {
   await licencasRef.value?.carregar()
@@ -33,7 +46,7 @@ async function recarregarLicencas() {
 
 async function refreshAll() {
   isRefreshing.value = true
-  await recarregarLicencas()
+  await Promise.all([recarregarLicencas(), indicacoesRef.value?.carregar()])
   isRefreshing.value = false
 }
 
@@ -151,7 +164,7 @@ const confirmConfig = computed(() => {
   const map = {
     bloquear: { title: 'Suspender parceiro', message: 'O parceiro perde o acesso ao portal e deixa de ver os clientes dele. O saldo de créditos é preservado. Deseja suspender', label: 'Suspender', variant: 'warning' as const },
     desbloquear: { title: 'Reativar parceiro', message: 'O parceiro volta a ter acesso ao portal e às ações da carteira dele. Deseja reativar', label: 'Reativar', variant: 'info' as const },
-    excluir: { title: 'Excluir parceiro', message: 'TODOS os vínculos, créditos e o histórico dele serão apagados permanentemente. Deseja excluir', label: 'Excluir', variant: 'danger' as const },
+    excluir: { title: 'Excluir parceiro', message: 'TODOS os vínculos, créditos, indicações registradas (os CPF/CNPJ ficam livres) e o histórico dele serão apagados permanentemente. Deseja excluir', label: 'Excluir', variant: 'danger' as const },
   }
   return map[a.tipo]
 })
@@ -231,6 +244,16 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
           Licenças
         </button>
         <button
+          type="button" role="tab" :aria-selected="abaAtiva === 'indicacoes'"
+          @click="abaAtiva = 'indicacoes'"
+          class="flex-1 sm:flex-initial px-4 py-2 rounded-md text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+          :class="abaAtiva === 'indicacoes' ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
+        >
+          <i class="fa-solid fa-address-card text-pink-500" aria-hidden="true" />
+          Indicações
+          <span class="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold tabular-nums bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400">{{ indicacoesCount }}</span>
+        </button>
+        <button
           type="button" role="tab" :aria-selected="abaAtiva === 'materiais'"
           @click="abaAtiva = 'materiais'"
           class="flex-1 sm:flex-initial px-4 py-2 rounded-md text-sm font-semibold transition-colors flex items-center justify-center gap-2"
@@ -251,6 +274,11 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
           @suspender="pedirConfirmacao($event.ativo ? 'bloquear' : 'desbloquear', $event)"
           @excluir="pedirConfirmacao('excluir', $event)"
         />
+      </div>
+
+      <!-- ══════════════ ABA INDICAÇÕES ══════════════ -->
+      <div v-show="abaAtiva === 'indicacoes'">
+        <AdminIndicacoesManager ref="indicacoesRef" @count-change="indicacoesCount = $event" />
       </div>
 
       <!-- ══════════════ ABA MATERIAIS ══════════════ -->

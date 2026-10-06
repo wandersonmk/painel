@@ -119,16 +119,17 @@ const rotuloPeriodo = computed(() => {
 })
 
 const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none'
-const th = 'text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider'
+const th = 'text-left px-4 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap'
 const td = 'px-4 py-2.5 text-sm'
 </script>
 
 <template>
-  <div class="p-4 sm:p-6 md:p-8 space-y-5 max-w-[1400px] mx-auto w-full">
+  <!-- Largura toda da área de conteúdo, igual à página de Indicados -->
+  <div class="p-4 sm:p-6 md:p-8 space-y-5 w-full">
 
     <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
       <div>
-        <h1 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Relatório</h1>
+        <h1 class="text-xl sm:text-2xl font-semibold text-slate-900 dark:text-white tracking-tight">Relatório</h1>
         <p class="text-slate-500 dark:text-slate-400 text-xs sm:text-sm mt-0.5">
           Quanto você faturou, quanto gastou de crédito e o que sobrou · <span class="capitalize">{{ rotuloPeriodo }}</span>
         </p>
@@ -170,27 +171,28 @@ const td = 'px-4 py-2.5 text-sm'
         class="px-3 py-1.5 rounded-full border text-xs font-semibold transition-colors"
         :class="periodo === p.id
           ? 'border-purple-400 bg-purple-50 dark:bg-purple-500/15 text-purple-700 dark:text-purple-400'
-          : 'border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:border-slate-300'"
+          : 'border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-white/20'"
       >{{ p.label }}</button>
 
-      <div v-if="periodo === 'custom'" class="flex items-center gap-2 ml-auto">
+      <!-- No celular: as duas datas lado a lado e o "Aplicar" embaixo, na largura toda -->
+      <div v-if="periodo === 'custom'" class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 w-full sm:flex sm:w-auto sm:ml-auto">
         <input
           v-model="dataInicio"
           type="date"
           aria-label="Data inicial"
-          class="px-2.5 py-1.5 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded text-xs text-slate-900 dark:text-white"
+          class="w-full sm:w-auto min-w-0 px-2.5 py-1.5 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded text-xs text-slate-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-purple-500"
         />
         <span class="text-slate-400 text-xs">até</span>
         <input
           v-model="dataFim"
           type="date"
           aria-label="Data final"
-          class="px-2.5 py-1.5 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded text-xs text-slate-900 dark:text-white"
+          class="w-full sm:w-auto min-w-0 px-2.5 py-1.5 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded text-xs text-slate-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-purple-500"
         />
         <button
           type="button"
           @click="carregar"
-          class="px-3 py-1.5 rounded text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white transition-colors"
+          class="col-span-3 px-3 py-1.5 rounded text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white transition-colors"
         >Aplicar</button>
       </div>
 
@@ -211,15 +213,16 @@ const td = 'px-4 py-2.5 text-sm'
       <span>{{ erro }}</span>
     </div>
 
-    <div v-else-if="loading && !resumo" class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-      <div v-for="i in 3" :key="i" class="h-24 rounded-md bg-slate-100 dark:bg-white/5 animate-pulse" />
+    <div v-else-if="loading && !resumo" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+      <div v-for="i in 4" :key="i" class="h-24 rounded-md bg-slate-100 dark:bg-white/5 animate-pulse" />
     </div>
 
     <template v-else-if="resumo">
       <!-- A conta, na ordem em que ela é feita -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+      <!-- 1 coluna no celular, 2 no tablet/notebook, 4 em telas largas -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         <div :class="['p-4', cardBase]">
-          <p class="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+          <p class="text-[11px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
             <i class="fa-solid fa-arrow-trend-up text-[10px]" aria-hidden="true" />
             Receita bruta
           </p>
@@ -231,7 +234,7 @@ const td = 'px-4 py-2.5 text-sm'
 
         <!-- Caixa/estoque do período; não é descontado outra vez do resultado. -->
         <div :class="['p-4', cardBase]">
-          <p class="text-[11px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400 flex items-center gap-1.5">
+          <p class="text-[11px] font-semibold uppercase tracking-wider text-red-600 dark:text-red-400 flex items-center gap-1.5">
             <i class="fa-solid fa-cart-shopping text-[10px]" aria-hidden="true" />
             Compra de créditos (caixa)
           </p>
@@ -243,7 +246,7 @@ const td = 'px-4 py-2.5 text-sm'
         </div>
 
         <div :class="['p-4', cardBase]">
-          <p class="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+          <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
             <i class="fa-solid fa-coins text-[10px]" aria-hidden="true" />
             Custo dos créditos usados
           </p>
@@ -257,7 +260,7 @@ const td = 'px-4 py-2.5 text-sm'
         </div>
 
         <div :class="['p-4', cardBase, resumo.lucro_liquido < 0 ? 'ring-1 ring-red-300 dark:ring-red-500/40' : '']">
-          <p class="text-[11px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 flex items-center gap-1.5">
+          <p class="text-[11px] font-semibold uppercase tracking-wider text-purple-600 dark:text-purple-400 flex items-center gap-1.5">
             <i class="fa-solid fa-sack-dollar text-[10px]" aria-hidden="true" />
             Lucro líquido
           </p>
@@ -290,14 +293,19 @@ const td = 'px-4 py-2.5 text-sm'
 
       <!-- Por cliente -->
       <section>
-        <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Por cliente</p>
+        <div class="flex items-center gap-2 mb-3">
+          <span class="w-6 h-6 rounded-md flex items-center justify-center bg-blue-500/15 shrink-0">
+            <i class="fa-solid fa-users text-blue-600 dark:text-blue-400 text-[11px]" aria-hidden="true" />
+          </span>
+          <h2 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Por cliente</h2>
+        </div>
         <div :class="['overflow-hidden', cardBase]">
           <div v-if="!porCliente.length" class="px-5 py-10 text-center">
             <i class="fa-solid fa-chart-simple text-slate-300 dark:text-slate-700 text-2xl mb-2 block" aria-hidden="true" />
             <p class="text-slate-500 text-sm">Nenhuma renovação neste período</p>
           </div>
           <div v-else class="overflow-auto max-h-[26rem]">
-            <table class="w-full">
+            <table class="w-full min-w-[720px]">
               <thead class="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900">
                 <tr class="border-b border-slate-200 dark:border-white/5">
                   <th :class="th">Cliente</th>
@@ -331,10 +339,15 @@ const td = 'px-4 py-2.5 text-sm'
 
       <!-- Renovação a renovação -->
       <section v-if="renovacoes.length">
-        <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Renovações do período</p>
+        <div class="flex items-center gap-2 mb-3">
+          <span class="w-6 h-6 rounded-md flex items-center justify-center bg-purple-500/15 shrink-0">
+            <i class="fa-solid fa-rotate text-purple-600 dark:text-purple-400 text-[11px]" aria-hidden="true" />
+          </span>
+          <h2 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Renovações do período</h2>
+        </div>
         <div :class="['overflow-hidden', cardBase]">
           <div class="overflow-auto max-h-[26rem]">
-            <table class="w-full">
+            <table class="w-full min-w-[720px]">
               <thead class="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900">
                 <tr class="border-b border-slate-200 dark:border-white/5">
                   <th :class="th">Data</th>

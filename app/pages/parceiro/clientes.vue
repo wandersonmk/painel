@@ -92,15 +92,19 @@ const CLASSES_ABA: Record<string, string> = {
 }
 
 const semSaldo = computed(() => saldos.value.mensal_30d < 1 && saldos.value.anual_12m < 1)
+
+const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none'
+const campoFiltro = 'bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded-full text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500'
 </script>
 
 <template>
-  <div class="p-4 sm:p-6 md:p-8 space-y-5 max-w-[1400px] mx-auto w-full">
+  <!-- Largura toda da área de conteúdo, igual à página de Indicados -->
+  <div class="p-4 sm:p-6 md:p-8 space-y-5 w-full">
 
     <!-- Cabeçalho -->
     <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
       <div>
-        <h1 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Meus Clientes</h1>
+        <h1 class="text-xl sm:text-2xl font-semibold text-slate-900 dark:text-white tracking-tight">Meus Clientes</h1>
         <p class="text-slate-500 dark:text-slate-400 text-xs sm:text-sm mt-0.5">
           Renove, bloqueie e acompanhe os clientes vinculados a você
         </p>
@@ -156,59 +160,63 @@ const semSaldo = computed(() => saldos.value.mensal_30d < 1 && saldos.value.anua
       </p>
     </div>
 
-    <!-- Abas / contadores -->
-    <div class="flex flex-wrap gap-2">
-      <button
-        v-for="a in abas"
-        :key="a.id"
-        type="button"
-        @click="aba = a.id"
-        class="px-3 py-1.5 rounded-full border text-xs font-semibold transition-all duration-150 flex items-center gap-1.5"
-        :class="aba === a.id
-          ? CLASSES_ABA[a.cor]
-          : 'border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-white/20'"
-      >
-        {{ a.label }}
-        <span class="tabular-nums opacity-70">{{ a.total }}</span>
-      </button>
-    </div>
-
-    <!-- Busca / período / ordenação -->
-    <div v-if="clientes.length > 0" class="flex flex-col lg:flex-row lg:items-center gap-2">
-      <div class="relative flex-1 lg:flex-initial">
-        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs" aria-hidden="true" />
-        <input
-          v-model="busca"
-          type="search"
-          placeholder="Nome, responsável ou telefone…"
-          class="w-full lg:w-64 pl-8 pr-3 py-2 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded-full text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-        />
-      </div>
-      <div class="flex items-center gap-1.5">
-        <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider shrink-0">Venc.</span>
-        <input v-model="vencimentoDe" type="date" title="Vencimento a partir de"
-          class="flex-1 sm:w-32 px-2.5 py-2 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded-full text-xs text-slate-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-purple-500" />
-        <span class="text-[10px] text-slate-400">até</span>
-        <input v-model="vencimentoAte" type="date" title="Vencimento até"
-          class="flex-1 sm:w-32 px-2.5 py-2 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded-full text-xs text-slate-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-purple-500" />
-      </div>
-      <div class="flex items-center gap-2 lg:ml-auto">
-        <select
-          v-model="ordem"
-          class="px-3 py-2 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded-full text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-        >
-          <option value="vencimento">Ordenar por vencimento</option>
-          <option value="nome">Ordenar por nome</option>
-        </select>
+    <!-- Abas + filtros num só bloco. Tudo com flex-wrap: quebra de linha sozinho
+         quando o menu lateral expande ou a tela é menor, sem estourar a largura. -->
+    <div :class="[cardBase, 'p-3 sm:p-4 space-y-3']">
+      <!-- Abas / contadores -->
+      <div class="flex flex-wrap gap-2">
         <button
-          v-if="temFiltro"
-          @click="limparFiltros"
+          v-for="a in abas"
+          :key="a.id"
           type="button"
-          class="px-3 py-2 rounded-full text-xs font-semibold text-slate-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors whitespace-nowrap"
+          @click="aba = a.id"
+          class="px-3 py-1.5 rounded-full border text-xs font-semibold transition-all duration-150 flex items-center gap-1.5"
+          :class="aba === a.id
+            ? CLASSES_ABA[a.cor]
+            : 'border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-white/20'"
         >
-          <i class="fa-solid fa-xmark text-[10px] mr-1" aria-hidden="true" />
-          Limpar
+          {{ a.label }}
+          <span class="tabular-nums opacity-70">{{ a.total }}</span>
         </button>
+      </div>
+
+      <!-- Busca / período / ordenação -->
+      <div v-if="clientes.length > 0" class="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-100 dark:border-white/5">
+        <div class="relative w-full sm:w-72 xl:w-80">
+          <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs" aria-hidden="true" />
+          <input
+            v-model="busca"
+            type="search"
+            placeholder="Nome, responsável ou telefone…"
+            :class="[campoFiltro, 'w-full pl-8 pr-3 py-2 placeholder:text-slate-400']"
+          />
+        </div>
+        <div class="flex items-center gap-1.5 w-full sm:w-auto">
+          <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider shrink-0">Venc.</span>
+          <input v-model="vencimentoDe" type="date" title="Vencimento a partir de"
+            :class="[campoFiltro, 'flex-1 min-w-0 sm:flex-initial sm:w-36 px-2.5 py-2 tabular-nums']" />
+          <span class="text-[10px] text-slate-400 shrink-0">até</span>
+          <input v-model="vencimentoAte" type="date" title="Vencimento até"
+            :class="[campoFiltro, 'flex-1 min-w-0 sm:flex-initial sm:w-36 px-2.5 py-2 tabular-nums']" />
+        </div>
+        <div class="flex items-center gap-2 w-full sm:w-auto sm:ml-auto">
+          <select
+            v-model="ordem"
+            :class="[campoFiltro, 'flex-1 sm:flex-initial px-3 py-2']"
+          >
+            <option value="vencimento">Ordenar por vencimento</option>
+            <option value="nome">Ordenar por nome</option>
+          </select>
+          <button
+            v-if="temFiltro"
+            @click="limparFiltros"
+            type="button"
+            class="px-3 py-2 rounded-full text-xs font-semibold text-slate-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors whitespace-nowrap"
+          >
+            <i class="fa-solid fa-xmark text-[10px] mr-1" aria-hidden="true" />
+            Limpar
+          </button>
+        </div>
       </div>
     </div>
 

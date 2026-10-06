@@ -254,7 +254,7 @@ function bordaCampo(campo: string) {
     <!-- Cabeçalho -->
     <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
       <div>
-        <h1 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Indicados</h1>
+        <h1 class="text-xl sm:text-2xl font-semibold text-slate-900 dark:text-white tracking-tight">Indicados</h1>
         <p class="text-slate-500 dark:text-slate-400 text-xs sm:text-sm mt-0.5">
           Registre cada cliente que você indicou. Quando ele procurar a Agzap para assinar, a indicação aparece como sua.
         </p>
@@ -291,7 +291,7 @@ function bordaCampo(campo: string) {
             <i class="fa-solid fa-user-plus text-purple-600 dark:text-purple-400 text-sm" aria-hidden="true" />
           </div>
           <div>
-            <h2 class="text-sm font-bold text-slate-900 dark:text-white">Registrar indicação</h2>
+            <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Registrar indicação</h2>
             <p class="text-[11px] text-slate-500 dark:text-slate-400">Fica salvo na sua cartela com a data de hoje</p>
           </div>
         </div>
@@ -411,7 +411,7 @@ function bordaCampo(campo: string) {
       <div :class="[cardBase, 'overflow-hidden min-w-0']">
         <div class="px-4 sm:px-5 py-3.5 border-b border-slate-200 dark:border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
-            <h2 class="text-sm font-bold text-slate-900 dark:text-white">Minha cartela de indicações</h2>
+            <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Minha cartela de indicações</h2>
             <p v-if="!carregando && indicacoes.length" class="text-[11px] text-slate-500 dark:text-slate-400">
               Mostrando {{ filtradas.length }} de {{ indicacoes.length }}
             </p>

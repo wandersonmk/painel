@@ -80,17 +80,18 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
 </script>
 
 <template>
-  <div class="p-4 sm:p-6 md:p-8 space-y-6 max-w-[1200px] mx-auto w-full">
+  <!-- Largura toda da área de conteúdo, igual à página de Indicados -->
+  <div class="p-4 sm:p-6 md:p-8 space-y-6 w-full">
 
     <!-- Page Header -->
     <div>
-      <h1 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Materiais de Divulgação</h1>
+      <h1 class="text-xl sm:text-2xl font-semibold text-slate-900 dark:text-white tracking-tight">Materiais de Divulgação</h1>
       <p class="text-slate-500 dark:text-slate-400 text-xs sm:text-sm mt-0.5">Imagens, vídeos e PDFs prontos para você divulgar o Agzap — baixe em alta qualidade</p>
     </div>
 
-    <!-- Busca + filtro por tipo -->
-    <div class="flex flex-col sm:flex-row gap-3 sm:items-center">
-      <div class="relative flex-1">
+    <!-- Busca + filtro por tipo: os filtros descem para a linha de baixo quando falta espaço -->
+    <div class="flex flex-wrap gap-3 items-center">
+      <div class="relative flex-1 min-w-[min(100%,260px)]">
         <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm" aria-hidden="true" />
         <input
           v-model="busca"
@@ -121,7 +122,7 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
     </div>
 
     <!-- Loading -->
-    <div v-if="loading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div v-if="loading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
       <div v-for="i in 6" :key="i" class="aspect-video rounded-md bg-slate-100 dark:bg-white/5 animate-pulse border border-slate-200 dark:border-white/5" />
     </div>
 
@@ -137,7 +138,7 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
     </div>
 
     <!-- Grade de materiais -->
-    <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
       <div
         v-for="m in filtrados"
         :key="m.id"

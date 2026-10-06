@@ -46,40 +46,61 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
 </script>
 
 <template>
-  <div class="p-4 sm:p-6 md:p-8 space-y-6 max-w-[900px] mx-auto w-full">
+  <!-- Largura toda da área de conteúdo, igual à página de Indicados -->
+  <div class="p-4 sm:p-6 md:p-8 space-y-6 w-full">
 
     <!-- Page Header -->
     <div>
-      <h1 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Termos de Responsabilidade</h1>
+      <h1 class="text-xl sm:text-2xl font-semibold text-slate-900 dark:text-white tracking-tight">Termos de Responsabilidade</h1>
       <p class="text-slate-500 dark:text-slate-400 text-xs sm:text-sm mt-0.5">Como funciona a parceria Agzap e suas responsabilidades</p>
     </div>
 
-    <!-- Status do aceite -->
-    <div
-      v-if="!loading && aceitoEm"
-      class="rounded-md bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 px-4 py-3 flex items-center gap-3"
-    >
-      <div class="w-9 h-9 rounded-full bg-emerald-100 dark:bg-emerald-500/20 flex items-center justify-center shrink-0">
-        <i class="fa-solid fa-circle-check text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
-      </div>
-      <div>
-        <p class="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Termos aceitos</p>
-        <p class="text-xs text-emerald-700/80 dark:text-emerald-500 mt-0.5">Você aceitou este termo em {{ formatDataHora(aceitoEm) }}</p>
-      </div>
-    </div>
+    <!-- Telas grandes: resumo numa coluna fixa à esquerda e o termo completo ao lado
+         (mesmo formato da página de Indicados). Abaixo disso, empilha. -->
+    <div class="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)] items-start">
 
-    <!-- Resumo rápido (como funciona) -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-      <div v-for="item in resumo" :key="item.titulo" :class="['p-4', cardBase]">
-        <i :class="['fa-solid', item.icone, item.cor, 'text-lg']" aria-hidden="true" />
-        <p class="text-xs font-bold text-slate-800 dark:text-white mt-2">{{ item.titulo }}</p>
-        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{{ item.texto }}</p>
-      </div>
-    </div>
+      <aside class="space-y-4 min-w-0 xl:sticky xl:top-20">
+        <!-- Status do aceite -->
+        <div
+          v-if="!loading && aceitoEm"
+          class="rounded-md bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 px-4 py-3 flex items-center gap-3"
+        >
+          <div class="w-9 h-9 rounded-full bg-emerald-100 dark:bg-emerald-500/20 flex items-center justify-center shrink-0">
+            <i class="fa-solid fa-circle-check text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+          </div>
+          <div class="min-w-0">
+            <p class="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Termos aceitos</p>
+            <p class="text-xs text-emerald-700/80 dark:text-emerald-500 mt-0.5">Você aceitou este termo em {{ formatDataHora(aceitoEm) }}</p>
+          </div>
+        </div>
 
-    <!-- Termo completo -->
-    <div :class="['p-5 sm:p-7', cardBase]">
-      <ParceiroTermosConteudoLicencas />
+        <!-- Resumo rápido (como funciona) -->
+        <section>
+          <div class="flex items-center gap-2 mb-3">
+            <span class="w-6 h-6 rounded-md flex items-center justify-center bg-purple-500/15 shrink-0">
+              <i class="fa-solid fa-list-check text-purple-600 dark:text-purple-400 text-[11px]" aria-hidden="true" />
+            </span>
+            <h2 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Em resumo</h2>
+          </div>
+          <!-- 1 coluna no celular, 2 no tablet, 4 no notebook e 1 (coluna lateral) em telas largas -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-1 gap-3">
+            <div v-for="item in resumo" :key="item.titulo" :class="['p-4 flex items-start gap-3', cardBase]">
+              <span class="w-8 h-8 rounded-md bg-slate-100 dark:bg-white/5 flex items-center justify-center shrink-0">
+                <i :class="['fa-solid', item.icone, item.cor, 'text-sm']" aria-hidden="true" />
+              </span>
+              <div class="min-w-0">
+                <p class="text-xs font-semibold text-slate-800 dark:text-white">{{ item.titulo }}</p>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{{ item.texto }}</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </aside>
+
+      <!-- Termo completo -->
+      <div :class="['p-5 sm:p-7 min-w-0', cardBase]">
+        <ParceiroTermosConteudoLicencas />
+      </div>
     </div>
 
   </div>

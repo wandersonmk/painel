@@ -22,13 +22,61 @@ const emit = defineEmits<{
 const { formatDate, getPlanLabel, getDataVencimento, formatDiasVencimento } = useAdminClientes()
 const { init: initHideValues, mask } = useHideValues()
 
-type Aba = 'contato' | 'cobranca' | 'uso'
+type Aba = 'contato' | 'cobranca' | 'uso' | 'termos'
 const ABAS: { value: Aba; label: string; icon: string }[] = [
   { value: 'contato', label: 'Contato', icon: 'fa-address-card' },
   { value: 'cobranca', label: 'Cobrança', icon: 'fa-receipt' },
   { value: 'uso', label: 'Uso', icon: 'fa-chart-simple' },
+  { value: 'termos', label: 'Termos', icon: 'fa-file-signature' },
 ]
 const aba = ref<Aba>('contato')
+
+// ---------- Termos (aceite dos Termos de Serviço pelo titular, 09/10/2026) ----------
+// Carrega só ao abrir a aba. "Imprimir PDF" abre /comprovante-termos/:id —
+// documento com CNPJ da Agzap, data/hora com segundos, IP, confirmações e o
+// texto integral aceito (prova para chargeback).
+interface AceiteResumo {
+  id: string
+  versao_termos: string
+  aceito_em: string
+  ip: string | null
+  nome_assinante: string
+  email_assinante: string | null
+  nome_empresa: string | null
+  documento_empresa: string | null
+  hash_confere: boolean
+}
+interface RecusaResumo { id: string; versao_termos: string; recusado_em: string; ip: string | null }
+const termos = ref<{ aceites: AceiteResumo[]; recusas: RecusaResumo[] } | null>(null)
+const termosCarregando = ref(false)
+const termosErro = ref(false)
+
+const dataHoraBR = (iso: string) =>
+  new Date(iso).toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  })
+
+async function carregarTermos() {
+  if (!props.cliente?.id) return
+  termosCarregando.value = true
+  termosErro.value = false
+  try {
+    const resp = await $fetch<{ success: boolean; data: { aceites: AceiteResumo[]; recusas: RecusaResumo[] } }>('/api/admin/termos-aceite', {
+      query: { empresaId: props.cliente.id },
+      headers: await useAdminAuthHeaders(),
+    })
+    termos.value = { aceites: resp.data?.aceites || [], recusas: resp.data?.recusas || [] }
+  } catch {
+    termosErro.value = true
+  } finally {
+    termosCarregando.value = false
+  }
+}
+
+watch(aba, (a) => {
+  if (a === 'termos' && !termos.value && !termosCarregando.value) void carregarTermos()
+})
 
 interface Uso {
   assistentes: number
@@ -51,6 +99,8 @@ const erro = ref(false)
 watch(() => props.show, async (open) => {
   uso.value = null
   erro.value = false
+  termos.value = null
+  termosErro.value = false
   if (!open || !props.cliente?.id) return
   aba.value = 'contato'
   // O "ocultar valores" do dashboard vale aqui também (valor cobrado).
@@ -402,6 +452,86 @@ const dinheiro = (v: number | null) => (v == null ? 'Não definido' : mask(brl(v
 
           <p v-if="metricas.length === 0" class="sm:col-span-2 py-6 text-center text-sm text-slate-500 dark:text-slate-400">
             Sem dados de uso pra mostrar.
+          </p>
+        </div>
+      </template>
+
+      <!-- ===== Termos de Serviço (aceite do titular) ===== -->
+      <template v-else-if="aba === 'termos'">
+        <div v-if="termosCarregando" class="h-full flex items-center justify-center">
+          <AppLoading />
+        </div>
+
+        <div v-else-if="termosErro" class="h-full flex items-center justify-center text-sm text-slate-500 dark:text-slate-400">
+          Não foi possível carregar o aceite dos Termos.
+        </div>
+
+        <div v-else-if="termos" class="space-y-2">
+          <!-- Aceites (o mais recente primeiro) -->
+          <div
+            v-for="a in termos.aceites"
+            :key="a.id"
+            class="rounded-md border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/60 dark:bg-emerald-500/10 px-3 py-2.5"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="text-[13px] font-semibold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                  <i class="fa-solid fa-circle-check text-[12px]" aria-hidden="true" />
+                  Aceitou os Termos de Serviço
+                </p>
+                <p class="text-[12px] text-slate-600 dark:text-slate-400 tabular-nums">
+                  {{ dataHoraBR(a.aceito_em) }} (Brasília) · versão {{ a.versao_termos }}
+                </p>
+              </div>
+              <a
+                :href="`/comprovante-termos/${a.id}`"
+                target="_blank"
+                rel="noopener"
+                class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-semibold bg-purple-600 hover:bg-purple-700 text-white transition-colors"
+              >
+                <i class="fa-solid fa-print text-[11px]" aria-hidden="true" />
+                Imprimir PDF
+              </a>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 mt-2 text-[12px]">
+              <p class="truncate"><span class="text-slate-400 dark:text-slate-500">Aceito por:</span> <span class="text-slate-800 dark:text-slate-200">{{ a.nome_assinante }}</span></p>
+              <p class="truncate"><span class="text-slate-400 dark:text-slate-500">E-mail:</span> <span class="text-slate-800 dark:text-slate-200">{{ a.email_assinante || '—' }}</span></p>
+              <p class="truncate"><span class="text-slate-400 dark:text-slate-500">Empresa:</span> <span class="text-slate-800 dark:text-slate-200">{{ a.nome_empresa || cliente?.nome || '—' }}</span></p>
+              <p class="truncate"><span class="text-slate-400 dark:text-slate-500">CNPJ/CPF:</span> <span class="text-slate-800 dark:text-slate-200">{{ a.documento_empresa || '—' }}</span></p>
+              <p class="truncate"><span class="text-slate-400 dark:text-slate-500">IP:</span> <span class="text-slate-800 dark:text-slate-200 font-mono">{{ a.ip || '—' }}</span></p>
+              <p class="truncate"><span class="text-slate-400 dark:text-slate-500">Texto aceito:</span> <span class="text-slate-800 dark:text-slate-200">{{ a.hash_confere ? 'versão oficial' : 'diferente da oficial' }}</span></p>
+            </div>
+          </div>
+
+          <!-- Sem aceite: recusou ou pendente -->
+          <template v-if="!termos.aceites.length">
+            <div
+              v-if="termos.recusas.length"
+              class="rounded-md border border-rose-200 dark:border-rose-500/30 bg-rose-50/60 dark:bg-rose-500/10 px-3 py-2.5 text-[12px]"
+            >
+              <p class="text-[13px] font-semibold text-rose-800 dark:text-rose-300 flex items-center gap-1.5">
+                <i class="fa-solid fa-circle-xmark text-[12px]" aria-hidden="true" />
+                Clicou em "Não aceito"
+              </p>
+              <p class="text-slate-600 dark:text-slate-400 tabular-nums">
+                {{ dataHoraBR(termos.recusas[0].recusado_em) }} (Brasília) · versão {{ termos.recusas[0].versao_termos }} · IP {{ termos.recusas[0].ip || '—' }}
+              </p>
+              <p class="text-slate-600 dark:text-slate-400 mt-1">O painel do titular continua bloqueado; ele foi orientado a chamar o time no WhatsApp.</p>
+            </div>
+            <div
+              v-else
+              class="rounded-md border border-amber-200 dark:border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/10 px-3 py-2.5 text-[12px]"
+            >
+              <p class="text-[13px] font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                <i class="fa-solid fa-clock text-[12px]" aria-hidden="true" />
+                Ainda não aceitou
+              </p>
+              <p class="text-slate-600 dark:text-slate-400">No próximo acesso, o painel do titular fica bloqueado até ele ler e aceitar os Termos.</p>
+            </div>
+          </template>
+
+          <p class="text-[11px] text-slate-500 dark:text-slate-400 pt-1">
+            O comprovante em PDF traz a Agzap Systems LTDA (CNPJ 60.865.841/0001-93), a empresa e o CNPJ do cliente, data e hora com segundos, IP, as confirmações marcadas, o link dos Termos e o texto integral aceito — serve de prova em chargeback.
           </p>
         </div>
       </template>

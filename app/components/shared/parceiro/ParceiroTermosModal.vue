@@ -1,140 +1,287 @@
-<script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue'
-
-const mostrar = ref(false)
-
-const leuTudo = ref(false)
-const aceitouCheckbox = ref(false)
-const salvando = ref(false)
-const scrollArea = ref<HTMLElement | null>(null)
-
-let toast: Awaited<ReturnType<typeof useToastSafe>> | null = null
-
-onMounted(async () => {
-  toast = await useToastSafe()
-  try {
-    const supabase = useSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    const { data } = await supabase
-      .from('parceiros')
-      .select('dados_split')
-      .eq('auth_user_id', user.id)
-      .maybeSingle()
-
-    const termos = (data as any)?.dados_split?.termos
-    // Pede aceite no primeiro acesso e sempre que a versão do termo mudar.
-    // Quem só tinha aceito a 1.0 (comissão) precisa ler o termo de licenças.
-    // 2.1 detalhou as condutas proibidas e a responsabilização — cláusula nova
-    // só vale contra quem aceitou, então todo mundo aceita de novo.
-    if (!termos?.aceito_em || termos?.versao !== '2.1') {
-      mostrar.value = true
-      await nextTick()
-      checarScroll()
-    }
-  } catch {
-    // sem registro de parceiro ou erro de leitura: o middleware cuida do acesso
-  }
-})
-
-function checarScroll() {
-  const el = scrollArea.value
-  if (!el) return
-  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 16) {
-    leuTudo.value = true
-  }
-}
-
-async function aceitar() {
-  if (!leuTudo.value || !aceitouCheckbox.value || salvando.value) return
-  salvando.value = true
-  try {
-    const resp = await $fetch<{ success: boolean; error?: string }>('/api/parceiro/aceitar-termos', {
-      method: 'POST',
-      headers: await useAdminAuthHeaders(),
-    })
-    if (!resp.success) throw new Error(resp.error || 'Erro')
-    mostrar.value = false
-    toast?.success('Termos aceitos — bem-vindo à parceria Agzap! 🎉')
-  } catch (err: any) {
-    toast?.error(err?.data?.statusMessage || err?.message || 'Erro ao registrar o aceite')
-  } finally {
-    salvando.value = false
-  }
-}
-</script>
-
 <template>
   <Teleport to="body">
-    <!-- Sem fechamento por clique fora, sem botão X: o aceite é obrigatório -->
-    <div
-      v-if="mostrar"
-      class="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Termo de responsabilidade da parceria"
-    >
-      <div class="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh]">
-        <!-- Header -->
-        <div class="px-5 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center gap-3 shrink-0">
-          <div class="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-500/15 flex items-center justify-center shrink-0">
-            <i class="fa-solid fa-file-contract text-purple-600 dark:text-purple-400" aria-hidden="true" />
+    <div v-if="exige" class="fixed inset-0 z-[500] flex items-center justify-center p-2 sm:p-4" role="dialog" aria-modal="true" aria-label="Termo do Parceiro">
+      <!-- Fundo sem clique: o portal só é liberado depois do aceite -->
+      <div class="absolute inset-0 bg-slate-900/75 backdrop-blur-sm" />
+
+      <div class="relative bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl flex flex-col max-h-[96vh] overflow-hidden" @wheel.passive="encaminharRolagem">
+        <!-- Cabeçalho -->
+        <div class="flex-shrink-0 px-5 sm:px-7 pt-5 pb-4 border-b border-slate-100 dark:border-slate-800">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-10 h-10 rounded-xl bg-purple-600 flex items-center justify-center flex-shrink-0">
+                <i class="fa-solid fa-file-contract text-white" aria-hidden="true" />
+              </div>
+              <div class="min-w-0">
+                <h2 class="text-base sm:text-lg font-semibold text-slate-900 dark:text-white">Termo do Parceiro da Agzap</h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Programa de Parceria · versão {{ VERSAO_TERMO_PARCEIRO }}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              class="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              :disabled="enviando"
+              @click="sair"
+            >
+              Sair
+            </button>
           </div>
-          <div>
-            <h2 class="text-base font-bold text-slate-900 dark:text-white">Termo de Responsabilidade</h2>
-            <p class="text-xs text-slate-500 dark:text-slate-400">Leia até o final para liberar o aceite — obrigatório no primeiro acesso</p>
+          <!-- Aviso de leitura (destaque) + progresso -->
+          <div class="mt-4">
+            <div
+              v-if="!rolouAteFim"
+              class="aviso-leitura flex items-center gap-3 rounded-xl border-2 border-amber-300 bg-amber-50 dark:bg-amber-500/10 dark:border-amber-500/40 px-3.5 py-2.5"
+            >
+              <span class="flex-shrink-0 w-8 h-8 rounded-full bg-amber-400 text-white flex items-center justify-center">
+                <i class="fa-solid fa-arrow-down animate-bounce text-sm" aria-hidden="true" />
+              </span>
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-semibold text-amber-900 dark:text-amber-300">Role o texto até o fim para liberar a confirmação</p>
+                <p class="text-xs text-amber-800/80 dark:text-amber-400/80">Use a roda do mouse, a barra roxa ao lado ou o botão "Role para baixo".</p>
+              </div>
+              <span class="flex-shrink-0 text-xs font-semibold text-amber-900 dark:text-amber-300 tabular-nums">{{ progresso }}% lido</span>
+            </div>
+            <div v-else class="flex items-center gap-3 rounded-xl border-2 border-emerald-300 bg-emerald-50 dark:bg-emerald-500/10 dark:border-emerald-500/40 px-3.5 py-2.5">
+              <span class="flex-shrink-0 w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center">
+                <i class="fa-solid fa-check text-sm" aria-hidden="true" />
+              </span>
+              <p class="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Leitura concluída. Agora marque as opções abaixo e salve.</p>
+            </div>
+            <div class="mt-2 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+              <div class="h-full rounded-full transition-all duration-200" :class="rolouAteFim ? 'bg-emerald-500' : 'bg-amber-400'" :style="{ width: `${progresso}%` }" />
+            </div>
           </div>
         </div>
 
-        <!-- Conteúdo scrollável -->
-        <div
-          ref="scrollArea"
-          @scroll="checarScroll"
-          class="flex-1 overflow-y-auto px-5 sm:px-6 py-4 min-h-0"
-        >
-          <ParceiroTermosConteudoLicencas />
+        <!-- Corpo rolável (com indicador "role para baixo") -->
+        <div class="relative flex-1 min-h-0 flex flex-col">
+          <div ref="corpoEl" tabindex="0" class="termos-scroll flex-1 overflow-y-auto overscroll-contain px-5 sm:px-7 py-5 space-y-6 focus:outline-none" @scroll.passive="aoRolar">
+            <p class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+              Leia o Termo do Parceiro até o fim. Ele rege a sua parceria com a Agzap, os créditos e o cuidado com os dados dos clientes.
+              O aceite fica registrado como prova.
+            </p>
+
+            <div class="space-y-6">
+              <section v-for="cat in CATEGORIAS_TERMO_PARCEIRO" :key="cat.id">
+                <p :class="['text-[11px] font-semibold uppercase tracking-wider mb-3 pb-1 border-b', cat.destaque ? 'text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-500/30' : 'text-slate-500 dark:text-slate-400 border-slate-100 dark:border-slate-800']">
+                  {{ cat.titulo }}
+                </p>
+                <div class="space-y-4">
+                  <div v-for="s in cat.secoes" :key="s.id">
+                    <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-1.5">{{ s.numero }}. {{ s.titulo }}</h3>
+                    <div class="text-sm leading-relaxed text-slate-700 dark:text-slate-300 space-y-2" v-html="s.conteudo" />
+                  </div>
+                </div>
+              </section>
+              <div ref="fimTermosEl" class="text-xs text-slate-400 text-center py-2">— Fim do Termo do Parceiro —</div>
+            </div>
+          </div>
+          <!-- Degradê + botão flutuante: deixa claro que há mais texto abaixo -->
+          <div v-if="!rolouAteFim" class="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-white dark:from-slate-900 to-transparent" />
+          <button
+            v-if="!rolouAteFim"
+            type="button"
+            class="absolute bottom-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold shadow-lg"
+            @click="rolarMais"
+          >
+            Role para baixo
+            <i class="fa-solid fa-chevron-down animate-bounce text-xs" aria-hidden="true" />
+          </button>
         </div>
 
-        <!-- Footer -->
-        <div class="px-5 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 shrink-0 space-y-3">
-          <!-- Aviso de rolagem -->
-          <div
-            v-if="!leuTudo"
-            class="flex items-center justify-center gap-2 text-xs font-medium text-amber-700 dark:text-amber-400"
-          >
-            <i class="fa-solid fa-arrow-down animate-bounce" aria-hidden="true" />
-            Role até o final do termo para liberar o aceite
-          </div>
-
-          <!-- Checkbox de aceite -->
-          <label
-            class="flex items-start gap-2.5 select-none"
-            :class="leuTudo ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'"
-          >
-            <input
-              v-model="aceitouCheckbox"
-              type="checkbox"
-              :disabled="!leuTudo"
-              class="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-purple-600 focus:ring-purple-500 disabled:cursor-not-allowed"
-            />
-            <span class="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-              Li e <strong>aceito o Termo de Responsabilidade</strong> do Programa de Parceria da Agzap Systems, incluindo a irreversibilidade do consumo de crédito, a responsabilidade pela cobrança do cliente final e as penalidades.
-            </span>
+        <!-- Rodapé: confirmação -->
+        <div class="flex-shrink-0 px-5 sm:px-7 py-4 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-3">
+          <p v-if="!rolouAteFim" class="flex items-center gap-2 text-xs font-medium text-amber-700 dark:text-amber-400">
+            <i class="fa-solid fa-lock text-[11px]" aria-hidden="true" />
+            As opções abaixo são liberadas depois que você ler o Termo até o fim.
+          </p>
+          <!-- Textos vindos do servidor: são os mesmos gravados como prova -->
+          <label :class="['flex items-start gap-3', rolouAteFim ? 'cursor-pointer' : 'cursor-not-allowed opacity-50']">
+            <input v-model="liTermos" type="checkbox" :disabled="!rolouAteFim" class="mt-0.5 w-4 h-4 accent-emerald-600 flex-shrink-0" />
+            <span class="text-sm text-slate-700 dark:text-slate-300">{{ confirmacoes[0] }}</span>
+          </label>
+          <label :class="['flex items-start gap-3', rolouAteFim ? 'cursor-pointer' : 'cursor-not-allowed opacity-50']">
+            <input v-model="aceitoTermos" type="checkbox" :disabled="!rolouAteFim" class="mt-0.5 w-4 h-4 accent-emerald-600 flex-shrink-0" />
+            <span class="text-sm text-slate-700 dark:text-slate-300">{{ confirmacoes[1] }}</span>
           </label>
 
-          <button
-            @click="aceitar"
-            :disabled="!leuTudo || !aceitouCheckbox || salvando"
-            class="w-full px-4 py-3 rounded font-semibold text-sm bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors shadow-lg shadow-purple-600/30 flex items-center justify-center gap-2"
-            type="button"
-          >
-            <i v-if="salvando" class="fa-solid fa-circle-notch animate-spin text-xs" aria-hidden="true" />
-            <i v-else class="fa-solid fa-check text-xs" aria-hidden="true" />
-            {{ salvando ? 'Registrando…' : 'Aceito os termos' }}
-          </button>
+          <p v-if="erro" class="text-sm text-red-600 dark:text-red-400">{{ erro }}</p>
+
+          <div class="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
+            <a href="/termos-parceiro" target="_blank" rel="noopener" class="text-xs font-medium text-purple-600 dark:text-purple-400 hover:underline">
+              Abrir o Termo em outra aba
+            </a>
+            <button
+              type="button"
+              :disabled="!podeSalvar || enviando"
+              class="px-5 py-2.5 rounded-lg text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed transition-colors"
+              @click="salvar"
+            >
+              {{ enviando ? 'Registrando...' : 'Salvar e continuar' }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
   </Teleport>
 </template>
+
+<script setup lang="ts">
+// Aceite do Termo do Parceiro (09/10/2026): mesmo modelo da tela de aceite dos
+// Termos do app — bloqueia o portal até ler até o fim e marcar "li" e
+// "aceito"; a prova (IP, navegador, data/hora, texto exato) fica em
+// parceiro_termos_aceites pelo /api/parceiro/termos-aceite. Reaparece a cada
+// nova versão (VERSAO_TERMO_PARCEIRO).
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import {
+  CATEGORIAS_TERMO_PARCEIRO, VERSAO_TERMO_PARCEIRO, textoCanonicoTermoParceiro, textosConfirmacaoParceiro,
+} from '~/constants/termosParceiro'
+
+const exige = ref(false)
+const confirmacoesServidor = ref<string[] | null>(null)
+const confirmacoes = computed(() =>
+  confirmacoesServidor.value && confirmacoesServidor.value.length === 2 ? confirmacoesServidor.value : textosConfirmacaoParceiro(),
+)
+
+const corpoEl = ref<HTMLElement | null>(null)
+const fimTermosEl = ref<HTMLElement | null>(null)
+const progresso = ref(0)
+const rolouAteFim = ref(false)
+const liTermos = ref(false)
+const aceitoTermos = ref(false)
+const enviando = ref(false)
+const erro = ref<string | null>(null)
+let abertoEm = 0
+let observador: IntersectionObserver | null = null
+
+const podeSalvar = computed(() => rolouAteFim.value && liTermos.value && aceitoTermos.value)
+
+async function verificar() {
+  try {
+    const r = await $fetch<any>('/api/parceiro/termos-aceite', { headers: await useAdminAuthHeaders() })
+    confirmacoesServidor.value = r?.confirmacoes || null
+    exige.value = !!r?.exige
+  } catch {
+    // Sem cadastro de parceiro ou erro de rede: o middleware cuida do acesso.
+  }
+}
+
+// Botão "Role para baixo": desce ~80% da altura visível do texto.
+function rolarMais() {
+  const el = corpoEl.value
+  if (!el) return
+  el.scrollBy({ top: Math.round(el.clientHeight * 0.8), behavior: 'smooth' })
+}
+
+function marcarFim() {
+  rolouAteFim.value = true
+  progresso.value = 100
+  observador?.disconnect()
+}
+
+function aoRolar() {
+  const el = corpoEl.value
+  if (!el) return
+  const max = el.scrollHeight - el.clientHeight
+  progresso.value = max <= 0 ? 100 : Math.min(100, Math.round((el.scrollTop / max) * 100))
+  // 2º jeito de detectar o fim (além do IntersectionObserver): posição da
+  // rolagem a menos de 40px do fim, ou texto que nem precisa rolar.
+  if (max <= 0 || el.scrollTop + el.clientHeight >= el.scrollHeight - 40) marcarFim()
+}
+
+// Roda do mouse em qualquer parte da janela (cabeçalho, rodapé) rola o texto.
+function encaminharRolagem(e: WheelEvent) {
+  const el = corpoEl.value
+  if (!el || el.contains(e.target as Node)) return
+  el.scrollBy({ top: e.deltaY })
+}
+
+function observarFim() {
+  observador?.disconnect()
+  if (!fimTermosEl.value || !corpoEl.value) return
+  observador = new IntersectionObserver((entradas) => {
+    if (entradas.some(e => e.isIntersecting)) marcarFim()
+  }, { root: corpoEl.value, threshold: 0.1 })
+  observador.observe(fimTermosEl.value)
+}
+
+watch(exige, async (v) => {
+  if (!v) return
+  abertoEm = Date.now()
+  rolouAteFim.value = false
+  liTermos.value = false
+  aceitoTermos.value = false
+  progresso.value = 0
+  await nextTick()
+  observarFim()
+  aoRolar()
+  // Foco no texto: setas, PageDown e espaço também rolam.
+  corpoEl.value?.focus({ preventScroll: true })
+})
+
+async function salvar() {
+  if (!podeSalvar.value || enviando.value) return
+  enviando.value = true
+  erro.value = null
+  try {
+    await $fetch('/api/parceiro/termos-aceite', {
+      method: 'POST',
+      headers: await useAdminAuthHeaders(),
+      body: {
+        versao: VERSAO_TERMO_PARCEIRO,
+        texto: textoCanonicoTermoParceiro(),
+        li_termos: liTermos.value,
+        aceito_termos: aceitoTermos.value,
+        rolou_ate_o_fim: rolouAteFim.value,
+        tempo_leitura_seg: abertoEm ? Math.round((Date.now() - abertoEm) / 1000) : null,
+      },
+    })
+    exige.value = false
+    await navigateTo('/parceiro')
+  } catch (e: any) {
+    erro.value = e?.data?.statusMessage || e?.data?.message || e?.message || 'Não foi possível registrar o aceite. Tente de novo.'
+  } finally {
+    enviando.value = false
+  }
+}
+
+// Sai só desta sessão (scope local), como o Termo do Afiliado: o mesmo login
+// pode estar aberto no app da Agzap.
+async function sair() {
+  try { await useSupabaseClient().auth.signOut({ scope: 'local' }) } catch { /* segue pro login */ }
+  exige.value = false
+  await navigateTo('/login', { replace: true })
+}
+
+onMounted(verificar)
+onBeforeUnmount(() => observador?.disconnect())
+</script>
+
+<style scoped>
+/* Aviso "role até o fim": brilho âmbar pulsando para chamar a atenção. */
+.aviso-leitura {
+  animation: aviso-pulsar 1.8s ease-in-out infinite;
+}
+@keyframes aviso-pulsar {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.55); }
+  50% { box-shadow: 0 0 0 6px rgba(251, 191, 36, 0); }
+}
+
+/* Barra de rolagem do texto bem visível (mais grossa e roxa). */
+.termos-scroll {
+  scrollbar-width: auto;
+  scrollbar-color: #a855f7 #f3e8ff;
+}
+.termos-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+.termos-scroll::-webkit-scrollbar-track {
+  background: #f3e8ff;
+  border-radius: 999px;
+}
+.termos-scroll::-webkit-scrollbar-thumb {
+  background: #a855f7;
+  border-radius: 999px;
+  border: 2px solid #f3e8ff;
+}
+</style>

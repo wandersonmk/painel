@@ -9,20 +9,13 @@ definePageMeta({
 const aceitoEm = ref<string | null>(null)
 const loading = ref(true)
 
+// Aceite da versão vigente, registrado em parceiro_termos_aceites (desde a 3.0).
 onMounted(async () => {
   try {
-    const supabase = useSupabaseClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data } = await supabase
-      .from('parceiros')
-      .select('dados_split')
-      .eq('auth_user_id', user.id)
-      .maybeSingle()
-    const termos = (data as any)?.dados_split?.termos
-    // Só conta quem já aceitou o termo de licenças (2.0). A 1.0 (comissão)
-    // foi descontinuada e não vale mais como aceite.
-    aceitoEm.value = termos?.versao === '2.0' ? (termos?.aceito_em ?? null) : null
+    const r = await $fetch<any>('/api/parceiro/termos-aceite', { headers: await useAdminAuthHeaders() })
+    aceitoEm.value = r?.aceito_em ?? null
+  } catch {
+    aceitoEm.value = null
   } finally {
     loading.value = false
   }
@@ -33,6 +26,7 @@ const resumo = [
   { icone: 'fa-ban', cor: 'text-red-500', titulo: 'Consumo definitivo', texto: 'Crédito usado não volta ao saldo, mesmo se o cliente cancelar ou não pagar.' },
   { icone: 'fa-file-invoice-dollar', cor: 'text-purple-500', titulo: 'Você cobra seu cliente', texto: 'Preço livre. A cobrança do cliente final é sua, fora da estrutura da Agzap.' },
   { icone: 'fa-lock', cor: 'text-slate-500', titulo: 'Limites são da Agzap', texto: 'Exclusão, instâncias, números e assistentes só a Agzap altera.' },
+  { icone: 'fa-user-shield', cor: 'text-pink-500', titulo: 'Sigilo dos dados', texto: 'Dados dos clientes (inclusive Delivery e Imóveis) são protegidos pela LGPD e nunca podem ser usados fora da tarefa.' },
 ]
 
 function formatDataHora(s: string) {
@@ -99,7 +93,7 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
 
       <!-- Termo completo -->
       <div :class="['p-5 sm:p-7 min-w-0', cardBase]">
-        <ParceiroTermosConteudoLicencas />
+        <ParceiroTermoTexto />
       </div>
     </div>
 

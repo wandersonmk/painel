@@ -11,6 +11,11 @@ import { requireSuperAdmin, getServiceClient } from '~~/server/utils/requireSupe
  *                 da empresa, para o comprovante (prova em chargeback/disputa).
  */
 
+// Versão vigente dos Termos no app (= VERSAO_TERMOS_SERVICO em
+// app/constants/termosServico.ts do repo do app). Subiu lá? Suba aqui também,
+// senão a aba Termos não avisa quem precisa aceitar a versão nova.
+const VERSAO_TERMOS_VIGENTE = '2026-10-09.3'
+
 export default defineEventHandler(async (event) => {
   await requireSuperAdmin(event)
   const { empresaId, id } = getQuery(event) as { empresaId?: string; id?: string }
@@ -19,17 +24,22 @@ export default defineEventHandler(async (event) => {
   if (id) {
     const { data: aceite, error } = await supabase
       .from('termos_aceites')
-      .select('id, empresa_id, auth_user_id, usuario_id, versao_termos, hash_termos, hash_confere, nome_assinante, email_assinante, nome_empresa, documento_empresa, li_termos, aceito_termos, aceito_cancelamento, confirmacoes, rolou_ate_o_fim, tempo_leitura_seg, ip, user_agent, aceito_em')
+      .select('id, empresa_id, auth_user_id, usuario_id, versao_termos, hash_termos, hash_confere, nome_assinante, email_assinante, nome_empresa, documento_empresa, li_termos, aceito_termos, aceito_cancelamento, confirmacoes, rolou_ate_o_fim, tempo_leitura_seg, ip, user_agent, aceito_em, versao_politica, hash_politica, politica_confere')
       .eq('id', id)
       .maybeSingle()
     if (error) throw createError({ statusCode: 500, statusMessage: error.message })
     if (!aceite) throw createError({ statusCode: 404, statusMessage: 'Aceite não encontrado' })
 
-    const [{ data: versao }, { data: empresa }] = await Promise.all([
+    // Desde a versão 2026-10-09.3 a Política de Privacidade é aceita junto
+    // (texto em termos_versoes pelo hash_politica).
+    const [{ data: versao }, { data: politica }, { data: empresa }] = await Promise.all([
       supabase.from('termos_versoes').select('versao, conteudo, oficial, created_at').eq('hash', aceite.hash_termos).maybeSingle(),
+      aceite.hash_politica
+        ? supabase.from('termos_versoes').select('versao, conteudo, oficial, created_at').eq('hash', aceite.hash_politica).maybeSingle()
+        : Promise.resolve({ data: null }),
       supabase.from('empresas').select('nome, cnpj, cpf, email, whatsapp, created_at').eq('id', aceite.empresa_id).maybeSingle(),
     ])
-    return { success: true, data: { aceite, versao, empresa } }
+    return { success: true, data: { aceite, versao, politica, empresa } }
   }
 
   if (!empresaId) throw createError({ statusCode: 400, statusMessage: 'empresaId ou id obrigatório' })
@@ -49,5 +59,5 @@ export default defineEventHandler(async (event) => {
   ])
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
 
-  return { success: true, data: { aceites: aceites || [], recusas: recusas || [], exigido: true } }
+  return { success: true, data: { aceites: aceites || [], recusas: recusas || [], exigido: true, versao_vigente: VERSAO_TERMOS_VIGENTE } }
 })

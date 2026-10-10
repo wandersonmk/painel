@@ -118,7 +118,9 @@ async function cadastrar() {
   }
 }
 
-const campoBase = 'w-full h-12 px-4 rounded-2xl border bg-white/[0.04] text-white placeholder:text-gray-500 shadow-[inset_0_1px_2px_rgba(0,0,0,0.25)] hover:bg-white/[0.06] focus:bg-white/[0.07] focus:outline-none focus:ring-4 focus:ring-purple-500/25 transition-all'
+// Compacto (10/10/2026, pedido do dono): em notebook a página não cabia na
+// tela — campos de 40 px e cantos menos redondos.
+const campoBase = 'w-full h-10 px-3.5 rounded-lg border bg-white/[0.04] text-sm text-white placeholder:text-gray-500 shadow-[inset_0_1px_2px_rgba(0,0,0,0.25)] hover:bg-white/[0.06] focus:bg-white/[0.07] focus:outline-none focus:ring-[3px] focus:ring-purple-500/25 transition-all'
 function borda(campo: keyof typeof dicas.value) {
   if (erroForm.value?.campo === campo || dicas.value[campo]) return 'border-red-500/70'
   return validacao.value[campo] ? 'border-green-500/40' : 'border-white/10'
@@ -143,33 +145,36 @@ const CONEXOES = [
     <AfiliadoMoedasFundo />
 
     <!-- Desktop: os dois cartões na mesma linha e com a mesma altura (items-stretch).
-         1024–1279 px: colunas iguais; 1280 px+: ~45/55 (form ~570 px, regras ~695 px). -->
-    <div class="relative z-10 w-full xl:max-w-[88rem] mx-auto px-4 sm:px-6 lg:px-12 pt-8 lg:pt-12 pb-12 lg:pb-16 grid lg:grid-cols-2 xl:grid-cols-[minmax(0,4.5fr)_minmax(0,5.5fr)] gap-8 lg:gap-12 items-start lg:items-stretch">
+         1024–1279 px: colunas iguais; 1280 px+: ~45/55.
+         Compacto (10/10/2026, pedido do dono): tudo menor pra caber num
+         notebook (~768 px de altura) sem rolar; em monitor alto o conteúdo
+         fica centralizado na altura (min-h-screen + content-center). -->
+    <div class="relative z-10 w-full xl:max-w-[80rem] mx-auto px-4 sm:px-6 lg:px-10 pt-5 lg:pt-6 pb-6 lg:pb-6 grid lg:grid-cols-2 xl:grid-cols-[minmax(0,4.5fr)_minmax(0,5.5fr)] gap-5 lg:gap-8 items-start lg:items-stretch lg:min-h-screen lg:content-center">
       <!-- Formulário -->
       <section class="w-full max-w-lg xl:max-w-none mx-auto lg:mx-0 lg:ml-auto lg:flex lg:flex-col">
-        <div class="mb-5">
-          <img src="/logo.wrn.png" alt="Agzap" class="h-10 w-auto object-contain">
+        <div class="mb-3">
+          <img src="/logo.wrn.png" alt="Agzap" class="h-8 w-auto object-contain">
         </div>
 
-        <div class="relative rounded-[1.75rem] p-6 sm:p-7 lg:p-8 bg-[#15121f]/85 backdrop-blur-xl ring-1 ring-inset ring-white/[0.08] shadow-[0_30px_80px_-30px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.05)] lg:flex-1 lg:flex lg:flex-col">
-          <div class="pointer-events-none absolute inset-0 rounded-[1.75rem] bg-gradient-to-b from-purple-400/[0.07] via-transparent to-amber-400/[0.03]" aria-hidden="true" />
+        <div class="relative rounded-2xl p-5 lg:p-6 bg-[#15121f]/85 backdrop-blur-xl ring-1 ring-inset ring-white/[0.08] shadow-[0_30px_80px_-30px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.05)] lg:flex-1 lg:flex lg:flex-col">
+          <div class="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-b from-purple-400/[0.07] via-transparent to-amber-400/[0.03]" aria-hidden="true" />
           <div class="pointer-events-none absolute inset-x-10 -top-px h-px bg-gradient-to-r from-transparent via-amber-200/60 to-transparent" aria-hidden="true" />
 
           <div class="relative z-10 lg:flex-1 lg:flex lg:flex-col">
-            <div class="flex items-center gap-3.5">
-              <span class="grid place-items-center w-11 h-11 shrink-0 rounded-2xl bg-gradient-to-br from-amber-200 via-amber-400 to-amber-600 shadow-[0_10px_24px_-10px_rgba(245,158,11,0.75),inset_0_1px_0_rgba(255,255,255,0.5)]" aria-hidden="true">
-                <i class="fa-solid fa-coins text-[15px] text-[#5b3a02]" />
+            <div class="flex items-center gap-3">
+              <span class="grid place-items-center w-9 h-9 shrink-0 rounded-xl bg-gradient-to-br from-amber-200 via-amber-400 to-amber-600 shadow-[0_10px_24px_-10px_rgba(245,158,11,0.75),inset_0_1px_0_rgba(255,255,255,0.5)]" aria-hidden="true">
+                <i class="fa-solid fa-coins text-[13px] text-[#5b3a02]" />
               </span>
-              <h1 class="text-[1.375rem] sm:text-2xl font-semibold text-white tracking-tight">Seja afiliado Agzap</h1>
+              <h1 class="text-xl font-semibold text-white tracking-tight">Seja afiliado Agzap</h1>
             </div>
-            <p class="text-[15px] text-gray-300 mt-3 leading-relaxed">Indique a Agzap e ganhe todo mês enquanto seus clientes pagam.</p>
+            <p class="text-sm text-gray-300 mt-2 leading-relaxed">Indique a Agzap e ganhe todo mês enquanto seus clientes pagam.</p>
 
             <!-- No desktop a altura extra (para igualar ao cartão da direita) é
                  distribuída por igual entre os blocos, sem buraco no fim. -->
-            <form class="mt-6 space-y-4 lg:flex-1 lg:flex lg:flex-col lg:justify-between" novalidate @submit.prevent="cadastrar">
+            <form class="mt-4 space-y-3 lg:flex-1 lg:flex lg:flex-col lg:justify-between" novalidate @submit.prevent="cadastrar">
               <div>
-                <div class="flex items-center justify-between gap-2 mb-1.5 px-1">
-                  <label for="af-nome" class="text-[13px] text-gray-300">Nome completo</label>
+                <div class="flex items-center justify-between gap-2 mb-1 px-0.5">
+                  <label for="af-nome" class="text-xs text-gray-300">Nome completo</label>
                   <span v-if="dicas.nome" class="text-[11px] text-red-400">{{ dicas.nome }}</span>
                 </div>
                 <input
@@ -185,8 +190,8 @@ const CONEXOES = [
               </div>
 
               <div>
-                <div class="flex items-center justify-between gap-2 mb-1.5 px-1">
-                  <label for="af-email" class="text-[13px] text-gray-300">E-mail</label>
+                <div class="flex items-center justify-between gap-2 mb-1 px-0.5">
+                  <label for="af-email" class="text-xs text-gray-300">E-mail</label>
                   <span v-if="dicas.email" class="text-[11px] text-red-400">{{ dicas.email }}</span>
                 </div>
                 <input
@@ -201,10 +206,10 @@ const CONEXOES = [
                 >
               </div>
 
-              <div class="grid sm:grid-cols-2 gap-4">
+              <div class="grid sm:grid-cols-2 gap-3">
                 <div>
-                  <div class="flex items-center justify-between gap-2 mb-1.5 px-1">
-                    <label for="af-tel" class="text-[13px] text-gray-300">WhatsApp</label>
+                  <div class="flex items-center justify-between gap-2 mb-1 px-0.5">
+                    <label for="af-tel" class="text-xs text-gray-300">WhatsApp</label>
                     <span v-if="dicas.telefone" class="text-[11px] text-red-400">{{ dicas.telefone }}</span>
                   </div>
                   <input
@@ -220,8 +225,8 @@ const CONEXOES = [
                   >
                 </div>
                 <div>
-                  <div class="flex items-center justify-between gap-2 mb-1.5 px-1">
-                    <label for="af-doc" class="text-[13px] text-gray-300">CPF ou CNPJ</label>
+                  <div class="flex items-center justify-between gap-2 mb-1 px-0.5">
+                    <label for="af-doc" class="text-xs text-gray-300">CPF ou CNPJ</label>
                     <span v-if="dicas.documento" class="text-[11px] text-red-400">{{ dicas.documento }}</span>
                   </div>
                   <input
@@ -238,10 +243,10 @@ const CONEXOES = [
                 </div>
               </div>
 
-              <div class="grid sm:grid-cols-2 gap-4">
+              <div class="grid sm:grid-cols-2 gap-3">
                 <div>
-                  <div class="flex items-center justify-between gap-2 mb-1.5 px-1">
-                    <label for="af-senha" class="text-[13px] text-gray-300">Senha</label>
+                  <div class="flex items-center justify-between gap-2 mb-1 px-0.5">
+                    <label for="af-senha" class="text-xs text-gray-300">Senha</label>
                     <span v-if="dicas.senha" class="text-[11px] text-red-400">{{ dicas.senha }}</span>
                   </div>
                   <div class="relative">
@@ -258,7 +263,7 @@ const CONEXOES = [
                     <button
                       type="button"
                       tabindex="-1"
-                      class="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center rounded-xl text-gray-400 hover:text-white hover:bg-white/[0.06] transition-colors"
+                      class="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-md text-gray-400 hover:text-white hover:bg-white/[0.06] transition-colors"
                       :aria-label="mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'"
                       :title="mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'"
                       @click="mostrarSenha = !mostrarSenha"
@@ -268,8 +273,8 @@ const CONEXOES = [
                   </div>
                 </div>
                 <div>
-                  <div class="flex items-center justify-between gap-2 mb-1.5 px-1">
-                    <label for="af-senha2" class="text-[13px] text-gray-300">Confirmar senha</label>
+                  <div class="flex items-center justify-between gap-2 mb-1 px-0.5">
+                    <label for="af-senha2" class="text-xs text-gray-300">Confirmar senha</label>
                     <span v-if="dicas.confirmar" class="text-[11px] text-red-400">{{ dicas.confirmar }}</span>
                   </div>
                   <input
@@ -284,13 +289,13 @@ const CONEXOES = [
                 </div>
               </div>
 
-              <p class="text-xs text-gray-400 leading-relaxed px-1">
+              <p class="text-xs text-gray-400 leading-relaxed px-0.5">
                 Já usa a Agzap? Pode usar o mesmo e-mail e a mesma senha da sua conta.
               </p>
 
               <div
                 v-if="erroForm"
-                class="px-4 py-3 rounded-2xl bg-red-500/10 ring-1 ring-inset ring-red-500/25 text-red-300 text-sm leading-relaxed flex items-start gap-2.5"
+                class="px-3.5 py-2.5 rounded-lg bg-red-500/10 ring-1 ring-inset ring-red-500/25 text-red-300 text-sm leading-relaxed flex items-start gap-2.5"
                 role="alert"
               >
                 <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true" />
@@ -300,49 +305,50 @@ const CONEXOES = [
               <button
                 type="submit"
                 :disabled="!podeEnviar"
-                class="w-full h-12 px-5 rounded-2xl font-medium text-white bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 shadow-[0_14px_32px_-14px_rgba(139,92,246,0.9),inset_0_1px_0_rgba(255,255,255,0.18)] transition-all duration-200 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:active:scale-100 inline-flex items-center justify-center gap-2"
+                class="w-full h-10 px-5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 shadow-[0_14px_32px_-14px_rgba(139,92,246,0.9),inset_0_1px_0_rgba(255,255,255,0.18)] transition-all duration-200 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:active:scale-100 inline-flex items-center justify-center gap-2"
               >
                 <i v-if="enviando" class="fa-solid fa-spinner animate-spin text-sm" aria-hidden="true" />
                 {{ enviando ? 'Criando sua conta…' : 'Criar minha conta de afiliado' }}
               </button>
 
-              <p class="text-xs text-gray-400 text-center">
-                No primeiro acesso ao portal você lê e aceita o
-                <a href="/termos-afiliado" target="_blank" rel="noopener" class="text-purple-300 hover:text-purple-200 underline-offset-2 hover:underline">Termo do Afiliado</a>.
-              </p>
-
-              <p class="text-xs text-gray-400 text-center">
-                Já é afiliado?
-                <NuxtLink to="/login" class="text-purple-300 hover:text-purple-200 underline-offset-2 hover:underline">Entrar</NuxtLink>
-              </p>
+              <div class="space-y-1 text-xs text-gray-400 text-center">
+                <p>
+                  No primeiro acesso ao portal você lê e aceita o
+                  <a href="/termos-afiliado" target="_blank" rel="noopener" class="text-purple-300 hover:text-purple-200 underline-offset-2 hover:underline">Termo do Afiliado</a>.
+                </p>
+                <p>
+                  Já é afiliado?
+                  <NuxtLink to="/login" class="text-purple-300 hover:text-purple-200 underline-offset-2 hover:underline">Entrar</NuxtLink>
+                </p>
+              </div>
             </form>
           </div>
         </div>
       </section>
 
       <!-- Regras -->
-      <!-- mt = altura da linha do logo (h-10 + mb-5), para os topos alinharem -->
-      <aside class="w-full max-w-lg lg:max-w-none mx-auto lg:mx-0 lg:mt-[3.75rem] lg:flex lg:flex-col">
-        <div class="relative rounded-[1.75rem] bg-[#15121f]/55 backdrop-blur-xl ring-1 ring-inset ring-white/[0.08] shadow-[0_30px_80px_-30px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.05)] p-5 sm:p-6 xl:p-7 lg:flex-1 lg:flex lg:flex-col">
+      <!-- mt = altura da linha do logo (h-8 + mb-3), para os topos alinharem -->
+      <aside class="w-full max-w-lg lg:max-w-none mx-auto lg:mx-0 lg:mt-11 lg:flex lg:flex-col">
+        <div class="relative rounded-2xl bg-[#15121f]/55 backdrop-blur-xl ring-1 ring-inset ring-white/[0.08] shadow-[0_30px_80px_-30px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.05)] p-5 lg:p-6 lg:flex-1 lg:flex lg:flex-col">
           <div class="pointer-events-none absolute inset-x-10 -top-px h-px bg-gradient-to-r from-transparent via-purple-300/50 to-transparent" aria-hidden="true" />
 
-          <div class="relative space-y-4 lg:flex-1 lg:flex lg:flex-col lg:justify-between">
+          <div class="relative space-y-3.5 lg:flex-1 lg:flex lg:flex-col lg:justify-between">
             <div class="flex items-center gap-3">
-              <span class="grid place-items-center w-9 h-9 shrink-0 rounded-xl bg-amber-400/10 ring-1 ring-inset ring-amber-300/25 text-amber-300" aria-hidden="true">
-                <i class="fa-solid fa-sack-dollar text-[14px]" />
+              <span class="grid place-items-center w-8 h-8 shrink-0 rounded-lg bg-amber-400/10 ring-1 ring-inset ring-amber-300/25 text-amber-300" aria-hidden="true">
+                <i class="fa-solid fa-sack-dollar text-[13px]" />
               </span>
               <div class="min-w-0">
-                <h2 class="text-lg font-semibold text-white tracking-tight leading-tight">Como você ganha</h2>
-                <p class="text-[13px] text-gray-400 mt-0.5 leading-snug">Comissão sobre a mensalidade de cada cliente, enquanto ele paga.</p>
+                <h2 class="text-base font-semibold text-white tracking-tight leading-tight">Como você ganha</h2>
+                <p class="text-xs text-gray-400 mt-0.5 leading-snug">Comissão sobre a mensalidade de cada cliente, enquanto ele paga.</p>
               </div>
             </div>
 
             <div>
-              <div class="grid grid-cols-4 sm:grid-cols-6 gap-2">
+              <div class="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
                 <div
                   v-for="c in CONEXOES"
                   :key="c.n"
-                  class="flex flex-col items-center justify-center rounded-2xl px-1.5 py-2.5 text-center"
+                  class="flex flex-col items-center justify-center rounded-lg px-1.5 py-2 text-center"
                   :class="c.n === '1ª'
                     ? 'col-span-4 sm:col-span-2 bg-gradient-to-b from-amber-300/[0.16] to-amber-500/[0.04] ring-1 ring-inset ring-amber-300/30 shadow-[0_10px_30px_-16px_rgba(245,158,11,0.6)]'
                     : 'bg-white/[0.035] ring-1 ring-inset ring-white/[0.07]'"
@@ -350,33 +356,33 @@ const CONEXOES = [
                   <p class="text-[11px] leading-tight" :class="c.n === '1ª' ? 'text-amber-200/80' : 'text-gray-400'">{{ c.n }} conexão</p>
                   <p
                     class="font-display font-medium tabular-nums leading-tight mt-0.5"
-                    :class="c.n === '1ª' ? 'text-lg text-amber-200' : 'text-base text-white'"
+                    :class="c.n === '1ª' ? 'text-base text-amber-200' : 'text-[15px] text-white'"
                   >
                     {{ c.pct }}
                   </p>
                 </div>
               </div>
-              <p class="mt-2.5 px-1 text-xs leading-relaxed text-gray-400 [text-wrap:balance]">
+              <p class="mt-2 px-0.5 text-xs leading-relaxed text-gray-400 [text-wrap:balance]">
                 <span class="whitespace-nowrap text-gray-200">1ª conexão:</span> quem cria a conta pelo seu link (<span class="text-amber-300/90 tabular-nums">30%</span> no 1º pagamento, <span class="text-amber-300/90 tabular-nums">15%</span> nos seguintes).
                 <span class="xl:block"><span class="whitespace-nowrap text-gray-200">Da 2ª à 5ª:</span> as indicações dos seus clientes.</span>
               </p>
             </div>
 
-            <ul class="space-y-2.5 text-[13.5px] leading-snug text-gray-300">
+            <ul class="space-y-2 text-[13px] leading-snug text-gray-300">
               <li class="flex items-center gap-3">
-                <span class="grid place-items-center w-8 h-8 shrink-0 rounded-lg bg-purple-500/10 ring-1 ring-inset ring-purple-400/15 text-purple-300" aria-hidden="true">
+                <span class="grid place-items-center w-7 h-7 shrink-0 rounded-md bg-purple-500/10 ring-1 ring-inset ring-purple-400/15 text-purple-300" aria-hidden="true">
                   <i class="fa-solid fa-unlock text-[12px]" />
                 </span>
                 <span class="[text-wrap:pretty]">Libera da 2ª à 5ª conexão com <span class="font-medium text-amber-300 tabular-nums">10, 15, 20 e 50</span> clientes ativos seus</span>
               </li>
               <li class="flex items-center gap-3">
-                <span class="grid place-items-center w-8 h-8 shrink-0 rounded-lg bg-purple-500/10 ring-1 ring-inset ring-purple-400/15 text-purple-300" aria-hidden="true">
+                <span class="grid place-items-center w-7 h-7 shrink-0 rounded-md bg-purple-500/10 ring-1 ring-inset ring-purple-400/15 text-purple-300" aria-hidden="true">
                   <i class="fa-solid fa-hourglass-half text-[12px]" />
                 </span>
                 <span class="[text-wrap:pretty]">Fica retida <span class="font-medium text-amber-300">7 dias</span> (PIX) ou <span class="font-medium text-amber-300">15 dias</span> (cartão), depois liberada para saque</span>
               </li>
               <li class="flex items-center gap-3">
-                <span class="grid place-items-center w-8 h-8 shrink-0 rounded-lg bg-emerald-500/10 ring-1 ring-inset ring-emerald-400/20 text-emerald-300" aria-hidden="true">
+                <span class="grid place-items-center w-7 h-7 shrink-0 rounded-md bg-emerald-500/10 ring-1 ring-inset ring-emerald-400/20 text-emerald-300" aria-hidden="true">
                   <i class="fa-solid fa-money-bill-transfer text-[12px]" />
                 </span>
                 <span class="[text-wrap:pretty]">Saque por PIX em até <span class="font-medium text-amber-300">48 horas</span>, chave em seu nome e CPF/CNPJ</span>

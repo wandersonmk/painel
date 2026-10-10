@@ -84,19 +84,21 @@ const todoMes = computed(() =>
 </script>
 
 <template>
-  <section class="border-t border-white/[0.07] pt-5" aria-labelledby="afs-titulo">
-    <div class="flex items-center gap-2.5">
-      <span class="grid place-items-center w-7 h-7 shrink-0 rounded-lg bg-amber-400/10 ring-1 ring-inset ring-amber-300/20 text-amber-300" aria-hidden="true">
-        <i class="fa-solid fa-calculator text-[12px]" />
+  <!-- Compacto (10/10/2026, pedido do dono): menos altura pra página caber em
+       notebook — mensalidade na mesma linha do rótulo, cantos menos redondos. -->
+  <section class="border-t border-white/[0.07] pt-3.5" aria-labelledby="afs-titulo">
+    <div class="flex items-center gap-2">
+      <span class="grid place-items-center w-6 h-6 shrink-0 rounded-md bg-amber-400/10 ring-1 ring-inset ring-amber-300/20 text-amber-300" aria-hidden="true">
+        <i class="fa-solid fa-calculator text-[11px]" />
       </span>
-      <h3 id="afs-titulo" class="text-[15px] font-medium text-white">Simule seus ganhos</h3>
+      <h3 id="afs-titulo" class="text-sm font-medium text-white">Simule seus ganhos</h3>
     </div>
 
-    <div class="mt-4 space-y-4">
+    <div class="mt-2.5 space-y-2.5">
       <!-- Clientes indicados -->
       <div>
-        <div class="flex items-center justify-between gap-3 mb-1.5 px-1">
-          <label for="afs-clientes" class="text-[13px] text-gray-300">Clientes indicados</label>
+        <div class="flex items-center justify-between gap-3 mb-0.5 px-0.5">
+          <label for="afs-clientes" class="text-xs text-gray-300">Clientes indicados</label>
           <input
             :value="textoClientes"
             type="text"
@@ -104,7 +106,7 @@ const todoMes = computed(() =>
             autocomplete="off"
             maxlength="2"
             aria-label="Clientes indicados (número)"
-            class="w-14 h-9 rounded-xl border border-white/10 bg-white/[0.04] text-center font-display font-medium tabular-nums text-white hover:bg-white/[0.06] focus:bg-white/[0.07] focus:outline-none focus:ring-4 focus:ring-purple-500/25 transition-all"
+            class="w-12 h-8 rounded-lg border border-white/10 bg-white/[0.04] text-center text-sm font-display font-medium tabular-nums text-white hover:bg-white/[0.06] focus:bg-white/[0.07] focus:outline-none focus:ring-[3px] focus:ring-purple-500/25 transition-all"
             @input="aoDigitarClientes"
             @blur="aoSairClientes"
             @keydown="aoTeclarClientes"
@@ -127,11 +129,11 @@ const todoMes = computed(() =>
         </div>
       </div>
 
-      <!-- Mensalidade média -->
-      <div>
-        <label for="afs-mensalidade" class="block text-[13px] text-gray-300 mb-1.5 px-1">Mensalidade média</label>
-        <div class="relative">
-          <span class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true">R$</span>
+      <!-- Mensalidade média (rótulo e campo na mesma linha) -->
+      <div class="flex items-center justify-between gap-3 px-0.5">
+        <label for="afs-mensalidade" class="text-xs text-gray-300">Mensalidade média</label>
+        <div class="relative w-36 shrink-0">
+          <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400" aria-hidden="true">R$</span>
           <input
             id="afs-mensalidade"
             :value="textoMensalidade"
@@ -139,7 +141,7 @@ const todoMes = computed(() =>
             inputmode="numeric"
             autocomplete="off"
             placeholder="0,00"
-            class="w-full h-11 pl-11 pr-4 rounded-2xl border border-white/10 bg-white/[0.04] text-white tabular-nums shadow-[inset_0_1px_2px_rgba(0,0,0,0.25)] hover:bg-white/[0.06] focus:bg-white/[0.07] focus:outline-none focus:ring-4 focus:ring-purple-500/25 transition-all"
+            class="w-full h-8 pl-9 pr-3 rounded-lg border border-white/10 bg-white/[0.04] text-sm text-right text-white tabular-nums shadow-[inset_0_1px_2px_rgba(0,0,0,0.25)] hover:bg-white/[0.06] focus:bg-white/[0.07] focus:outline-none focus:ring-[3px] focus:ring-purple-500/25 transition-all"
             @input="aoDigitarMensalidade"
             @blur="aoSairMensalidade"
           >
@@ -147,23 +149,23 @@ const todoMes = computed(() =>
       </div>
 
       <!-- Resultado -->
-      <div class="grid grid-cols-2 gap-2" aria-live="polite" aria-atomic="true">
-        <div class="min-w-0 rounded-2xl px-3 sm:px-4 py-3 bg-gradient-to-b from-amber-300/[0.13] to-amber-500/[0.03] ring-1 ring-inset ring-amber-300/25">
-          <p class="text-[11px] sm:text-xs leading-tight text-amber-100/70">No 1º pagamento</p>
-          <p class="mt-1 font-display font-medium tabular-nums leading-tight text-amber-200 text-base sm:text-lg [overflow-wrap:anywhere]">
+      <div class="grid grid-cols-2 gap-1.5" aria-live="polite" aria-atomic="true">
+        <div class="min-w-0 rounded-lg px-3 py-2 bg-gradient-to-b from-amber-300/[0.13] to-amber-500/[0.03] ring-1 ring-inset ring-amber-300/25">
+          <p class="text-[11px] leading-tight text-amber-100/70">No 1º pagamento</p>
+          <p class="mt-0.5 font-display font-medium tabular-nums leading-tight text-amber-200 text-base [overflow-wrap:anywhere]">
             {{ noPrimeiroPagamento }}
           </p>
         </div>
-        <div class="min-w-0 rounded-2xl px-3 sm:px-4 py-3 bg-white/[0.035] ring-1 ring-inset ring-white/[0.07]">
-          <p class="text-[11px] sm:text-xs leading-tight text-gray-400">Depois, todo mês</p>
-          <p class="mt-1 font-display font-medium tabular-nums leading-tight text-amber-200 text-base sm:text-lg [overflow-wrap:anywhere]">
+        <div class="min-w-0 rounded-lg px-3 py-2 bg-white/[0.035] ring-1 ring-inset ring-white/[0.07]">
+          <p class="text-[11px] leading-tight text-gray-400">Depois, todo mês</p>
+          <p class="mt-0.5 font-display font-medium tabular-nums leading-tight text-amber-200 text-base [overflow-wrap:anywhere]">
             {{ todoMes }}<span class="font-sans font-normal text-xs text-gray-400">/mês</span>
           </p>
         </div>
       </div>
 
-      <p class="px-1 text-xs leading-relaxed text-gray-500">
-        Simulação só com a 1ª conexão. A comissão vale enquanto o cliente paga; da 2ª à 5ª conexão o ganho é extra.
+      <p class="px-0.5 text-[11px] leading-snug text-gray-500">
+        Simulação só com a 1ª conexão; da 2ª à 5ª conexão o ganho é extra.
       </p>
     </div>
   </section>
@@ -174,7 +176,7 @@ const todoMes = computed(() =>
 .afs-faixa {
   -webkit-appearance: none;
   appearance: none;
-  height: 28px;
+  height: 22px;
   background: transparent;
   cursor: pointer;
 }

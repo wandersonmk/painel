@@ -2,6 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { formatarDocumento } from '~~/shared/utils/documento'
 import { formatPhoneSemDdiBrasil, whatsappLink } from '~/utils/phone'
+import ComprovanteSaqueModal, { baixarComprovante as baixarArquivoComprovante, mensagemErroComprovante } from '~/components/shared/ComprovanteSaqueModal.vue'
+import type { ArquivoComprovante } from '~/components/shared/ComprovanteSaqueModal.vue'
 
 /**
  * Aba "Saques" da página /afiliados. O afiliado pede, a Agzap paga por PIX
@@ -263,7 +265,7 @@ async function enviarComprovante(
 }
 
 // Anexo do modal "Marcar saque como pago": sobe ao escolher, a URL vai no confirmar.
-interface Anexo { nome: string; tipo: TipoAnexo; tamanho: number; previa: string | null; url: string | null }
+interface Anexo { nome: string; tipo: TipoAnexo; tamanho: number; previa: string | null; url: string | null; arquivo: ArquivoComprovante }
 const anexo = ref<Anexo | null>(null)
 const enviandoAnexo = ref(false)
 const progressoAnexo = ref(0)
@@ -302,6 +304,8 @@ async function anexarNoModal(file: File | null | undefined) {
       tamanho: preparado.blob.size,
       previa: preparado.tipo === 'imagem' ? URL.createObjectURL(preparado.blob) : null,
       url: null,
+      // Arquivo local: o "ver" do modal mostra este, sem abrir a URL pública.
+      arquivo: { blob: preparado.blob, nome: preparado.nome },
     }
     const r = await enviarComprovante(s.id, preparado.blob, preparado.nome, (pct) => {
       if (geracao === geracaoAnexo) progressoAnexo.value = pct
@@ -363,35 +367,34 @@ async function aoEscolherDepois(e: Event) {
   }
 }
 
-// "Baixar": o arquivo está no R2 (outra origem), onde o atributo download não
-// vale. Passa pela rota do painel (com o token) e baixa por um link temporário.
+// ───────── Ver / baixar o comprovante (pela rota com login, nunca pela URL pública) ─────────
+const ROTA_COMPROVANTE = '/api/admin/afiliados/saque-comprovante-download'
+
+// "Baixar" da lista: busca o arquivo e baixa por link temporário, sem abrir aba.
 const baixandoId = ref<string | null>(null)
 async function baixarComprovante(s: SaqueAdmin) {
   if (baixandoId.value) return
   baixandoId.value = s.id
   try {
-    const resp = await $fetch.raw<Blob>('/api/admin/afiliados/saque-comprovante-download', {
-      query: { saqueId: s.id },
-      headers: await useAdminAuthHeaders(),
-      responseType: 'blob',
-    })
-    const blob = resp._data
-    if (!blob || !blob.size) throw new Error('vazio')
-    const nome = /filename="([^"]+)"/.exec(resp.headers.get('content-disposition') || '')?.[1] || 'comprovante-saque'
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = nome
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    setTimeout(() => URL.revokeObjectURL(url), 5000)
+    await baixarArquivoComprovante(ROTA_COMPROVANTE, s.id)
   } catch (e: any) {
-    const status = Number(e?.statusCode ?? e?.status ?? 0)
-    toast.error(status === 404 ? 'Comprovante não encontrado.' : 'Não foi possível baixar o comprovante. Tente de novo.')
+    toast.error(mensagemErroComprovante(e))
   } finally {
     baixandoId.value = null
   }
+}
+
+// Visualizador dentro da página: saque pago (rota) ou o arquivo local do modal de pagar.
+const visualizador = ref<{ saqueId: string | null; arquivo: ArquivoComprovante | null; subtitulo: string } | null>(null)
+function verComprovante(s: SaqueAdmin) {
+  const partes = [s.afiliado_nome || 'Afiliado', fmtBRL(s.valor)]
+  if (s.pago_em) partes.push(`pago em ${fmtDiaHora(s.pago_em)}`)
+  visualizador.value = { saqueId: s.id, arquivo: null, subtitulo: partes.join(' · ') }
+}
+function verAnexoLocal() {
+  const a = anexo.value
+  if (!a) return
+  visualizador.value = { saqueId: null, arquivo: a.arquivo, subtitulo: 'Ainda não confirmado' }
 }
 
 // ───────── Marcar como pago ─────────
@@ -786,15 +789,14 @@ const inputBase = 'w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border
               <!-- Pago: ver, anexar ou trocar o arquivo do comprovante -->
               <div v-if="s.status === 'pago'" class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-2">
                 <template v-if="s.comprovante_url">
-                  <a
-                    :href="s.comprovante_url"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
                     class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-sm font-normal border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 hover:border-purple-300 dark:hover:border-purple-500/40 transition-colors"
+                    @click="verComprovante(s)"
                   >
                     <i class="fa-solid fa-file-invoice text-xs" aria-hidden="true" />
                     Ver comprovante
-                  </a>
+                  </button>
                   <button
                     type="button"
                     :disabled="baixandoId === s.id"
@@ -916,19 +918,26 @@ const inputBase = 'w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border
           </button>
 
           <div v-else class="flex items-center gap-3 p-2.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-            <a
+            <button
               v-if="anexo.previa"
-              :href="anexo.url || anexo.previa"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="shrink-0"
-              title="Abrir o comprovante"
+              type="button"
+              class="shrink-0 rounded"
+              title="Ver o comprovante"
+              aria-label="Ver o comprovante"
+              @click="verAnexoLocal"
             >
               <img :src="anexo.previa" alt="Prévia do comprovante" class="size-14 rounded object-cover border border-slate-200 dark:border-slate-700">
-            </a>
-            <div v-else class="size-14 shrink-0 rounded flex items-center justify-center bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400">
+            </button>
+            <button
+              v-else
+              type="button"
+              class="size-14 shrink-0 rounded flex items-center justify-center bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400"
+              title="Ver o comprovante"
+              aria-label="Ver o comprovante"
+              @click="verAnexoLocal"
+            >
               <i class="fa-solid fa-file-pdf text-xl" aria-hidden="true" />
-            </div>
+            </button>
 
             <div class="min-w-0 flex-1">
               <p class="text-sm text-slate-800 dark:text-slate-200 truncate" :title="anexo.nome">{{ anexo.nome }}</p>
@@ -940,13 +949,11 @@ const inputBase = 'w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border
               </template>
               <p v-else class="text-[11px] text-emerald-600 dark:text-emerald-400 tabular-nums">
                 <i class="fa-solid fa-check text-[9px] mr-0.5" aria-hidden="true" />Enviado · {{ fmtTamanho(anexo.tamanho) }}
-                <a
-                  v-if="anexo.url && anexo.tipo === 'pdf'"
-                  :href="anexo.url"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
                   class="ml-1 text-purple-600 dark:text-purple-400 hover:underline"
-                >abrir</a>
+                  @click="verAnexoLocal"
+                >ver</button>
               </p>
             </div>
 
@@ -1045,5 +1052,15 @@ const inputBase = 'w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border
         </div>
       </form>
     </BaseModal>
+
+    <!-- ═════════ Modal: ver comprovante (fica por cima do modal de pagar) ═════════ -->
+    <ComprovanteSaqueModal
+      :show="!!visualizador"
+      :rota="ROTA_COMPROVANTE"
+      :saque-id="visualizador?.saqueId ?? null"
+      :arquivo="visualizador?.arquivo ?? null"
+      :subtitulo="visualizador?.subtitulo ?? null"
+      @close="visualizador = null"
+    />
   </div>
 </template>

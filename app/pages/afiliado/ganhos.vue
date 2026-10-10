@@ -10,6 +10,7 @@ import {
   linkAvisoSaqueWhatsApp,
 } from '~/composables/useAfiliado'
 import type { DadosAvisoSaque } from '~/composables/useAfiliado'
+import ComprovanteSaqueModal, { baixarComprovante as baixarArquivoComprovante, mensagemErroComprovante } from '~/components/shared/ComprovanteSaqueModal.vue'
 
 definePageMeta({
   middleware: ['auth', 'afiliado'],
@@ -267,37 +268,28 @@ function ehLink(s: string | null) {
   return !!s && /^https?:\/\//i.test(s.trim())
 }
 
-// "Baixar": o arquivo está no R2 (outra origem), onde o atributo download não
-// vale. Passa pela rota do painel (com o token) e baixa por um link temporário.
+// Comprovante do PIX: ver dentro da página e baixar direto, sempre pela rota
+// com login (o arquivo fica no R2, outra origem; nada de abrir aba).
+const ROTA_COMPROVANTE = '/api/afiliado/saque-comprovante'
+
 const baixandoId = ref<string | null>(null)
 async function baixarComprovante(s: Saque) {
   if (baixandoId.value) return
   baixandoId.value = s.id
   try {
-    const resp = await $fetch.raw<Blob>('/api/afiliado/saque-comprovante', {
-      query: { saqueId: s.id },
-      headers: await useAdminAuthHeaders(),
-      responseType: 'blob',
-    })
-    const blob = resp._data
-    if (!blob || !blob.size) throw new Error('vazio')
-    const nome = /filename="([^"]+)"/.exec(resp.headers.get('content-disposition') || '')?.[1] || 'comprovante-saque'
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = nome
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    setTimeout(() => URL.revokeObjectURL(url), 5000)
+    await baixarArquivoComprovante(ROTA_COMPROVANTE, s.id)
   }
   catch (e: any) {
-    const status = Number(e?.statusCode ?? e?.status ?? 0)
-    toast.error(status === 404 ? 'Comprovante não encontrado.' : 'Não foi possível baixar o comprovante. Tente de novo.')
+    toast.error(mensagemErroComprovante(e))
   }
   finally {
     baixandoId.value = null
   }
+}
+
+const visualizando = ref<{ saqueId: string; subtitulo: string } | null>(null)
+function verComprovante(s: Saque) {
+  visualizando.value = { saqueId: s.id, subtitulo: `${fmtBRL(s.valor)} · pago em ${fmtDiaMes(s.pago_em)}` }
 }
 
 const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none'
@@ -485,9 +477,9 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
                 <!-- Celular: comprovante abaixo -->
                 <div v-if="s.comprovante_url || s.comprovante" class="lg:hidden text-[11px] text-slate-500 mt-1 space-y-0.5">
                   <div v-if="s.comprovante_url" class="flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                    <a :href="s.comprovante_url" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-purple-600 dark:text-purple-400 hover:underline">
+                    <button type="button" class="inline-flex items-center gap-1 text-purple-600 dark:text-purple-400 hover:underline" @click="verComprovante(s)">
                       <i class="fa-solid fa-file-invoice text-[10px]" aria-hidden="true" />Ver comprovante
-                    </a>
+                    </button>
                     <button
                       type="button"
                       :disabled="baixandoId === s.id"
@@ -506,9 +498,9 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
               <td class="hidden lg:table-cell px-4 py-2.5 text-xs text-slate-600 dark:text-slate-400 max-w-[320px]">
                 <div v-if="s.comprovante_url || s.comprovante" class="space-y-0.5">
                   <div v-if="s.comprovante_url" class="flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                    <a :href="s.comprovante_url" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-purple-600 dark:text-purple-400 hover:underline">
+                    <button type="button" class="inline-flex items-center gap-1 text-purple-600 dark:text-purple-400 hover:underline" @click="verComprovante(s)">
                       <i class="fa-solid fa-file-invoice text-[10px]" aria-hidden="true" />Ver comprovante
-                    </a>
+                    </button>
                     <button
                       type="button"
                       :disabled="baixandoId === s.id"
@@ -708,5 +700,14 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
         </div>
       </div>
     </BaseModal>
+
+    <!-- Comprovante do PIX dentro da página -->
+    <ComprovanteSaqueModal
+      :show="!!visualizando"
+      :rota="ROTA_COMPROVANTE"
+      :saque-id="visualizando?.saqueId ?? null"
+      :subtitulo="visualizando?.subtitulo ?? null"
+      @close="visualizando = null"
+    />
   </div>
 </template>

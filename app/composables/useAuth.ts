@@ -7,7 +7,11 @@ export function useAuth() {
   // user é o estado mantido pelo módulo @nuxtjs/supabase — sobrevive a refreshes
   const user = useSupabaseUser()
   const session = useState<Session | null>('auth_session', () => null)
-  const isLoading = useState<boolean>('auth_loading', () => import.meta.server ? false : true)
+  // Só fica true durante o login. Começava true no navegador e só o
+  // initSession (que nenhuma tela chama) desligava: quem chegava ao /login sem
+  // recarregar (depois de sair, ou pelo voltar) via o botão preso em
+  // "Entrando..." até dar F5 (09/10/2026).
+  const isLoading = useState<boolean>('auth_loading', () => false)
   const errorMessage = ref<string | null>(null)
 
   // O estado do módulo pode existir antes de a hidratação preencher o UUID.

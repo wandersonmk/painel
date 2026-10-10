@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
     // Vínculos de parceiro (1 por empresa) para exibir na lista
     const { data: vinculos } = await supabase
       .from('parceiro_empresas')
-      .select('empresa_id, comissao_percentual, ativo, bloqueio_origem, bloqueado_em, parceiros ( nome )')
+      .select('empresa_id, parceiro_id, comissao_percentual, ativo, bloqueio_origem, bloqueado_em, cobranca_agzap, parceiros ( nome )')
     // Vínculo ativo ganha do histórico: sem isso, uma empresa que trocou de
     // parceiro podia aparecer com o parceiro antigo (e com o bloqueio dele).
     const vinculoPorEmpresa = new Map<string, any>()
@@ -34,6 +34,31 @@ export default defineEventHandler(async (event) => {
         .in('auth_user_id', authIds)
       for (const u of (usuarios || []) as any[]) rolePorAuthId.set(u.auth_user_id, u.role)
     }
+
+    // Papel do dono (parceiro ou afiliado, um por vez) para o menu mostrar
+    // "Tornar…" (troca automática) e "Remover…". Papel REMOVIDO (removido_em)
+    // não conta; suspenso/bloqueado conta (dá para remover). Tabelas pequenas.
+    const [{ data: parceirosVivos }, { data: afiliadosVivos }] = await Promise.all([
+      supabase.from('parceiros').select('auth_user_id, ativo').is('removido_em', null).not('auth_user_id', 'is', null),
+      supabase.from('afiliados').select('auth_user_id, ativo').is('removido_em', null),
+    ])
+    const situacaoParceiroPorDono = new Map<string, 'ativo' | 'suspenso'>(
+      ((parceirosVivos || []) as any[]).map(p => [p.auth_user_id, p.ativo ? 'ativo' : 'suspenso']))
+    const situacaoAfiliadoPorDono = new Map<string, 'ativo' | 'bloqueado'>(
+      ((afiliadosVivos || []) as any[]).map(a => [a.auth_user_id, a.ativo ? 'ativo' : 'bloqueado']))
+
+    // Afiliado que trouxe a empresa (1ª conexão: afiliado_empresas, 1 por
+    // empresa). Duas leituras em lote nas tabelas pequenas, sem N+1. O nome
+    // vem de afiliados mesmo quando a afiliação foi removida (removido_em): o
+    // cliente antigo continua mostrando quem o trouxe, marcado como removido.
+    const [{ data: viaAfiliado }, { data: afiliadosTodos }] = await Promise.all([
+      supabase.from('afiliado_empresas').select('empresa_id, afiliado_id'),
+      supabase.from('afiliados').select('id, nome, removido_em'),
+    ])
+    const afiliadoPorId = new Map<string, { nome: string; removido: boolean }>(
+      ((afiliadosTodos || []) as any[]).map(a => [a.id, { nome: a.nome, removido: !!a.removido_em }]))
+    const afiliadoIdPorEmpresa = new Map<string, string>(
+      ((viaAfiliado || []) as any[]).map(v => [v.empresa_id, v.afiliado_id]))
 
     // Indicação cliente → cliente: quem indicou também é empresa desta lista,
     // então resolve o nome sem query extra.
@@ -92,7 +117,17 @@ export default defineEventHandler(async (event) => {
         imoveis_modulo_ativo: emp.imoveis_modulo_ativo ?? false,
         max_imoveis: emp.max_imoveis ?? 100,
         parceiro_nome: vinculo?.parceiros?.nome ?? null,
+        // Id do parceiro: o filtro da tela usa o id (nomes podem se repetir).
+        parceiro_id: vinculo?.parceiro_id ?? null,
+        // Afiliado que trouxe a empresa (1ª conexão). null = não veio por afiliado.
+        afiliado_id: afiliadoIdPorEmpresa.get(emp.id) ?? null,
+        afiliado_nome: afiliadoPorId.get(afiliadoIdPorEmpresa.get(emp.id) ?? '')?.nome ?? null,
+        afiliado_removido: afiliadoPorId.get(afiliadoIdPorEmpresa.get(emp.id) ?? '')?.removido ?? false,
         parceiro_comissao: vinculo ? Number(vinculo.comissao_percentual) : null,
+        // Cliente de parceiro que segue pagando a Agzap direto (não consome
+        // crédito do parceiro). Usado no resumo da tela para separar quem paga
+        // a Agzap de quem paga o parceiro.
+        parceiro_cobranca_agzap: vinculo ? vinculo.cobranca_agzap === true : false,
         // Quem derrubou o acesso: 'parceiro' (bloqueio comercial dele) ou 'admin'
         // (desativação pela Agzap). Só vale para vínculo ativo — bloqueio de
         // vínculo antigo é histórico, não situação atual do cliente.
@@ -101,6 +136,11 @@ export default defineEventHandler(async (event) => {
         indicado_por_empresa_id: emp.indicado_por_empresa_id ?? null,
         indicado_por_nome: indicadora?.nome ?? null,
         indicado_por_responsavel: indicadora?.nome_cliente?.trim() || null,
+        dono_parceiro: !!emp.auth_user_id && situacaoParceiroPorDono.get(emp.auth_user_id) === 'ativo',
+        dono_afiliado: !!emp.auth_user_id && situacaoAfiliadoPorDono.get(emp.auth_user_id) === 'ativo',
+        // null = sem o papel (ou papel removido).
+        dono_parceiro_situacao: (emp.auth_user_id && situacaoParceiroPorDono.get(emp.auth_user_id)) || null,
+        dono_afiliado_situacao: (emp.auth_user_id && situacaoAfiliadoPorDono.get(emp.auth_user_id)) || null,
       }
     })
 

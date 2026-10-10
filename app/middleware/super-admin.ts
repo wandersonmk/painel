@@ -1,3 +1,11 @@
+import {
+  MENSAGEM_AFILIADO_BLOQUEADO,
+  MENSAGEM_SEM_ACESSO_PAINEL,
+  buscarAfiliadoLogado,
+  sairDaContaAfiliado,
+  situacaoParceiroLogado,
+} from '~/composables/useAfiliado'
+
 export default defineNuxtRouteMiddleware(async () => {
   try {
     const supabase = useSupabaseClient()
@@ -19,14 +27,18 @@ export default defineNuxtRouteMiddleware(async () => {
 
     // Não é superAdmin (ou não foi possível carregar o papel).
     // Parceiro ativo vai para o portal dele em vez de ser deslogado.
-    const { data: parceiro } = await supabase
-      .from('parceiros')
-      .select('id, ativo')
-      .eq('auth_user_id', user.id)
-      .maybeSingle()
-    const p = parceiro as { id: string; ativo: boolean } | null
-    if (p?.ativo) {
+    // Parceria REMOVIDA (removido_em) conta como não ser parceiro (09/10/2026).
+    const parceiro = await situacaoParceiroLogado(supabase, user.id).catch(() => null)
+    if (parceiro === 'ativo') {
       return navigateTo('/parceiro')
+    }
+
+    // Afiliado vai para o portal dele. No SSR vai mesmo bloqueado: mandar para
+    // /login faria guest → /dashboard → /login em loop; lá o middleware do
+    // afiliado (client) desloga com o aviso.
+    const afiliado = await buscarAfiliadoLogado(supabase)
+    if (afiliado?.ativo || (afiliado && import.meta.server)) {
+      return navigateTo('/afiliado')
     }
 
     // No servidor: se o papel foi carregado e NÃO é superAdmin, redireciona já —
@@ -38,11 +50,24 @@ export default defineNuxtRouteMiddleware(async () => {
       return navigateTo('/login')
     }
 
-    // Cliente: parceiro bloqueado mostra o modal de conta bloqueada.
-    if (p) {
-      useState<boolean>('conta_bloqueada').value = true
+    // Cliente: afiliado bloqueado sai só desta sessão, com o aviso.
+    if (afiliado && parceiro !== 'suspenso') {
+      useToast().error(MENSAGEM_AFILIADO_BLOQUEADO)
+      await sairDaContaAfiliado(supabase)
+      return navigateTo('/login')
     }
-    await supabase.auth.signOut()
+
+    // Cliente: parceiro suspenso mostra o modal de conta bloqueada.
+    if (parceiro === 'suspenso') {
+      useState<boolean>('conta_bloqueada').value = true
+      await supabase.auth.signOut()
+      return navigateTo('/login')
+    }
+
+    // Cliente: sem papel no painel (inclui papel removido). Aviso normal de
+    // "sem acesso" e sai só desta sessão (o app da Agzap continua logado).
+    useToast().error(MENSAGEM_SEM_ACESSO_PAINEL)
+    await sairDaContaAfiliado(supabase)
     return navigateTo('/login')
   } catch {
     if (import.meta.server) return

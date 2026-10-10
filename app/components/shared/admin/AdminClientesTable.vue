@@ -14,6 +14,9 @@ const emit = defineEmits<{
   'atribuir-parceiro': [clienteId: string]
   'remover-parceiro': [clienteId: string]
   'tornar-parceiro': [clienteId: string]
+  'tornar-afiliado': [clienteId: string]
+  'remover-parceria': [clienteId: string]
+  'remover-afiliacao': [clienteId: string]
   modulos: [clienteId: string]
   'ver-uso': [clienteId: string]
   'saldo-indicacao': [clienteId: string]
@@ -24,33 +27,41 @@ const emit = defineEmits<{
 const menuCliente = ref<AdminCliente | null>(null)
 function openMenu(c: AdminCliente) { menuCliente.value = c }
 function closeMenu() { menuCliente.value = null }
-function emitAction(action: 'editar' | 'limite-instancias' | 'renovar' | 'desativar' | 'reativar' | 'excluir' | 'atribuir-parceiro' | 'remover-parceiro' | 'tornar-parceiro' | 'modulos' | 'saldo-indicacao' | 'ver-indicacao', id: string) {
+function emitAction(action: 'editar' | 'limite-instancias' | 'renovar' | 'desativar' | 'reativar' | 'excluir' | 'atribuir-parceiro' | 'remover-parceiro' | 'tornar-parceiro' | 'tornar-afiliado' | 'remover-parceria' | 'remover-afiliacao' | 'modulos' | 'saldo-indicacao' | 'ver-indicacao', id: string) {
   emit(action as any, id)
   closeMenu()
 }
 
-const { formatDate, getPlanLabel, isVencido, formatDiasVencimento, diasParaVencimento, getDataVencimento } = useAdminClientes()
+const {
+  formatDate, getPlanLabel, isVencido, formatDiasVencimento, diasParaVencimento, getDataVencimento,
+  valorAssinatura, pagaParceiro, formatBRL,
+} = useAdminClientes()
 
 const statusConfig: Record<string, { label: string; cls: string; dot: string }> = {
-  trial:    { label: 'Trial',     cls: 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-400',     dot: 'bg-amber-500' },
-  active:   { label: 'Ativo',    cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400', dot: 'bg-emerald-500' },
-  canceled: { label: 'Cancelado', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-700/50 dark:text-slate-400',       dot: 'bg-slate-400' },
-  expired:  { label: 'Expirado', cls: 'bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-400',              dot: 'bg-red-500' },
+  trial:    { label: 'Trial',     cls: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300',         dot: 'bg-amber-500' },
+  active:   { label: 'Ativo',     cls: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300', dot: 'bg-emerald-500' },
+  canceled: { label: 'Cancelado', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',           dot: 'bg-slate-400' },
+  expired:  { label: 'Expirado',  cls: 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300',                 dot: 'bg-red-500' },
 }
 
 function diasRestantesCls(c: AdminCliente) {
   if (c.subscription_status === 'trial' && !getDataVencimento(c))
-    return 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300'
+    return 'bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300'
   const d = diasParaVencimento(c)
-  if (d < 0 || isVencido(c)) return 'bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300'
-  if (d === 0)  return 'bg-purple-100 text-purple-800 dark:bg-purple-500/15 dark:text-purple-300'
-  if (d <= 7)   return 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300'
-  return 'bg-slate-100 text-slate-600 dark:bg-slate-700/50 dark:text-slate-400'
+  if (d < 0 || isVencido(c)) return 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300'
+  if (d === 0)  return 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300'
+  if (d <= 7)   return 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300'
+  return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
 }
 
 function diasRestantesText(c: AdminCliente) {
   if (c.subscription_status === 'trial' && !getDataVencimento(c)) return 'Assinar'
   return formatDiasVencimento(c)
+}
+
+function dataVencimento(c: AdminCliente) {
+  const d = getDataVencimento(c)
+  return d ? formatDate(d) : '—'
 }
 
 // Resumo pro cartão "Módulos do app" do menu de ações (28/09/2026). Antes o
@@ -73,18 +84,19 @@ function resumoModulos(c: AdminCliente) {
   return { desligados, addons }
 }
 
-// Badge de cancelamento da assinatura no Stripe.
-// `cancel_at_period_end` = cliente cancelou no Stripe, mantém acesso até o fim do período.
-// `subscription_status === 'canceled'` = assinatura já encerrada.
-// Acento na borda esquerda da linha — sinaliza risco ao varrer a lista (cor + texto, nunca só cor).
+// Faixa fina na borda esquerda — sinaliza risco ao varrer a lista (cor + texto
+// na coluna de dias, nunca só cor). Mais discreta desde o redesenho (09/10/2026).
 function rowAccent(c: AdminCliente): string {
-  if (c.cancel_at_period_end) return 'border-orange-400 dark:border-orange-500/60'
-  if (c.subscription_status === 'canceled' || isVencido(c)) return 'border-red-400 dark:border-red-500/60'
+  if (c.cancel_at_period_end) return 'border-orange-300 dark:border-orange-500/50'
+  if (c.subscription_status === 'canceled' || isVencido(c)) return 'border-red-300 dark:border-red-500/50'
   const d = diasParaVencimento(c)
-  if (Number.isFinite(d) && d >= 0 && d <= 7) return 'border-amber-400 dark:border-amber-500/60'
+  if (Number.isFinite(d) && d >= 0 && d <= 7) return 'border-amber-300 dark:border-amber-500/50'
   return 'border-transparent'
 }
 
+// Badge de cancelamento da assinatura no Stripe.
+// `cancel_at_period_end` = cliente cancelou no Stripe, mantém acesso até o fim do período.
+// `subscription_status === 'canceled'` = assinatura já encerrada.
 function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: string; icon: string } | null {
   // O bloqueio comercial do parceiro vem antes do rótulo de cancelamento: o
   // cliente não cancelou nada no Stripe, quem derrubou o acesso foi o parceiro.
@@ -95,16 +107,17 @@ function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: str
     return {
       text: 'Bloqueado pelo parceiro',
       title: `Acesso bloqueado ${quem}${quando} · bloqueio comercial, não é cancelamento no Stripe`,
-      cls: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400',
+      cls: 'bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300',
       icon: 'fa-lock',
     }
   }
   if (c.cancel_at_period_end) {
-    const ate = formatDate(getDataVencimento(c))
+    const venc = getDataVencimento(c)
+    const ate = venc ? formatDate(venc) : ''
     return {
       text: 'Cancelou',
       title: ate ? `Cliente cancelou a assinatura no Stripe · acesso até ${ate}` : 'Cliente cancelou a assinatura no Stripe',
-      cls: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400',
+      cls: 'bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-300',
       icon: 'fa-ban',
     }
   }
@@ -112,197 +125,430 @@ function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: str
     return {
       text: 'Cancelado',
       title: 'Assinatura encerrada no Stripe',
-      cls: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400',
+      cls: 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300',
       icon: 'fa-ban',
     }
   }
   return null
 }
 
+// Na coluna Status o pill já diz "Cancelado": o selo extra só entra quando
+// acrescenta informação (bloqueio do parceiro ou cancelamento agendado).
+function situacaoExtra(c: AdminCliente) {
+  const s = situacaoBadge(c)
+  return s && s.text !== 'Cancelado' ? s : null
+}
+
+// Categoria do cliente (coluna "Categoria"): de quem ele é cliente e o papel
+// do dono da conta. Tudo vem da lista (vínculo de parceiro e papéis do dono).
+interface Selo { key: string; text: string; title: string; cls: string; icon: string }
+const SELO_CLS = {
+  agzap: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300',
+  parceiro: 'bg-purple-50 text-purple-700 dark:bg-purple-500/10 dark:text-purple-300',
+  papelParceiro: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300',
+  papelAfiliado: 'bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300',
+  viaAfiliado: 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300',
+  apagado: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+  superAdmin: 'bg-purple-100 text-purple-800 dark:bg-purple-500/20 dark:text-purple-200',
+}
+function categorias(c: AdminCliente): Selo[] {
+  const selos: Selo[] = []
+  if (c.role === 'superAdmin') {
+    selos.push({ key: 'sa', text: 'Super Admin', title: 'Conta da equipe Agzap', cls: SELO_CLS.superAdmin, icon: 'fa-shield-halved' })
+  } else if (c.parceiro_nome) {
+    const comissao = c.parceiro_comissao != null ? ` · ${c.parceiro_comissao}% de comissão` : ''
+    selos.push({
+      key: 'parceiro',
+      text: `Parceiro: ${c.parceiro_nome}`,
+      title: `Cliente do parceiro ${c.parceiro_nome}${comissao}. ${c.parceiro_cobranca_agzap
+        ? 'Marcado como cobrado pela Agzap: paga a Agzap direto.'
+        : 'Paga o parceiro; a Agzap recebe do parceiro pela compra de créditos.'}`,
+      cls: SELO_CLS.parceiro,
+      icon: 'fa-handshake',
+    })
+    if (c.parceiro_cobranca_agzap) {
+      selos.push({ key: 'cobranca', text: 'Cobrança Agzap', title: 'Cliente de parceiro cobrado direto pela Agzap (não consome crédito do parceiro)', cls: SELO_CLS.agzap, icon: 'fa-receipt' })
+    }
+  } else {
+    selos.push({ key: 'agzap', text: 'Agzap', title: 'Cliente direto da Agzap', cls: SELO_CLS.agzap, icon: 'fa-building' })
+  }
+  // Quem TROUXE o cliente (1ª conexão, afiliado_empresas). Diferente de
+  // "É afiliado", que fala do papel do dono desta conta.
+  if (c.afiliado_id) {
+    const nome = c.afiliado_nome || 'afiliado'
+    selos.push({
+      key: 'via-afiliado',
+      text: `Via afiliado: ${nome}${c.afiliado_removido ? ' (removido)' : ''}`,
+      title: `Entrou pelo link do afiliado ${nome} (1ª conexão)${c.afiliado_removido ? ' · a afiliação dele foi removida' : ''}`,
+      cls: c.afiliado_removido ? SELO_CLS.apagado : SELO_CLS.viaAfiliado,
+      icon: 'fa-link',
+    })
+  }
+  // Papel do DONO desta conta (ele é parceiro/afiliado da Agzap).
+  if (c.dono_parceiro_situacao) {
+    const suspenso = c.dono_parceiro_situacao === 'suspenso'
+    selos.push({
+      key: 'dono-parceiro',
+      text: suspenso ? 'É parceiro (suspenso)' : 'É parceiro',
+      title: suspenso ? 'O dono desta conta é parceiro da Agzap (parceria suspensa)' : 'O dono desta conta é parceiro da Agzap (revende)',
+      cls: suspenso ? SELO_CLS.apagado : SELO_CLS.papelParceiro,
+      icon: 'fa-user-tie',
+    })
+  }
+  if (c.dono_afiliado_situacao) {
+    const bloqueado = c.dono_afiliado_situacao === 'bloqueado'
+    selos.push({
+      key: 'dono-afiliado',
+      text: bloqueado ? 'É afiliado (bloqueado)' : 'É afiliado',
+      title: bloqueado ? 'O dono desta conta é afiliado da Agzap (afiliação bloqueada)' : 'O dono desta conta é afiliado da Agzap (ganha comissão indicando)',
+      cls: bloqueado ? SELO_CLS.apagado : SELO_CLS.papelAfiliado,
+      icon: 'fa-people-arrows',
+    })
+  }
+  return selos
+}
+
+function tituloIndicacao(c: AdminCliente) {
+  const quem = c.indicado_por_responsavel
+    ? `${c.indicado_por_responsavel} (${c.indicado_por_nome || 'empresa'})`
+    : (c.indicado_por_nome || 'outro cliente')
+  return `Indicação de ${quem}. Clique para ver ou remover`
+}
+
+// Coluna "Mensalidade": valor CADASTRADO no cliente (plano de 12 meses mostra
+// o anual). Fica apagado quando o cliente não está pagando agora, e o título
+// deixa claro quando o dinheiro vai para o parceiro, não para a Agzap.
+function valorInfo(c: AdminCliente) {
+  const v = valorAssinatura(c)
+  if (!v) return null
+  const pagandoAgora = c.subscription_status === 'active' && c.ativo && !isVencido(c)
+  let title = v.anual ? 'Valor do plano de 12 meses cadastrado' : 'Mensalidade cadastrada'
+  if (pagaParceiro(c)) title += ` · o cliente paga ao parceiro ${c.parceiro_nome}, não é receita da Agzap`
+  if (c.subscription_status === 'trial') title += ' · ainda em teste'
+  else if (!pagandoAgora) title += ' · não está pagando agora'
+  return { texto: formatBRL(v.valor), sufixo: v.anual ? '/ano' : '/mês', apagado: !pagandoAgora, title }
+}
 </script>
 
 <template>
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md overflow-hidden">
+  <div class="bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+    <!-- Cabeçalho do painel (título, busca e filtros vêm da página) -->
+    <slot name="topo" />
 
     <!-- Loading -->
-    <div v-if="loading" class="p-10 flex items-center justify-center">
+    <div v-if="loading" class="p-10 flex items-center justify-center border-t border-slate-100 dark:border-slate-800">
       <AppLoading />
     </div>
 
     <!-- Empty -->
-    <div v-else-if="clientes.length === 0" class="p-12 flex flex-col items-center justify-center text-center gap-3">
+    <div v-else-if="clientes.length === 0" class="p-12 flex flex-col items-center justify-center text-center gap-3 border-t border-slate-100 dark:border-slate-800">
       <div class="w-14 h-14 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
         <i class="fa-solid fa-users text-slate-400 dark:text-slate-600 text-xl" aria-hidden="true" />
       </div>
       <div>
-        <p class="text-slate-700 dark:text-slate-300 font-semibold text-sm">Nenhum cliente encontrado</p>
-        <p class="text-slate-400 dark:text-slate-600 text-xs mt-0.5">Tente ajustar os filtros de busca</p>
+        <p class="text-slate-700 dark:text-slate-300 font-medium text-sm">Nenhum cliente encontrado</p>
+        <p class="text-slate-400 dark:text-slate-500 text-xs mt-0.5">Tente ajustar os filtros de busca</p>
       </div>
     </div>
 
-    <!-- Table -->
-    <div v-else class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead>
-          <tr class="border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/60">
-            <th scope="col" class="px-2 sm:px-5 py-3.5 text-left text-[11px] font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">Cliente</th>
-            <th scope="col" class="hidden md:table-cell px-5 py-3.5 text-left text-[11px] font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">Status</th>
-            <th scope="col" class="px-2 sm:px-5 py-3.5 text-left text-[11px] font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">Plano</th>
-            <th scope="col" class="px-2 sm:px-5 py-3.5 text-left text-[11px] font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Vencimento</th>
-            <th scope="col" class="hidden sm:table-cell px-5 py-3.5 text-left text-[11px] font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">Dias Restantes</th>
-            <th scope="col" class="hidden lg:table-cell px-5 py-3.5 text-center text-[11px] font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">Ativo</th>
-            <th scope="col" class="px-2 sm:px-5 py-3.5 text-right text-[11px] font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider">Ações</th>
-          </tr>
-        </thead>
+    <template v-else>
+      <!-- Celular e telas médias (abaixo de xl): um cartão por cliente -->
+      <ul class="xl:hidden border-t border-slate-100 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
+        <li
+          v-for="c in clientes"
+          :key="c.id"
+          class="px-4 sm:px-5 py-4 border-l-[3px] cursor-pointer transition-colors hover:bg-slate-50/70 dark:hover:bg-slate-800/30"
+          :class="[rowAccent(c), !c.ativo ? 'opacity-60' : '']"
+          title="Ver uso desta empresa"
+          @click="$emit('ver-uso', c.id)"
+        >
+          <div class="flex items-start gap-3">
+            <div
+              class="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-semibold text-white"
+              :class="c.ativo ? 'bg-purple-600' : 'bg-slate-400 dark:bg-slate-600'"
+              aria-hidden="true"
+            >
+              {{ c.nome.charAt(0).toUpperCase() }}
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-slate-900 dark:text-white truncate">{{ c.nome }}</p>
+              <p v-if="c.nome_cliente" class="text-xs text-slate-500 dark:text-slate-400 truncate">{{ c.nome_cliente }}</p>
+            </div>
+            <button
+              @click.stop="openMenu(c)"
+              class="-mr-2 -mt-1 w-9 h-9 shrink-0 flex items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              title="Ações"
+              aria-label="Abrir ações do cliente"
+              type="button"
+            >
+              <i class="fa-solid fa-ellipsis-vertical text-sm" aria-hidden="true" />
+            </button>
+          </div>
 
-        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-          <tr
-            v-for="c in clientes"
-            :key="c.id"
-            class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors cursor-pointer"
-            :class="!c.ativo ? 'opacity-55' : ''"
-            title="Ver uso desta empresa"
-            @click="$emit('ver-uso', c.id)"
-          >
-            <!-- Cliente -->
-            <td class="px-2 sm:px-5 py-3 sm:py-4 max-w-[160px] sm:max-w-none border-l-4" :class="rowAccent(c)">
-              <div class="flex items-center gap-2 sm:gap-3 min-w-0">
-                <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center shrink-0 text-xs sm:text-sm font-bold text-white"
-                  :class="c.ativo ? 'bg-purple-600' : 'bg-slate-400 dark:bg-slate-600'">
-                  {{ c.nome.charAt(0).toUpperCase() }}
-                </div>
-                <div class="min-w-0">
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <span class="font-semibold text-slate-900 dark:text-white leading-tight text-sm truncate">{{ c.nome }}</span>
-                    <span
-                      v-if="c.role === 'superAdmin'"
-                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-gradient-to-r from-purple-600 to-blue-600 text-white"
-                    >
-                      <i class="fa-solid fa-shield-halved" aria-hidden="true" />
-                      <span class="hidden sm:inline">Super Admin</span>
-                    </span>
-                    <span
-                      v-if="situacaoBadge(c)"
-                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap"
-                      :class="situacaoBadge(c)!.cls"
-                      :title="situacaoBadge(c)!.title"
-                    >
-                      <i class="fa-solid" :class="situacaoBadge(c)!.icon" aria-hidden="true" />
-                      {{ situacaoBadge(c)!.text }}
-                    </span>
-                    <span
-                      v-if="c.parceiro_nome"
-                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-400"
-                      :title="`Atribuído ao parceiro ${c.parceiro_nome}${c.parceiro_comissao != null ? ` · ${c.parceiro_comissao}% de comissão` : ''}`"
-                    >
-                      <i class="fa-solid fa-handshake" aria-hidden="true" />
-                      <span class="truncate max-w-[110px]">{{ c.parceiro_nome }}</span>
-                    </span>
-                    <button
-                      v-if="c.indicado_por_empresa_id"
-                      type="button"
-                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-pink-100 text-pink-700 hover:bg-pink-200 dark:bg-pink-500/15 dark:text-pink-400 dark:hover:bg-pink-500/25 transition-colors"
-                      :title="`Indicação de ${c.indicado_por_responsavel ? `${c.indicado_por_responsavel} (${c.indicado_por_nome || 'empresa'})` : (c.indicado_por_nome || 'outro cliente')}. Clique para ver ou remover`"
-                      @click.stop="$emit('ver-indicacao', c.id)"
-                    >
-                      <i class="fa-solid fa-gift" aria-hidden="true" />
-                      <span class="truncate max-w-[150px]">Indicação de {{ c.indicado_por_responsavel || c.indicado_por_nome || 'cliente' }}</span>
-                    </button>
-                  </div>
-                  <p class="hidden md:block text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                    <template v-if="c.nome_cliente"><i class="fa-solid fa-user text-[10px] text-slate-400 dark:text-slate-500" aria-hidden="true" /> <span class="font-medium text-slate-600 dark:text-slate-300">{{ c.nome_cliente }}</span> · </template>{{ c.email }}<template v-if="formatPhone(c.whatsapp)"> · {{ formatPhone(c.whatsapp) }} <a
-                      :href="whatsappLink(c.whatsapp) ?? '#'"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500 hover:text-white transition-colors align-middle"
-                      :title="`Abrir WhatsApp de ${c.nome}`"
-                      aria-label="Abrir WhatsApp"
-                      @click.stop
-                    ><i class="fa-brands fa-whatsapp text-[11px]" aria-hidden="true" /></a></template>
-                  </p>
-                  <!-- Mobile: nome do cliente (a linha de email/fone é md+) -->
-                  <p v-if="c.nome_cliente" class="md:hidden text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                    <i class="fa-solid fa-user text-[9px]" aria-hidden="true" /> {{ c.nome_cliente }}
-                  </p>
-                  <!-- Mobile: dias restantes inline + status quando o status pill estiver escondido -->
-                  <div class="md:hidden mt-1 flex items-center gap-1.5 flex-wrap">
-                    <span
-                      class="sm:hidden inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
-                      :class="diasRestantesCls(c)"
-                    >{{ diasRestantesText(c) }}</span>
-                    <span v-if="!c.ativo" class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-                      Inativo
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </td>
+          <!-- Categoria -->
+          <div class="mt-2.5 flex flex-wrap items-center gap-1.5">
+            <span
+              v-for="s in categorias(c)"
+              :key="s.key"
+              class="inline-flex items-center gap-1 max-w-full px-2 py-0.5 rounded-md text-[11px] font-medium"
+              :class="s.cls"
+              :title="s.title"
+            >
+              <i class="fa-solid text-[9px]" :class="s.icon" aria-hidden="true" />
+              <span class="truncate">{{ s.text }}</span>
+            </span>
+            <button
+              v-if="c.indicado_por_empresa_id"
+              type="button"
+              class="inline-flex items-center gap-1 max-w-full px-2 py-0.5 rounded-md text-[11px] font-medium bg-pink-50 text-pink-700 hover:bg-pink-100 dark:bg-pink-500/10 dark:text-pink-300 dark:hover:bg-pink-500/20 transition-colors"
+              :title="tituloIndicacao(c)"
+              @click.stop="$emit('ver-indicacao', c.id)"
+            >
+              <i class="fa-solid fa-gift text-[9px]" aria-hidden="true" />
+              <span class="truncate">Indicação de {{ c.indicado_por_responsavel || c.indicado_por_nome || 'cliente' }}</span>
+            </button>
+          </div>
 
-            <!-- Status (md+) -->
-            <td class="hidden md:table-cell px-5 py-4">
-              <span
-                class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
-                :class="statusConfig[c.subscription_status]?.cls ?? statusConfig.canceled.cls"
-              >
+          <!-- Dados -->
+          <dl class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
+            <div class="min-w-0">
+              <dt class="text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">Status</dt>
+              <dd class="mt-1 flex flex-wrap items-center gap-1">
                 <span
-                  class="w-1.5 h-1.5 rounded-full"
-                  :class="statusConfig[c.subscription_status]?.dot ?? 'bg-slate-400'"
-                  aria-hidden="true"
-                />
-                {{ statusConfig[c.subscription_status]?.label ?? c.subscription_status }}
-              </span>
-            </td>
-
-            <!-- Plano -->
-            <td class="px-2 sm:px-5 py-3 sm:py-4">
-              <span class="text-slate-700 dark:text-slate-300 font-medium text-xs sm:text-sm whitespace-nowrap">{{ getPlanLabel(c.subscription_plan) }}</span>
-            </td>
-
-            <!-- Vencimento -->
-            <td class="px-2 sm:px-5 py-3 sm:py-4">
-              <span class="text-slate-700 dark:text-slate-300 tabular-nums text-xs sm:text-sm whitespace-nowrap">
-                {{ formatDate(getDataVencimento(c)) || '—' }}
-              </span>
-            </td>
-
-            <!-- Dias Restantes (sm+) -->
-            <td class="hidden sm:table-cell px-5 py-4">
-              <span
-                class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold"
-                :class="diasRestantesCls(c)"
-              >
-                {{ diasRestantesText(c) }}
-              </span>
-            </td>
-
-            <!-- Ativo (lg+) -->
-            <td class="hidden lg:table-cell px-5 py-4 text-center">
-              <span v-if="c.ativo" class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-emerald-100 dark:bg-emerald-500/15">
-                <i class="fa-solid fa-check text-emerald-600 dark:text-emerald-400 text-xs" aria-hidden="true" />
-              </span>
-              <span v-else class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800">
-                <i class="fa-solid fa-xmark text-slate-400 text-xs" aria-hidden="true" />
-              </span>
-            </td>
-
-            <!-- Ações: menu de três pontinhos (todas as telas) -->
-            <td class="px-2 sm:px-5 py-3 sm:py-4">
-              <div class="flex justify-end">
-                <button
-                  @click.stop="openMenu(c)"
-                  class="w-8 h-8 flex items-center justify-center rounded text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                  title="Ações"
-                  aria-label="Abrir ações do cliente"
-                  type="button"
+                  class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium"
+                  :class="statusConfig[c.subscription_status]?.cls ?? statusConfig.canceled!.cls"
                 >
-                  <i class="fa-solid fa-ellipsis-vertical text-sm" aria-hidden="true" />
-                </button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+                  <span class="w-1.5 h-1.5 rounded-full" :class="statusConfig[c.subscription_status]?.dot ?? 'bg-slate-400'" aria-hidden="true" />
+                  {{ statusConfig[c.subscription_status]?.label ?? c.subscription_status }}
+                </span>
+                <span
+                  v-if="situacaoExtra(c)"
+                  class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium whitespace-nowrap"
+                  :class="situacaoExtra(c)!.cls"
+                  :title="situacaoExtra(c)!.title"
+                >
+                  <i class="fa-solid" :class="situacaoExtra(c)!.icon" aria-hidden="true" />
+                  {{ situacaoExtra(c)!.text }}
+                </span>
+                <span v-if="!c.ativo" class="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                  Inativo
+                </span>
+              </dd>
+            </div>
+            <div class="min-w-0">
+              <dt class="text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">Plano</dt>
+              <dd class="mt-1 text-sm text-slate-700 dark:text-slate-300">{{ getPlanLabel(c.subscription_plan) }}</dd>
+            </div>
+            <div class="min-w-0">
+              <dt class="text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">Mensalidade</dt>
+              <dd class="mt-1 text-sm tabular-nums whitespace-nowrap" :title="valorInfo(c)?.title">
+                <template v-if="valorInfo(c)">
+                  <span :class="valorInfo(c)!.apagado ? 'text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-200'">{{ valorInfo(c)!.texto }}</span><span class="ml-0.5 text-[11px] text-slate-400 dark:text-slate-500">{{ valorInfo(c)!.sufixo }}</span>
+                </template>
+                <span v-else class="text-slate-400 dark:text-slate-500">—</span>
+              </dd>
+            </div>
+            <div class="min-w-0">
+              <dt class="text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">Vencimento</dt>
+              <dd class="mt-1 flex flex-wrap items-center gap-1.5">
+                <span class="text-sm text-slate-700 dark:text-slate-300 tabular-nums whitespace-nowrap">{{ dataVencimento(c) }}</span>
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap" :class="diasRestantesCls(c)">{{ diasRestantesText(c) }}</span>
+              </dd>
+            </div>
+          </dl>
+
+          <!-- Contato -->
+          <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400 min-w-0">
+            <span v-if="c.email" class="truncate max-w-full">{{ c.email }}</span>
+            <span v-if="formatPhone(c.whatsapp)" class="inline-flex items-center gap-1.5 tabular-nums whitespace-nowrap">
+              {{ formatPhone(c.whatsapp) }}
+              <a
+                :href="whatsappLink(c.whatsapp) ?? '#'"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500 hover:text-white transition-colors"
+                :title="`Abrir WhatsApp de ${c.nome}`"
+                aria-label="Abrir WhatsApp"
+                @click.stop
+              ><i class="fa-brands fa-whatsapp text-[12px]" aria-hidden="true" /></a>
+            </span>
+          </div>
+        </li>
+      </ul>
+
+      <!-- Desktop (xl+): tabela. Rola dentro do próprio painel se faltar largura. -->
+      <div class="hidden xl:block overflow-x-auto border-t border-slate-100 dark:border-slate-800">
+        <!-- Abaixo de 2xl: os dias restantes vão embaixo da data e a coluna
+             "Ativo" sai (a conta inativa aparece no Status). A coluna de ações
+             fica presa à direita para o ⋮ nunca sumir se a tabela rolar. -->
+        <table class="w-full min-w-[860px] text-sm">
+          <thead>
+            <tr class="border-b border-slate-100 dark:border-slate-800">
+              <th scope="col" class="pl-5 pr-3 py-3 text-left text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">Cliente</th>
+              <th scope="col" class="px-3 py-3 text-left text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">Categoria</th>
+              <th scope="col" class="px-3 py-3 text-left text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">Status</th>
+              <th scope="col" class="px-3 py-3 text-left text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">Plano</th>
+              <th scope="col" class="px-3 py-3 text-right text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">Mensalidade</th>
+              <th scope="col" class="px-3 py-3 text-left text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">Vencimento</th>
+              <th scope="col" class="hidden 2xl:table-cell px-3 py-3 text-left text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Dias restantes</th>
+              <th scope="col" class="hidden 2xl:table-cell px-3 py-3 text-center text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">Ativo</th>
+              <th scope="col" class="sticky right-0 bg-white dark:bg-slate-900 pl-3 pr-5 py-3 text-right text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">Ações</th>
+            </tr>
+          </thead>
+
+          <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+            <tr
+              v-for="c in clientes"
+              :key="c.id"
+              class="group hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer"
+              :class="!c.ativo ? 'opacity-60' : ''"
+              title="Ver uso desta empresa"
+              @click="$emit('ver-uso', c.id)"
+            >
+              <!-- Cliente -->
+              <td class="pl-4 pr-3 py-4 border-l-[3px] align-middle" :class="rowAccent(c)">
+                <div class="flex items-center gap-3 min-w-0">
+                  <div
+                    class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs font-semibold text-white"
+                    :class="c.ativo ? 'bg-purple-600' : 'bg-slate-400 dark:bg-slate-600'"
+                    aria-hidden="true"
+                  >
+                    {{ c.nome.charAt(0).toUpperCase() }}
+                  </div>
+                  <div class="min-w-0 max-w-[210px] 2xl:max-w-[300px]">
+                    <p class="font-medium text-slate-900 dark:text-white leading-tight truncate" :title="c.nome">{{ c.nome }}</p>
+                    <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate" :title="[c.nome_cliente, c.email].filter(Boolean).join(' · ')">
+                      <template v-if="c.nome_cliente"><span class="text-slate-600 dark:text-slate-300">{{ c.nome_cliente }}</span><template v-if="c.email"> · </template></template>{{ c.email }}
+                    </p>
+                    <p v-if="formatPhone(c.whatsapp)" class="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 tabular-nums whitespace-nowrap">
+                      {{ formatPhone(c.whatsapp) }}
+                      <a
+                        :href="whatsappLink(c.whatsapp) ?? '#'"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500 hover:text-white transition-colors"
+                        :title="`Abrir WhatsApp de ${c.nome}`"
+                        aria-label="Abrir WhatsApp"
+                        @click.stop
+                      ><i class="fa-brands fa-whatsapp text-[11px]" aria-hidden="true" /></a>
+                    </p>
+                  </div>
+                </div>
+              </td>
+
+              <!-- Categoria -->
+              <td class="px-3 py-4 align-middle">
+                <div class="flex flex-wrap items-center gap-1 max-w-[170px] 2xl:max-w-[240px]">
+                  <span
+                    v-for="s in categorias(c)"
+                    :key="s.key"
+                    class="inline-flex items-center gap-1 max-w-full px-2 py-0.5 rounded-md text-[11px] font-medium"
+                    :class="s.cls"
+                    :title="s.title"
+                  >
+                    <i class="fa-solid text-[9px]" :class="s.icon" aria-hidden="true" />
+                    <span class="truncate">{{ s.text }}</span>
+                  </span>
+                  <button
+                    v-if="c.indicado_por_empresa_id"
+                    type="button"
+                    class="inline-flex items-center gap-1 max-w-full px-2 py-0.5 rounded-md text-[11px] font-medium bg-pink-50 text-pink-700 hover:bg-pink-100 dark:bg-pink-500/10 dark:text-pink-300 dark:hover:bg-pink-500/20 transition-colors"
+                    :title="tituloIndicacao(c)"
+                    @click.stop="$emit('ver-indicacao', c.id)"
+                  >
+                    <i class="fa-solid fa-gift text-[9px]" aria-hidden="true" />
+                    <span class="truncate">Indicação de {{ c.indicado_por_responsavel || c.indicado_por_nome || 'cliente' }}</span>
+                  </button>
+                </div>
+              </td>
+
+              <!-- Status -->
+              <td class="px-3 py-4 align-middle">
+                <div class="flex flex-col items-start gap-1">
+                  <span
+                    class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium whitespace-nowrap"
+                    :class="statusConfig[c.subscription_status]?.cls ?? statusConfig.canceled!.cls"
+                  >
+                    <span class="w-1.5 h-1.5 rounded-full" :class="statusConfig[c.subscription_status]?.dot ?? 'bg-slate-400'" aria-hidden="true" />
+                    {{ statusConfig[c.subscription_status]?.label ?? c.subscription_status }}
+                  </span>
+                  <span
+                    v-if="situacaoExtra(c)"
+                    class="inline-flex items-start gap-1 max-w-[120px] px-1.5 py-0.5 rounded-md text-[10px] font-medium leading-tight"
+                    :class="situacaoExtra(c)!.cls"
+                    :title="situacaoExtra(c)!.title"
+                  >
+                    <i class="fa-solid mt-px" :class="situacaoExtra(c)!.icon" aria-hidden="true" />
+                    <span>{{ situacaoExtra(c)!.text }}</span>
+                  </span>
+                  <!-- Sem a coluna "Ativo" (abaixo de 2xl), a conta desativada aparece aqui -->
+                  <span v-if="!c.ativo" class="2xl:hidden inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                    Inativo
+                  </span>
+                </div>
+              </td>
+
+              <!-- Plano -->
+              <td class="px-3 py-4 align-middle">
+                <span class="text-slate-700 dark:text-slate-300 whitespace-nowrap">{{ getPlanLabel(c.subscription_plan) }}</span>
+              </td>
+
+              <!-- Mensalidade (valor cadastrado) -->
+              <td class="px-3 py-4 align-middle text-right whitespace-nowrap tabular-nums" :title="valorInfo(c)?.title">
+                <template v-if="valorInfo(c)">
+                  <span :class="valorInfo(c)!.apagado ? 'text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-200'">{{ valorInfo(c)!.texto }}</span><span class="ml-0.5 text-[11px] text-slate-400 dark:text-slate-500">{{ valorInfo(c)!.sufixo }}</span>
+                </template>
+                <span v-else class="text-slate-400 dark:text-slate-500">—</span>
+              </td>
+
+              <!-- Vencimento (abaixo de 2xl leva os dias restantes embaixo) -->
+              <td class="px-3 py-4 align-middle">
+                <div class="flex flex-col items-start gap-1">
+                  <span class="text-slate-700 dark:text-slate-300 tabular-nums whitespace-nowrap">{{ dataVencimento(c) }}</span>
+                  <span class="2xl:hidden inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap" :class="diasRestantesCls(c)">
+                    {{ diasRestantesText(c) }}
+                  </span>
+                </div>
+              </td>
+
+              <!-- Dias restantes (2xl+) -->
+              <td class="hidden 2xl:table-cell px-3 py-4 align-middle">
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap" :class="diasRestantesCls(c)">
+                  {{ diasRestantesText(c) }}
+                </span>
+              </td>
+
+              <!-- Ativo (2xl+) -->
+              <td class="hidden 2xl:table-cell px-3 py-4 align-middle text-center">
+                <span v-if="c.ativo" class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-50 dark:bg-emerald-500/10" title="Conta ativa">
+                  <i class="fa-solid fa-check text-emerald-600 dark:text-emerald-400 text-[11px]" aria-hidden="true" />
+                  <span class="sr-only">Sim</span>
+                </span>
+                <span v-else class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800" title="Conta desativada">
+                  <i class="fa-solid fa-xmark text-slate-400 text-[11px]" aria-hidden="true" />
+                  <span class="sr-only">Não</span>
+                </span>
+              </td>
+
+              <!-- Ações: menu de três pontinhos (preso à direita) -->
+              <td class="sticky right-0 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-[#221f32] transition-colors pl-3 pr-5 py-4 align-middle">
+                <div class="flex justify-end">
+                  <button
+                    @click.stop="openMenu(c)"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    title="Ações"
+                    aria-label="Abrir ações do cliente"
+                    type="button"
+                  >
+                    <i class="fa-solid fa-ellipsis-vertical text-sm" aria-hidden="true" />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </template>
 
     <!-- Bottom sheet de ações (mobile) -->
     <Teleport to="body">
@@ -322,7 +568,7 @@ function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: str
             <!-- Header -->
             <div class="px-5 pb-3.5 border-b border-slate-100 dark:border-slate-800">
               <div class="flex items-center gap-3">
-                <div class="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-bold text-white"
+                <div class="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-semibold text-white"
                   :class="menuCliente.ativo ? 'bg-purple-600' : 'bg-slate-400 dark:bg-slate-600'">
                   {{ menuCliente.nome.charAt(0).toUpperCase() }}
                 </div>
@@ -331,7 +577,7 @@ function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: str
                     <p class="font-semibold text-slate-900 dark:text-white text-sm truncate">{{ menuCliente.nome }}</p>
                     <span
                       v-if="situacaoBadge(menuCliente)"
-                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap"
+                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap"
                       :class="situacaoBadge(menuCliente)!.cls"
                       :title="situacaoBadge(menuCliente)!.title"
                     >
@@ -340,7 +586,7 @@ function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: str
                     </span>
                     <span
                       v-if="menuCliente.parceiro_nome"
-                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-400"
+                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700 dark:bg-purple-500/10 dark:text-purple-300"
                     >
                       <i class="fa-solid fa-handshake" aria-hidden="true" />
                       <span class="truncate max-w-[110px]">{{ menuCliente.parceiro_nome }}</span>
@@ -348,7 +594,7 @@ function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: str
                     <button
                       v-if="menuCliente.indicado_por_empresa_id"
                       type="button"
-                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-pink-100 text-pink-700 hover:bg-pink-200 dark:bg-pink-500/15 dark:text-pink-400 dark:hover:bg-pink-500/25 transition-colors"
+                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-pink-50 text-pink-700 hover:bg-pink-100 dark:bg-pink-500/10 dark:text-pink-300 dark:hover:bg-pink-500/20 transition-colors"
                       :title="`Indicação de ${menuCliente.indicado_por_nome || 'outro cliente'}. Clique para ver ou remover`"
                       @click="emitAction('ver-indicacao', menuCliente.id)"
                     >
@@ -373,7 +619,7 @@ function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: str
             <div class="overflow-y-auto px-4 pt-4 space-y-4">
               <!-- Conta e plano -->
               <section>
-                <p class="px-1 mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Conta e plano</p>
+                <p class="px-1 mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Conta e plano</p>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button type="button" @click="emitAction('editar', menuCliente.id)" class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-purple-300 dark:hover:border-purple-500/40 hover:bg-purple-50/40 dark:hover:bg-purple-500/5">
                     <span class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"><i class="fa-solid fa-pen-to-square" aria-hidden="true" /></span>
@@ -421,7 +667,7 @@ function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: str
 
               <!-- Parceria (não vale pro superAdmin) -->
               <section v-if="menuCliente.role !== 'superAdmin'">
-                <p class="px-1 mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Parceria</p>
+                <p class="px-1 mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Parceria</p>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button type="button" @click="emitAction('atribuir-parceiro', menuCliente.id)" class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-purple-300 dark:hover:border-purple-500/40 hover:bg-purple-50/40 dark:hover:bg-purple-500/5">
                     <span class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-teal-50 dark:bg-teal-500/10 text-teal-600 dark:text-teal-400"><i class="fa-solid fa-handshake" aria-hidden="true" /></span>
@@ -442,11 +688,36 @@ function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: str
                       <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">Desvincula de {{ menuCliente.parceiro_nome }}</span>
                     </span>
                   </button>
-                  <button type="button" @click="emitAction('tornar-parceiro', menuCliente.id)" class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-purple-300 dark:hover:border-purple-500/40 hover:bg-purple-50/40 dark:hover:bg-purple-500/5">
+                  <!-- Um papel por vez (09/10/2026): "Tornar…" aparece sempre que
+                       o dono não tem aquele papel ativo — se tiver o outro, a troca
+                       é automática (o modal mostra o que sai). "Remover…" aparece
+                       para o papel que ainda existe (ativo ou suspenso/bloqueado). -->
+                  <button v-if="!menuCliente.dono_parceiro" type="button" @click="emitAction('tornar-parceiro', menuCliente.id)" class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-purple-300 dark:hover:border-purple-500/40 hover:bg-purple-50/40 dark:hover:bg-purple-500/5">
                     <span class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"><i class="fa-solid fa-user-tie" aria-hidden="true" /></span>
                     <span class="min-w-0">
-                      <span class="block text-sm font-semibold text-slate-800 dark:text-slate-200">Tornar empresa parceira</span>
-                      <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">Passa a revender a Agzap</span>
+                      <span class="block text-sm font-medium text-slate-800 dark:text-slate-200">{{ menuCliente.dono_parceiro_situacao === 'suspenso' ? 'Reativar parceria' : 'Tornar empresa parceira' }}</span>
+                      <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">{{ menuCliente.dono_afiliado_situacao ? 'Sai da afiliação e vira parceiro' : 'Passa a revender a Agzap' }}</span>
+                    </span>
+                  </button>
+                  <button v-if="!menuCliente.dono_afiliado" type="button" @click="emitAction('tornar-afiliado', menuCliente.id)" class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-purple-300 dark:hover:border-purple-500/40 hover:bg-purple-50/40 dark:hover:bg-purple-500/5">
+                    <span class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"><i class="fa-solid fa-people-arrows" aria-hidden="true" /></span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-medium text-slate-800 dark:text-slate-200">{{ menuCliente.dono_afiliado_situacao === 'bloqueado' ? 'Desbloquear afiliado' : 'Tornar afiliado' }}</span>
+                      <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">{{ menuCliente.dono_parceiro_situacao ? 'Sai da parceria e vira afiliado' : 'Ganha comissão em dinheiro indicando' }}</span>
+                    </span>
+                  </button>
+                  <button v-if="menuCliente.dono_parceiro_situacao" type="button" @click="emitAction('remover-parceria', menuCliente.id)" class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-red-300 dark:hover:border-red-500/40 hover:bg-red-50/40 dark:hover:bg-red-500/5">
+                    <span class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400"><i class="fa-solid fa-user-xmark" aria-hidden="true" /></span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-medium text-slate-800 dark:text-slate-200">Remover parceria</span>
+                      <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">{{ menuCliente.dono_parceiro_situacao === 'suspenso' ? 'Parceiro suspenso: volta a ser cliente' : 'O dono volta a ser cliente normal' }}</span>
+                    </span>
+                  </button>
+                  <button v-if="menuCliente.dono_afiliado_situacao" type="button" @click="emitAction('remover-afiliacao', menuCliente.id)" class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-red-300 dark:hover:border-red-500/40 hover:bg-red-50/40 dark:hover:bg-red-500/5">
+                    <span class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400"><i class="fa-solid fa-user-minus" aria-hidden="true" /></span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-medium text-slate-800 dark:text-slate-200">Remover afiliação</span>
+                      <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">{{ menuCliente.dono_afiliado_situacao === 'bloqueado' ? 'Afiliado bloqueado: volta a ser cliente' : 'O dono volta a ser cliente normal' }}</span>
                     </span>
                   </button>
                 </div>
@@ -454,7 +725,7 @@ function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: str
 
               <!-- Situação da conta -->
               <section v-if="menuCliente.role !== 'superAdmin'">
-                <p class="px-1 mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Situação da conta</p>
+                <p class="px-1 mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Situação da conta</p>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button
                     v-if="menuCliente.ativo"

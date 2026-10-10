@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import type { AdminCliente } from '~/composables/useAdminClientes'
 
 definePageMeta({
@@ -53,7 +53,6 @@ const showDesativarModal = ref(false)
 const showReativarModal = ref(false)
 const showLimiteInstanciasModal = ref(false)
 const showAtribuirParceiroModal = ref(false)
-const showTornarParceiroModal = ref(false)
 const showUsoModal = ref(false)
 const clienteUso = ref<AdminCliente | null>(null)
 
@@ -94,6 +93,11 @@ const clienteModulos = ref<{
 const searchQuery = ref('')
 const filterStatus = ref('all')
 const filterPlan = ref('all')
+// Filtro por parceiro: 'all', 'sem' (sem parceiro = cliente direto da Agzap)
+// ou o id do parceiro (nunca o nome: nomes podem se repetir).
+const filterParceiro = ref('all')
+// Filtro por afiliado que TROUXE o cliente (1ª conexão): 'all' ou o id dele.
+const filterAfiliado = ref('all')
 const isRefreshing = ref(false)
 
 // A página inteira em abas (pedido do dono, 28/09/2026): antes as
@@ -163,6 +167,14 @@ const filteredClientes = computed(() => {
   if (filterPlan.value !== 'all') {
     filtered = filtered.filter(c => c.subscription_plan === filterPlan.value)
   }
+  if (filterParceiro.value === 'sem') {
+    filtered = filtered.filter(c => !c.parceiro_id)
+  } else if (filterParceiro.value !== 'all') {
+    filtered = filtered.filter(c => c.parceiro_id === filterParceiro.value)
+  }
+  if (filterAfiliado.value !== 'all') {
+    filtered = filtered.filter(c => c.afiliado_id === filterAfiliado.value)
+  }
   return filtered.slice().sort((a, b) => {
     const dA = diasParaVencimento(a)
     const dB = diasParaVencimento(b)
@@ -205,6 +217,117 @@ const statusChips = [
   { value: 'canceled', label: 'Cancelados' },
 ] as const
 
+// ───────── Filtros por parceiro e por afiliado (09/10/2026) ─────────
+// As opções listam só quem tem cliente na base. A contagem entre parênteses é
+// da aba aberta, para bater com o que a lista mostra ao escolher.
+const opcoesParceiro = computed(() => {
+  const mapa = new Map<string, { id: string; nome: string; total: number }>()
+  for (const c of clientes.value) {
+    if (c.parceiro_id && !mapa.has(c.parceiro_id)) {
+      mapa.set(c.parceiro_id, { id: c.parceiro_id, nome: c.parceiro_nome || 'Parceiro sem nome', total: 0 })
+    }
+  }
+  for (const c of clientesDaAba.value) {
+    if (c.parceiro_id) mapa.get(c.parceiro_id)!.total++
+  }
+  return [...mapa.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }))
+})
+const semParceiroNaAba = computed(() => clientesDaAba.value.filter(c => !c.parceiro_id).length)
+const opcoesAfiliado = computed(() => {
+  const mapa = new Map<string, { id: string; nome: string; removido: boolean; total: number }>()
+  for (const c of clientes.value) {
+    if (c.afiliado_id && !mapa.has(c.afiliado_id)) {
+      mapa.set(c.afiliado_id, { id: c.afiliado_id, nome: c.afiliado_nome || 'Afiliado sem nome', removido: !!c.afiliado_removido, total: 0 })
+    }
+  }
+  for (const c of clientesDaAba.value) {
+    if (c.afiliado_id) mapa.get(c.afiliado_id)!.total++
+  }
+  return [...mapa.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }))
+})
+const afiliadoSelecionado = computed(() => opcoesAfiliado.value.find(a => a.id === filterAfiliado.value) || null)
+// Se o parceiro/afiliado escolhido some da base (ex.: depois de "Remover do
+// parceiro" + recarregar), o filtro volta para "todos" em vez de lista vazia.
+watch([opcoesParceiro, opcoesAfiliado], () => {
+  if (filterParceiro.value !== 'all' && filterParceiro.value !== 'sem'
+    && !opcoesParceiro.value.some(p => p.id === filterParceiro.value)) filterParceiro.value = 'all'
+  if (filterAfiliado.value !== 'all' && !opcoesAfiliado.value.some(a => a.id === filterAfiliado.value)) filterAfiliado.value = 'all'
+})
+
+// ───────── Resumo do topo (redesenho 09/10/2026) ─────────
+// Dois cartões (Clientes e Vencimentos) calculados da lista carregada, sempre
+// sobre TODA a base (as duas abas de lista). Nada de número inventado. O
+// cartão de mensalidades cadastradas foi para o Dashboard (pedido do dono).
+interface CardResumo {
+  key: string
+  titulo: string
+  icon: string
+  tom: 'lavanda' | 'menta' | 'ambar' | 'ceu'
+  principalLabel: string
+  principal: string
+  principalDetalhe: string
+  tiles: { label: string; icon: string; iconCls: string; valor: string; detalhe: string }[]
+}
+// Enquanto a lista não chegou (ou falhou), os cartões mostram "—" em vez de zeros.
+const resumoPronto = computed(() => clientes.value.length > 0 || (!loading.value && !error.value))
+const cardsResumo = computed<CardResumo[]>(() => {
+  const todos = clientes.value
+  const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`
+  const emDia = todos.filter(c => !isVencido(c))
+  // Mesmas regras dos chips "Ativos" e "Trial" da aba Clientes em dia.
+  const ativos = emDia.filter(c => c.subscription_status === 'active')
+  const emTeste = emDia.filter(c => c.subscription_status === 'trial')
+  const vencem7 = emDia.filter(c => {
+    const d = diasParaVencimento(c)
+    return Number.isFinite(d) && d >= 0 && d <= 7
+  }).length
+  const vencemHoje = emDia.filter(c => diasParaVencimento(c) === 0).length
+  const vencidos = todos.length - emDia.length
+  const cancelados = todos.filter(c => c.subscription_status === 'canceled').length
+  const cancelamentoAgendado = todos.filter(c => c.cancel_at_period_end && c.subscription_status !== 'canceled').length
+
+  return [
+    {
+      key: 'clientes',
+      titulo: 'Clientes',
+      icon: 'fa-users',
+      tom: 'lavanda',
+      principalLabel: 'Total na base',
+      principal: String(todos.length),
+      principalDetalhe: stats.value.clientesEssaSemana
+        ? `+${stats.value.clientesEssaSemana} nos últimos 7 dias`
+        : 'Nenhum novo nos últimos 7 dias',
+      tiles: [
+        { label: 'Ativos', icon: 'fa-circle-check', iconCls: 'text-emerald-500', valor: String(ativos.length), detalhe: 'assinatura em dia' },
+        { label: 'Em teste', icon: 'fa-hourglass-half', iconCls: 'text-amber-500', valor: String(emTeste.length), detalhe: 'trial em andamento' },
+      ],
+    },
+    {
+      key: 'vencimentos',
+      titulo: 'Vencimentos',
+      icon: 'fa-calendar-day',
+      tom: 'ambar',
+      principalLabel: 'Vencem em até 7 dias',
+      principal: String(vencem7),
+      principalDetalhe: vencemHoje
+        ? `${plural(vencemHoje, 'vence', 'vencem')} hoje`
+        : 'Nenhum vence hoje',
+      tiles: [
+        { label: 'Vencidos', icon: 'fa-triangle-exclamation', iconCls: 'text-red-500', valor: String(vencidos), detalhe: 'na aba Vencidos' },
+        {
+          label: 'Cancelados',
+          icon: 'fa-ban',
+          iconCls: 'text-slate-400',
+          valor: String(cancelados),
+          detalhe: cancelamentoAgendado
+            ? `+${cancelamentoAgendado} com cancelamento agendado`
+            : 'assinatura encerrada',
+        },
+      ],
+    },
+  ]
+})
+
 function handleDesativar(id: string) {
   const c = clientes.value.find(x => x.id === id)
   if (c) { selectedCliente.value = { id: c.id, nome: c.nome }; showDesativarModal.value = true }
@@ -237,10 +360,10 @@ function handleRenovar(id: string) {
   const c = clientes.value.find(x => x.id === id)
   if (c) { selectedCliente.value = { id: c.id, nome: c.nome }; showRenovarModal.value = true }
 }
-async function confirmRenovar(plan: string, period: string, abater = 0) {
+async function confirmRenovar(plan: string, period: string, abater = 0, ancora?: 'vencimento' | 'hoje') {
   if (!selectedCliente.value) return
   try {
-    await renovarAssinatura(selectedCliente.value.id, plan as any, period as any)
+    await renovarAssinatura(selectedCliente.value.id, plan as any, period as any, ancora)
     if (abater > 0) {
       // Desconto do saldo de indicação nesta renovação (cliente de Pix)
       try {
@@ -331,36 +454,36 @@ async function confirmRemoverParceiro() {
   parceiroDoCliente.value = null
 }
 
+// Tornar parceiro / afiliado (09/10/2026): um papel por vez. Se o dono tem o
+// outro papel, o modal mostra a troca automática (o que sai) e faz tudo junto.
+const tornarPapel = ref<{ tipo: 'parceiro' | 'afiliado'; empresaId: string; nome: string } | null>(null)
 function handleTornarParceiro(id: string) {
   const c = clientes.value.find(x => x.id === id)
-  if (c) { selectedCliente.value = { id: c.id, nome: c.nome }; showTornarParceiroModal.value = true }
+  if (c) tornarPapel.value = { tipo: 'parceiro', empresaId: c.id, nome: c.nome_cliente || c.nome }
+}
+function handleTornarAfiliado(id: string) {
+  const c = clientes.value.find(x => x.id === id)
+  if (c) tornarPapel.value = { tipo: 'afiliado', empresaId: c.id, nome: c.nome_cliente || c.nome }
+}
+async function onPapelTrocado() {
+  tornarPapel.value = null
+  await loadClientes()
 }
 
-async function confirmTornarParceiro() {
-  if (!selectedCliente.value) return
-  try {
-    const resp = await $fetch<{
-      success: boolean
-      data?: { jaEra: boolean; reativado: boolean; nome: string }
-      error?: string
-    }>('/api/admin/tornar-parceiro', {
-      method: 'POST',
-      body: { empresaId: selectedCliente.value.id },
-      headers: await useAdminAuthHeaders(),
-    })
-    if (!resp.success || !resp.data) throw new Error(resp.error || 'Erro')
-    if (resp.data.reativado) {
-      toast?.success(`${resp.data.nome} já era parceiro e foi desbloqueado!`)
-    } else if (resp.data.jaEra) {
-      toast?.warning(`${resp.data.nome} já é parceiro — nada foi alterado.`)
-    } else {
-      toast?.success(`${resp.data.nome} agora é parceiro! Ele já consegue acessar o portal com o login que usa no Agzap.`)
-    }
-  } catch (err: any) {
-    toast?.error(err?.data?.statusMessage || err?.message || 'Erro ao tornar parceiro')
-  }
-  showTornarParceiroModal.value = false
-  selectedCliente.value = null
+// Remover parceria / afiliação do dono da empresa (09/10/2026): um papel
+// ativo por vez. O modal mostra a prévia e faz a remoção.
+const removerPapel = ref<{ tipo: 'parceria' | 'afiliacao'; empresaId: string; nome: string } | null>(null)
+function handleRemoverParceria(id: string) {
+  const c = clientes.value.find(x => x.id === id)
+  if (c) removerPapel.value = { tipo: 'parceria', empresaId: c.id, nome: c.nome_cliente || c.nome }
+}
+function handleRemoverAfiliacao(id: string) {
+  const c = clientes.value.find(x => x.id === id)
+  if (c) removerPapel.value = { tipo: 'afiliacao', empresaId: c.id, nome: c.nome_cliente || c.nome }
+}
+async function onPapelRemovido() {
+  removerPapel.value = null
+  await loadClientes()
 }
 
 function handleLimiteInstancias(id: string) {
@@ -510,9 +633,11 @@ function abrirModulosDeUso(id: string) {
 </script>
 
 <template>
-  <div class="px-4 py-4 sm:px-6 md:px-10 md:py-6">
-    <div class="max-w-[1400px] mx-auto space-y-5">
-      <h1 class="sr-only">Clientes</h1>
+  <!-- Topo mais perto da barra (09/10/2026): pouco respiro em cima e o h1
+       invisível fora do space-y (antes ele somava margem antes das abas). -->
+  <div class="px-4 pt-3 pb-6 sm:px-6 md:px-10 md:pt-4 md:pb-8">
+    <h1 class="sr-only">Clientes</h1>
+    <div class="max-w-[1400px] mx-auto space-y-4">
       <!-- Abas da página (pedido do dono, 28/09/2026). Sem título "Clientes"
            em cima: as abas já dizem onde se está, e o conteúdo sobe. O
            atualizar virou ícone na ponta da linha das abas. -->
@@ -534,7 +659,7 @@ function abrirModulosDeUso(id: string) {
             {{ aba.label }}
             <span
               v-if="aba.count !== null"
-              class="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full text-[10px] font-bold tabular-nums"
+              class="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full text-[10px] font-semibold tabular-nums"
               :class="(aba.tone === 'red' && (aba.count ?? 0) > 0)
                 ? 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400'
                 : abaAtiva === aba.value
@@ -607,65 +732,30 @@ function abrirModulosDeUso(id: string) {
 
       <!-- Abas de lista: Clientes em dia / Vencidos -->
       <template v-else>
-        <!-- Filtros numa linha só: busca, chips de status, plano e contagem
-             (quebra de linha só quando a tela não comporta). -->
-        <div class="flex flex-wrap items-center gap-2">
-          <div class="relative flex-1 min-w-[220px] max-w-sm">
-            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm" aria-hidden="true" />
-            <input
-              id="search"
-              v-model="searchQuery"
-              type="search"
-              aria-label="Pesquisar cliente"
-              placeholder="Buscar por nome, email ou whatsapp..."
-              class="w-full h-9 pl-9 pr-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white"
+        <!-- Resumo (redesenho 09/10/2026, organização da referência do dono):
+             dois cartões suaves (Clientes e Vencimentos), sempre sobre toda a
+             base. O de mensalidades cadastradas foi para o Dashboard. -->
+        <section aria-labelledby="resumo-base-titulo" class="space-y-2">
+          <p id="resumo-base-titulo" class="text-xs text-slate-500 dark:text-slate-400">
+            Resumo de toda a base · as duas abas de lista
+          </p>
+          <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <AdminResumoCard
+              v-for="card in cardsResumo"
+              :key="card.key"
+              titulo-tag="h2"
+              empilhar-em="nunca"
+              :titulo="card.titulo"
+              :icon="card.icon"
+              :tom="card.tom"
+              :principal-label="card.principalLabel"
+              :principal="card.principal"
+              :principal-detalhe="card.principalDetalhe"
+              :tiles="card.tiles"
+              :pronto="resumoPronto"
             />
           </div>
-
-          <!-- Chips de status. Só na aba "Em dia": a lista de vencidos é curta e
-               serve pra cobrar, não pra fatiar por status. -->
-          <div v-if="abaAtiva === 'em-dia'" class="flex flex-wrap items-center gap-2" role="group" aria-label="Filtrar por status">
-            <button
-              v-for="chip in statusChips"
-              :key="chip.value"
-              type="button"
-              @click="filterStatus = chip.value"
-              :aria-pressed="filterStatus === chip.value"
-              class="inline-flex items-center gap-1.5 h-9 pl-3 pr-2 rounded-full text-xs font-semibold border transition-colors"
-              :class="filterStatus === chip.value
-                ? 'bg-purple-600 border-purple-600 text-white'
-                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/60'"
-            >
-              {{ chip.label }}
-              <span
-                class="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full text-[10px] font-bold tabular-nums"
-                :class="filterStatus === chip.value
-                  ? 'bg-white/25 text-white'
-                  : (chip.tone === 'orange' && statusCounts[chip.value] > 0) ? 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400'
-                  : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'"
-              >{{ statusCounts[chip.value] }}</span>
-            </button>
-          </div>
-
-          <select
-            id="plan"
-            v-model="filterPlan"
-            aria-label="Filtrar por plano"
-            class="h-9 w-44 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white"
-          >
-            <option value="all">Todos os planos</option>
-            <option value="free">Gratuito</option>
-            <option value="basic">Básico</option>
-            <option value="pro">Pro</option>
-            <option value="enterprise">Enterprise</option>
-          </select>
-
-          <div class="hidden sm:flex items-center gap-1.5 ml-auto text-sm text-slate-500 dark:text-slate-400 whitespace-nowrap">
-            <span class="font-semibold text-slate-900 dark:text-white tabular-nums">{{ filteredClientes.length }}</span>
-            de
-            <span class="font-semibold text-slate-900 dark:text-white tabular-nums">{{ clientesDaAba.length }}</span>
-          </div>
-        </div>
+        </section>
 
         <div v-if="error" role="alert" class="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-md p-4 text-red-700 dark:text-red-400 text-sm">
           {{ error }}
@@ -683,11 +773,127 @@ function abrirModulosDeUso(id: string) {
           @atribuir-parceiro="handleAtribuirParceiro"
           @remover-parceiro="handleRemoverParceiro"
           @tornar-parceiro="handleTornarParceiro"
+          @tornar-afiliado="handleTornarAfiliado"
+          @remover-parceria="handleRemoverParceria"
+          @remover-afiliacao="handleRemoverAfiliacao"
           @modulos="handleModulos"
           @ver-uso="handleVerUso"
           @saldo-indicacao="handleSaldoIndicacao"
           @ver-indicacao="handleVerIndicacao"
-        />
+        >
+          <!-- Cabeçalho do painel da lista: título + contagem, busca, plano e
+               chips de status (mesmas funções de antes, agora dentro do painel). -->
+          <template #topo>
+            <div class="px-4 sm:px-5 pt-4 pb-3.5 space-y-3">
+              <div class="flex flex-wrap items-center gap-x-4 gap-y-3">
+                <div class="flex items-baseline gap-2 min-w-0">
+                  <h2 class="text-base font-medium text-slate-900 dark:text-white whitespace-nowrap">
+                    {{ abaAtiva === 'vencidos' ? 'Clientes vencidos' : 'Lista de clientes' }}
+                  </h2>
+                  <span class="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap tabular-nums">
+                    <span class="font-semibold text-slate-700 dark:text-slate-200">{{ filteredClientes.length }}</span>
+                    de
+                    <span class="font-semibold text-slate-700 dark:text-slate-200">{{ clientesDaAba.length }}</span>
+                  </span>
+                </div>
+                <div class="relative w-full md:w-72 md:ml-auto">
+                  <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm" aria-hidden="true" />
+                  <input
+                    id="search"
+                    v-model="searchQuery"
+                    type="search"
+                    aria-label="Pesquisar cliente"
+                    placeholder="Buscar por nome, email ou whatsapp..."
+                    class="w-full h-9 pl-9 pr-3 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
+                  />
+                </div>
+              </div>
+
+              <div class="flex flex-wrap items-center gap-2">
+              <!-- Chips de status. Só na aba "Em dia": a lista de vencidos é curta e
+                   serve pra cobrar, não pra fatiar por status. -->
+              <div v-if="abaAtiva === 'em-dia'" class="flex flex-wrap items-center gap-2 mr-auto" role="group" aria-label="Filtrar por status">
+                <button
+                  v-for="chip in statusChips"
+                  :key="chip.value"
+                  type="button"
+                  @click="filterStatus = chip.value"
+                  :aria-pressed="filterStatus === chip.value"
+                  class="inline-flex items-center gap-1.5 h-8 pl-3 pr-1.5 rounded-full text-xs font-medium border transition-colors"
+                  :class="filterStatus === chip.value
+                    ? 'bg-purple-600 border-purple-600 text-white'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/60'"
+                >
+                  {{ chip.label }}
+                  <span
+                    class="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full text-[10px] font-semibold tabular-nums"
+                    :class="filterStatus === chip.value
+                      ? 'bg-white/25 text-white'
+                      : (chip.tone === 'orange' && statusCounts[chip.value] > 0) ? 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400'
+                      : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'"
+                  >{{ statusCounts[chip.value] }}</span>
+                </button>
+              </div>
+
+              <!-- Plano, parceiro e afiliado. Somam com a aba, os chips e a busca.
+                   No celular quebram em linhas, embaixo da busca. -->
+              <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+                <select
+                  id="plan"
+                  v-model="filterPlan"
+                  aria-label="Filtrar por plano"
+                  class="h-9 flex-1 min-w-[9rem] sm:flex-none sm:w-40 px-3 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
+                >
+                  <option value="all">Todos os planos</option>
+                  <option value="free">Gratuito</option>
+                  <option value="basic">Básico</option>
+                  <option value="pro">Pro</option>
+                  <option value="enterprise">Enterprise</option>
+                </select>
+                <select
+                  id="filtro-parceiro"
+                  v-model="filterParceiro"
+                  aria-label="Filtrar por parceiro"
+                  title="Parceiro ao qual o cliente está vinculado"
+                  class="h-9 flex-1 min-w-[9rem] sm:flex-none sm:w-48 px-3 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
+                >
+                  <option value="all">Todos os parceiros</option>
+                  <option value="sem">Agzap, sem parceiro ({{ semParceiroNaAba }})</option>
+                  <optgroup v-if="opcoesParceiro.length" label="Parceiros com clientes">
+                    <option v-for="p in opcoesParceiro" :key="p.id" :value="p.id">{{ p.nome }} ({{ p.total }})</option>
+                  </optgroup>
+                </select>
+                <select
+                  id="filtro-afiliado"
+                  v-model="filterAfiliado"
+                  aria-label="Filtrar pelo afiliado que trouxe o cliente (1ª conexão)"
+                  title="Afiliado que trouxe o cliente pelo link dele (1ª conexão)"
+                  :disabled="opcoesAfiliado.length === 0"
+                  class="h-9 flex-1 min-w-[9rem] sm:flex-none sm:w-48 px-3 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white disabled:opacity-60 focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
+                >
+                  <option value="all">{{ opcoesAfiliado.length ? 'Todos os afiliados' : 'Nenhum cliente via afiliado' }}</option>
+                  <optgroup v-if="opcoesAfiliado.length" label="Trouxe o cliente (1ª conexão)">
+                    <option v-for="a in opcoesAfiliado" :key="a.id" :value="a.id">{{ a.nome }}{{ a.removido ? ' (removido)' : '' }} ({{ a.total }})</option>
+                  </optgroup>
+                </select>
+                <button
+                  v-if="filterPlan !== 'all' || filterParceiro !== 'all' || filterAfiliado !== 'all'"
+                  type="button"
+                  class="h-9 px-2 text-xs font-medium text-purple-700 dark:text-purple-400 hover:underline whitespace-nowrap"
+                  @click="filterPlan = 'all'; filterParceiro = 'all'; filterAfiliado = 'all'"
+                >
+                  Limpar filtros
+                </button>
+              </div>
+              </div>
+
+              <p v-if="afiliadoSelecionado" class="text-xs text-slate-500 dark:text-slate-400">
+                <i class="fa-solid fa-circle-info mr-1 text-slate-400 dark:text-slate-500" aria-hidden="true" />
+                Clientes que entraram pelo link de {{ afiliadoSelecionado.nome }}{{ afiliadoSelecionado.removido ? ' (afiliação removida)' : '' }}: só a 1ª conexão. Indicações entre clientes não entram neste filtro.
+              </p>
+            </div>
+          </template>
+        </AdminClientesTable>
       </template>
 
       <AdminEditarClienteModal
@@ -703,6 +909,7 @@ function abrirModulosDeUso(id: string) {
         :cliente-id="selectedCliente?.id || null"
         :preco-mensal="clienteRenovar?.subscription_price ?? null"
         :preco-anual="clienteRenovar?.subscription_price_anual ?? null"
+        :assinatura="clienteRenovar"
         @close="showRenovarModal = false; selectedCliente = null"
         @confirm="confirmRenovar"
       />
@@ -756,15 +963,22 @@ function abrirModulosDeUso(id: string) {
       />
 
 
-      <AdminConfirmacaoModal
-        :show="showTornarParceiroModal"
-        title="Tornar empresa parceira"
-        message="O dono desta empresa vai poder acessar o portal do parceiro com o mesmo login que já usa no Agzap (o acesso ao aplicativo continua normal). Deseja tornar parceira a empresa"
-        :cliente-nome="selectedCliente?.nome"
-        confirm-label="Tornar parceira"
-        variant="info"
-        @close="showTornarParceiroModal = false; selectedCliente = null"
-        @confirm="confirmTornarParceiro"
+      <AdminTornarPapelModal
+        :show="!!tornarPapel"
+        :tipo="tornarPapel?.tipo || 'parceiro'"
+        :empresa-id="tornarPapel?.empresaId"
+        :nome="tornarPapel?.nome"
+        @close="tornarPapel = null"
+        @feito="onPapelTrocado"
+      />
+
+      <AdminRemoverPapelModal
+        :show="!!removerPapel"
+        :tipo="removerPapel?.tipo || 'parceria'"
+        :empresa-id="removerPapel?.empresaId"
+        :nome="removerPapel?.nome"
+        @close="removerPapel = null"
+        @removido="onPapelRemovido"
       />
 
       <AdminLimiteInstanciasModal

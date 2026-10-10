@@ -1,27 +1,47 @@
+/* Fontes da identidade visual (09/10/2026): Sora nos títulos, Source Sans 3 no
+   texto, JetBrains Mono em rótulos e números de apoio. Precisa vir antes de
+   tudo (regra do CSS para @import). */
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@500;600&family=Source+Sans+3:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* Mesmas cores da página da Rede de Conexões (ver tailwind.config.ts). */
 :root {
-  --background: 0 0% 100%;
-  --foreground: 222 47% 11%;
+  --background: 255 33% 98%;     /* #faf9fd */
+  --foreground: 246 33% 12%;     /* #1b1827 */
   --card: 0 0% 100%;
-  --border: 214 32% 91%;
-  --primary: 262 83% 58%;
+  --border: 253 38% 92%;         /* #e6e2f2 */
+  --primary: 263 70% 50%;        /* #6d28d9 */
   --primary-foreground: 0 0% 100%;
-  --muted: 210 40% 96%;
-  --muted-foreground: 215 16% 47%;
+  --muted: 252 33% 96%;          /* #f3f1f9 */
+  --muted-foreground: 252 14% 43%; /* #645e7d */
 }
 
 .dark {
-  --background: 222 47% 6%;
-  --foreground: 210 40% 98%;
-  --card: 222 47% 8%;
-  --border: 217 33% 18%;
-  --primary: 262 83% 58%;
-  --primary-foreground: 0 0% 100%;
-  --muted: 217 33% 17%;
-  --muted-foreground: 215 20% 65%;
+  --background: 255 24% 8%;      /* #12101a */
+  --foreground: 252 47% 94%;     /* #ece9f7 */
+  --card: 252 24% 12%;           /* #1b1827 */
+  --border: 252 23% 21%;         /* #2d2942 */
+  --primary: 255 92% 76%;        /* #a98bfa */
+  --primary-foreground: 252 47% 12%;
+  --muted: 252 23% 16%;
+  --muted-foreground: 252 17% 70%; /* #a8a2c0 */
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 {
+    font-family: theme('fontFamily.display');
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+  .tabular-nums, td, th {
+    font-variant-numeric: tabular-nums;
+  }
 }
 
 .animation-delay-2000 { animation-delay: 2s; }

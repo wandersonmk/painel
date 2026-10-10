@@ -1,5 +1,12 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import {
+  MENSAGEM_AFILIADO_BLOQUEADO,
+  MENSAGEM_SEM_ACESSO_PAINEL,
+  buscarAfiliadoLogado,
+  sairDaContaAfiliado,
+  situacaoParceiroLogado,
+} from '~/composables/useAfiliado'
 
 const email = ref('')
 const password = ref('')
@@ -39,16 +46,11 @@ async function handleLogin() {
     // Verifica se o usuário é super administrador
     await checkUserRole()
     if (!isSuperAdmin.value) {
-      // Parceiro ativo entra no portal somente leitura dele
+      // Ordem: superAdmin → parceiro → afiliado. Papel REMOVIDO (removido_em)
+      // conta como não ter o papel; suspenso/bloqueado mostra o aviso de bloqueio.
       const supabase = useSupabaseClient()
-      const { data: parceiro } = await supabase
-        .from('parceiros')
-        .select('id, ativo')
-        .eq('auth_user_id', result.id)
-        .maybeSingle()
-
-      const p = parceiro as { id: string; ativo: boolean } | null
-      if (p?.ativo) {
+      const parceiro = await situacaoParceiroLogado(supabase, result.id).catch(() => null)
+      if (parceiro === 'ativo') {
         if (user.value?.email) {
           localStorage.setItem('user_email', user.value.email)
         }
@@ -57,15 +59,36 @@ async function handleLogin() {
         return
       }
 
-      // Parceiro bloqueado: mostra o modal explicativo com o contato
-      if (p) {
+      // Afiliado ativo entra no portal do afiliado (afiliação removida = null)
+      const afiliado = await buscarAfiliadoLogado(supabase)
+      if (afiliado?.ativo) {
+        if (user.value?.email) {
+          localStorage.setItem('user_email', user.value.email)
+        }
+        toast?.success('Login realizado com sucesso!')
+        await navigateTo('/afiliado')
+        return
+      }
+
+      // Afiliado bloqueado (e não parceiro suspenso): sai só desta sessão, com o aviso
+      if (afiliado && parceiro !== 'suspenso') {
+        await sairDaContaAfiliado(supabase)
+        toast?.error(MENSAGEM_AFILIADO_BLOQUEADO)
+        return
+      }
+
+      // Parceiro suspenso: mostra o modal explicativo com o contato
+      if (parceiro === 'suspenso') {
         useContaBloqueada().bloqueado.value = true
         await signOut()
         return
       }
 
-      await signOut()
-      toast?.error('Acesso negado. Esta área é restrita a super administradores.')
+      // Sem papel no painel (inclui parceria/afiliação removida): aviso normal,
+      // nunca "Conta bloqueada". Sai só desta sessão: o mesmo login pode estar
+      // aberto no app da Agzap.
+      await sairDaContaAfiliado(supabase)
+      toast?.error(MENSAGEM_SEM_ACESSO_PAINEL)
       return
     }
 
@@ -89,8 +112,8 @@ async function handleLogin() {
 
       <div class="relative z-10">
         <div class="space-y-1">
-          <h2 class="text-xl font-semibold text-white">Painel Administrativo</h2>
-          <p class="text-sm text-gray-300">Acesso restrito a administradores</p>
+          <h2 class="text-xl font-semibold text-white">Painel Agzap</h2>
+          <p class="text-sm text-gray-300">Acesso de administradores, parceiros e afiliados</p>
         </div>
 
         <form @submit.prevent="handleLogin" class="mt-6 space-y-3" novalidate>
@@ -147,6 +170,11 @@ async function handleLogin() {
             <span v-else>Entrar</span>
           </AppButton>
         </form>
+
+        <p class="mt-5 text-center text-sm text-gray-400">
+          Quer indicar a Agzap e ganhar em dinheiro?
+          <NuxtLink to="/afiliado/cadastro" class="text-purple-300 hover:text-purple-200 underline-offset-2 hover:underline">Cadastre-se como afiliado</NuxtLink>
+        </p>
       </div>
     </div>
   </div>

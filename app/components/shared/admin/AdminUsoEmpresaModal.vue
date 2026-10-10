@@ -47,7 +47,12 @@ interface AceiteResumo {
   hash_confere: boolean
 }
 interface RecusaResumo { id: string; versao_termos: string; recusado_em: string; ip: string | null }
-const termos = ref<{ aceites: AceiteResumo[]; recusas: RecusaResumo[] } | null>(null)
+const termos = ref<{ aceites: AceiteResumo[]; recusas: RecusaResumo[]; versaoVigente: string | null } | null>(null)
+// Aceitou só versões antigas: o titular vê a tela de novo no próximo acesso.
+const termosPendenteVigente = computed(() => {
+  const t = termos.value
+  return !!t && t.aceites.length > 0 && !!t.versaoVigente && !t.aceites.some(a => a.versao_termos === t.versaoVigente)
+})
 const termosCarregando = ref(false)
 const termosErro = ref(false)
 
@@ -62,11 +67,11 @@ async function carregarTermos() {
   termosCarregando.value = true
   termosErro.value = false
   try {
-    const resp = await $fetch<{ success: boolean; data: { aceites: AceiteResumo[]; recusas: RecusaResumo[] } }>('/api/admin/termos-aceite', {
+    const resp = await $fetch<{ success: boolean; data: { aceites: AceiteResumo[]; recusas: RecusaResumo[]; versao_vigente?: string } }>('/api/admin/termos-aceite', {
       query: { empresaId: props.cliente.id },
       headers: await useAdminAuthHeaders(),
     })
-    termos.value = { aceites: resp.data?.aceites || [], recusas: resp.data?.recusas || [] }
+    termos.value = { aceites: resp.data?.aceites || [], recusas: resp.data?.recusas || [], versaoVigente: resp.data?.versao_vigente || null }
   } catch {
     termosErro.value = true
   } finally {
@@ -467,6 +472,18 @@ const dinheiro = (v: number | null) => (v == null ? 'Não definido' : mask(brl(v
         </div>
 
         <div v-else-if="termos" class="space-y-2">
+          <!-- Aceitou só versões antigas -->
+          <div
+            v-if="termosPendenteVigente"
+            class="rounded-md border border-amber-200 dark:border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/10 px-3 py-2.5 text-[12px]"
+          >
+            <p class="text-[13px] font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+              <i class="fa-solid fa-clock text-[12px]" aria-hidden="true" />
+              Ainda não aceitou a versão {{ termos.versaoVigente }}
+            </p>
+            <p class="text-slate-600 dark:text-slate-400">No próximo acesso, o painel do titular fica bloqueado até ele aceitar a versão nova. Os aceites anteriores continuam valendo como prova.</p>
+          </div>
+
           <!-- Aceites (o mais recente primeiro) -->
           <div
             v-for="a in termos.aceites"

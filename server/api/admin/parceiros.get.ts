@@ -9,6 +9,7 @@ export default defineEventHandler(async (event) => {
   const { data: parceiros, error } = await supabase
     .from('parceiros')
     .select('id, nome, email, ativo')
+    .is('removido_em', null) // parceria removida não recebe cliente
     .order('nome')
   if (error) return { success: false, error: error.message }
 

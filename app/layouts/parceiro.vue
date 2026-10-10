@@ -1,28 +1,50 @@
 <script setup lang="ts">
+import {
+  MENSAGEM_PARCERIA_ENCERRADA,
+  buscarAfiliadoLogado,
+  sairDaContaAfiliado,
+  situacaoParceiroLogado,
+} from '~/composables/useAfiliado'
+
 const { signOut } = useAuth()
 const { isDark, init: initTheme, toggle: toggleTheme } = useTheme()
 const { isCollapsed, init: initSidebar, openMobile } = useSidebar()
 const { bloqueado } = useContaBloqueada()
+const supabase = useSupabaseClient()
+const toast = useToast()
 
 // Bloqueio em tempo real: confere a cada 15s e ao voltar para a aba.
-// Se o superAdmin bloquear ou excluir o parceiro, o modal aparece na hora.
+// Suspenso → modal "Conta bloqueada". Parceria REMOVIDA (ou excluída) não é
+// bloqueio (09/10/2026): se ele virou afiliado vai para o portal do afiliado;
+// senão sai com o aviso de que o acesso foi encerrado.
 let verificadorBloqueio: ReturnType<typeof setInterval> | null = null
+let encerrando = false
 
 async function verificarBloqueio() {
-  if (bloqueado.value) return
+  if (bloqueado.value || encerrando) return
   try {
-    const supabase = useSupabaseClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    const { data, error } = await supabase
-      .from('parceiros')
-      .select('ativo')
-      .eq('auth_user_id', user.id)
-      .maybeSingle()
-    if (error) return // erro de rede não bloqueia ninguém
-    if (!data || (data as { ativo: boolean }).ativo === false) {
-      bloqueado.value = true
+    let situacao
+    try {
+      situacao = await situacaoParceiroLogado(supabase, user.id)
     }
+    catch {
+      return // erro de rede não bloqueia ninguém
+    }
+    if (situacao === 'ativo') return
+    if (situacao === 'suspenso') {
+      bloqueado.value = true
+      return
+    }
+    encerrando = true
+    if ((await buscarAfiliadoLogado(supabase))?.ativo) {
+      await navigateTo('/afiliado')
+      return
+    }
+    toast.error(MENSAGEM_PARCERIA_ENCERRADA)
+    await sairDaContaAfiliado(supabase)
+    await navigateTo('/login')
   } catch {
     // best-effort
   }
@@ -58,7 +80,7 @@ async function handleLogout() {
 
     <!-- Main area -->
     <div
-      class="flex-1 flex flex-col min-h-screen transition-[margin-left] duration-300 ease-in-out ml-0"
+      class="flex-1 flex flex-col min-h-screen min-w-0 transition-[margin-left] duration-300 ease-in-out ml-0"
       :class="isCollapsed ? 'md:ml-16' : 'md:ml-60'"
     >
       <!-- Header -->

@@ -125,12 +125,19 @@ async function registrarChargeback(referencia: string) {
   erro.value = ''
   avisoChargeback.value = ''
   try {
-    const resp = await $fetch<{ success: boolean; data: { cancelado: number; estornado: number; jaUtilizado: number } }>('/api/admin/indicacao-estornar', {
+    const resp = await $fetch<{
+      success: boolean
+      data: { cancelado: number; estornado: number; jaUtilizado: number; afiliado?: { cancelado: number; estornado: number } }
+      aviso?: string | null
+    }>('/api/admin/indicacao-estornar', {
       method: 'POST', headers: await useAdminAuthHeaders(), body: { empresaId: props.clienteId, referencia, motivo: 'chargeback' },
     })
     const r = resp.data
+    const retidoAfiliado = (r.afiliado?.cancelado || 0) + (r.afiliado?.estornado || 0)
     avisoChargeback.value = `Retido ${brl(r.cancelado + r.estornado)} deste pagamento.`
+      + (retidoAfiliado > 0 ? ` Comissão do afiliado retida: ${brl(retidoAfiliado)}.` : '')
       + (r.jaUtilizado > 0 ? ` Atenção: ${brl(r.jaUtilizado)} já tinha sido usado como desconto e não dá para desfazer sozinho. Desconte do próximo pedido de desconto dela ou assuma o valor.` : '')
+      + (resp.aviso ? ` Atenção: ${resp.aviso}` : '')
     chargebackRef.value = null
     await carregar()
   } catch (e: any) {

@@ -37,38 +37,42 @@ async function copiar() {
 
 function compartilharWhatsApp() {
   if (!link.value) return
-  const texto = `Conheça a Agzap: atendimento com IA no WhatsApp. Crie sua conta por aqui: ${link.value}`
+  // Link na última linha: no WhatsApp ele vira o cartão de convite (imagem
+  // de indicação), montado pelo app em server/plugins/og-publico.ts.
+  const texto = `🎁 *Convite Agzap*\n\nConheça a Agzap: atendimento com IA no WhatsApp. Crie sua conta pelo link oficial:\n${link.value}`
   window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, '_blank')
 }
 </script>
 
 <template>
-  <section class="rounded-xl border border-purple-200 dark:border-purple-500/25 bg-gradient-to-br from-purple-50 to-white dark:from-purple-500/10 dark:to-transparent p-4 sm:p-5">
-    <div class="flex flex-col lg:flex-row lg:items-center gap-4">
-      <div class="flex items-start gap-3 min-w-0 lg:flex-1">
-        <span class="w-10 h-10 rounded-lg bg-purple-600 text-white flex items-center justify-center flex-shrink-0">
-          <i class="fa-solid fa-link" aria-hidden="true" />
+  <!-- Mesmo visual dos painéis do dashboard (09/10/2026): superfície clara,
+       cantos de 2xl, ícone em bloco suave e botões arredondados. -->
+  <section class="rounded-2xl bg-white dark:bg-slate-900/60 ring-1 ring-inset ring-slate-200/70 dark:ring-white/10 p-4 sm:p-5">
+    <div class="flex flex-col lg:flex-row lg:items-center gap-3.5 lg:gap-6">
+      <div class="flex items-start gap-2.5 min-w-0 lg:flex-1">
+        <span class="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-500/15 dark:text-purple-300 flex items-center justify-center flex-shrink-0">
+          <i class="fa-solid fa-link text-sm" aria-hidden="true" />
         </span>
         <div class="min-w-0">
-          <p class="text-sm font-semibold text-slate-900 dark:text-white">Seu link de indicação</p>
-          <p class="text-xs text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed">
+          <h2 class="text-[15px] font-medium text-slate-800 dark:text-slate-100">Seu link de indicação</h2>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
             Quem criar a conta por este link entra direto na sua carteira de clientes. Você já vê o cliente aqui e pode renovar com crédito, sem precisar falar com a Agzap.
           </p>
         </div>
       </div>
 
       <div class="flex flex-col sm:flex-row sm:items-center gap-2 lg:w-[min(560px,55%)]">
-        <div class="flex-1 min-w-0 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono text-xs text-slate-700 dark:text-slate-300 truncate">
-          <span v-if="carregando" class="inline-block h-3 w-48 rounded bg-slate-200 dark:bg-slate-700 animate-pulse align-middle" />
-          <span v-else-if="erro" class="text-red-500">{{ erro }}</span>
-          <span v-else :title="link || ''">{{ link }}</span>
+        <div class="flex-1 min-w-0 h-9 flex items-center px-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 ring-1 ring-inset ring-slate-200/70 dark:ring-white/5 font-mono text-xs text-slate-700 dark:text-slate-300">
+          <span v-if="carregando" class="inline-block h-3 w-48 max-w-full rounded bg-slate-200 dark:bg-slate-700 animate-pulse" />
+          <span v-else-if="erro" class="block truncate text-red-500" :title="erro">{{ erro }}</span>
+          <span v-else class="block truncate" :title="link || ''">{{ link }}</span>
         </div>
         <div class="flex items-center gap-2 flex-shrink-0">
           <button
             type="button"
             :disabled="!link"
             @click="copiar"
-            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white transition-colors"
+            class="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 h-9 px-3.5 rounded-xl text-xs font-medium bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white shadow-sm shadow-purple-600/20 transition-colors"
           >
             <i :class="copiado ? 'fa-solid fa-check' : 'fa-regular fa-copy'" aria-hidden="true" />
             {{ copiado ? 'Copiado!' : 'Copiar link' }}
@@ -77,7 +81,7 @@ function compartilharWhatsApp() {
             type="button"
             :disabled="!link"
             @click="compartilharWhatsApp"
-            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-emerald-300 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
+            class="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 h-9 px-3.5 rounded-xl text-xs font-medium ring-1 ring-inset ring-emerald-200 dark:ring-emerald-500/25 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
             title="Compartilhar no WhatsApp"
           >
             <i class="fa-brands fa-whatsapp" aria-hidden="true" />

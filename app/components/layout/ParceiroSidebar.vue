@@ -5,10 +5,14 @@ const { user } = useAuth()
 const navItems = [
   { label: 'Dashboard', icon: 'fa-gauge-high', to: '/parceiro' },
   { label: 'Clientes', icon: 'fa-users', to: '/parceiro/clientes' },
+  { label: 'Minha rede', icon: 'fa-sitemap', to: '/parceiro/rede' },
+  { label: 'Descontos de indicação', icon: 'fa-gift', to: '/parceiro/descontos' },
   { label: 'Indicados', icon: 'fa-address-card', to: '/parceiro/indicados' },
   { label: 'Créditos', icon: 'fa-coins', to: '/parceiro/creditos' },
   { label: 'Relatório', icon: 'fa-chart-line', to: '/parceiro/relatorio' },
   { label: 'Materiais', icon: 'fa-box-open', to: '/parceiro/materiais' },
+  // Comunidade no Discord (ícone de marca: família fa-brands, não fa-solid)
+  { label: 'Comunidade', icon: 'fa-discord', estilo: 'fa-brands', to: '/parceiro/comunidade' },
   { label: 'Termos', icon: 'fa-file-contract', to: '/parceiro/termos' },
 ]
 
@@ -32,7 +36,7 @@ watch(() => route.path, () => closeMobile())
   />
 
   <aside
-    class="fixed left-0 top-0 h-screen z-40 flex flex-col bg-slate-900 border-r border-slate-800 transition-[transform,width] duration-300 ease-in-out"
+    class="fixed left-0 top-0 h-screen z-40 flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-[transform,width] duration-300 ease-in-out"
     :class="[
       isCollapsed ? 'md:w-16' : 'md:w-60',
       'w-60',
@@ -41,22 +45,22 @@ watch(() => route.path, () => closeMobile())
   >
     <!-- Brand + collapse toggle -->
     <div
-      class="flex items-center border-b border-slate-800 overflow-hidden"
+      class="flex items-center border-b border-slate-200 dark:border-slate-800 overflow-hidden"
       :class="isCollapsed ? 'md:px-2 md:justify-center px-3.5 justify-between gap-2 py-4' : 'px-3.5 py-4 justify-between gap-2'"
     >
       <Transition name="sidebar-label">
         <div v-if="!isCollapsed || isMobileOpen" class="overflow-hidden">
-          <img
+          <img src="/logo.modoClaro.png" alt="Agzap" class="h-10 w-auto object-contain dark:hidden" /><img
             src="/logo.wrn.png"
             alt="Agzap"
-            class="h-10 w-auto object-contain"
+            class="h-10 w-auto object-contain hidden dark:block"
           />
         </div>
       </Transition>
       <!-- Desktop collapse button -->
       <button
         @click="toggle"
-        class="hidden md:flex shrink-0 w-7 h-7 items-center justify-center rounded text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors duration-150"
+        class="hidden md:flex shrink-0 w-7 h-7 items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:text-slate-500 dark:hover:text-slate-200 dark:hover:bg-slate-800 transition-colors duration-150"
         :title="isCollapsed ? 'Expandir menu' : 'Colapsar menu'"
         :aria-label="isCollapsed ? 'Expandir menu' : 'Colapsar menu'"
         type="button"
@@ -70,7 +74,7 @@ watch(() => route.path, () => closeMobile())
       <!-- Mobile close button -->
       <button
         @click="closeMobile"
-        class="md:hidden shrink-0 w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors duration-150"
+        class="md:hidden shrink-0 w-7 h-7 flex items-center justify-center rounded text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800 transition-colors duration-150"
         aria-label="Fechar menu"
         type="button"
       >
@@ -86,13 +90,13 @@ watch(() => route.path, () => closeMobile())
         :to="item.to"
         class="flex items-center gap-3 px-2.5 py-2.5 rounded transition-all duration-150 group relative"
         :class="isActive(item.to)
-          ? 'bg-purple-600 text-white shadow-md shadow-purple-600/40'
-          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'"
+          ? 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300'
+          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100'"
         :title="isCollapsed && !isMobileOpen ? item.label : undefined"
       >
         <i
-          class="fa-solid text-sm shrink-0 transition-colors"
-          :class="[item.icon, isActive(item.to) ? 'text-white' : 'text-slate-500 group-hover:text-slate-200']"
+          class="text-sm shrink-0 transition-colors"
+          :class="[item.estilo || 'fa-solid', item.icon, isActive(item.to) ? 'text-purple-600 dark:text-purple-300' : 'text-slate-400 group-hover:text-slate-700 dark:text-slate-500 dark:group-hover:text-slate-200']"
           aria-hidden="true"
         />
         <Transition name="sidebar-label">
@@ -111,7 +115,7 @@ watch(() => route.path, () => closeMobile())
     </nav>
 
     <!-- User footer -->
-    <div class="border-t border-slate-800">
+    <div class="border-t border-slate-200 dark:border-slate-800">
       <div
         v-if="!isCollapsed || isMobileOpen"
         class="px-3 py-3 flex items-center gap-2.5"
@@ -120,7 +124,7 @@ watch(() => route.path, () => closeMobile())
           <span class="text-white text-xs font-bold">{{ userInitial }}</span>
         </div>
         <div class="flex-1 min-w-0">
-          <p class="text-[11px] font-medium text-slate-300 truncate leading-tight">{{ user?.email || 'Não autenticado' }}</p>
+          <p class="text-[11px] font-medium text-slate-700 dark:text-slate-300 truncate leading-tight">{{ user?.email || 'Não autenticado' }}</p>
           <div class="flex items-center gap-1.5 mt-0.5">
             <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true" />
             <span class="text-[10px] text-slate-500">Online</span>

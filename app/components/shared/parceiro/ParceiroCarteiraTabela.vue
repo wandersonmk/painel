@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import type { ClienteCarteira, SaldosCredito, SituacaoAcesso } from '~/composables/useParceiroLicencas'
 import type { TipoSolicitacao } from './ParceiroSolicitarModal.vue'
+import type { AbaDetalhesCliente } from './ParceiroClienteDetalhesModal.vue'
 
 /**
  * Tabela da carteira + todos os modais de ação. Fica junto de propósito: o
@@ -15,10 +16,13 @@ withDefaults(defineProps<{
   parceiroNome?: string
   /** Esconde as colunas de recurso — usado no resumo do dashboard. */
   compacto?: boolean
+  /** Sem moldura própria: o pai já desenha o painel (dashboard). */
+  embutido?: boolean
   mensagemVazio?: string
 }>(), {
   loading: false,
   compacto: false,
+  embutido: false,
   mensagemVazio: 'Nenhum cliente por aqui',
 })
 
@@ -56,6 +60,7 @@ const showRenovar = ref(false)
 const showBloquear = ref(false)
 const acaoBloquear = ref(true)
 const showDetalhes = ref(false)
+const abaDetalhes = ref<AbaDetalhesCliente>('dados')
 const showValor = ref(false)
 const showSolicitar = ref(false)
 const tipoSolicitacao = ref<TipoSolicitacao>('creditos')
@@ -69,9 +74,15 @@ function abrirBloquear(c: ClienteCarteira, bloquear: boolean) {
   acaoBloquear.value = bloquear
   showBloquear.value = true
 }
-function abrirDetalhes(c: ClienteCarteira) {
+function abrirDetalhes(c: ClienteCarteira, aba: AbaDetalhesCliente = 'dados') {
   selecionado.value = c
+  abaDetalhes.value = aba
   showDetalhes.value = true
+}
+/** "Renovar" da aba Plano: fecha os detalhes e segue o fluxo de sempre. */
+function renovarDoDetalhe(c: ClienteCarteira) {
+  showDetalhes.value = false
+  abrirRenovar(c)
 }
 function abrirValor(c: ClienteCarteira) {
   selecionado.value = c
@@ -92,7 +103,7 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
 
 <template>
   <div>
-    <div :class="['overflow-hidden', cardBase]">
+    <div :class="['overflow-hidden', embutido ? 'border-t border-slate-100 dark:border-white/5' : cardBase]">
       <!-- Carregando -->
       <div v-if="loading" class="p-5 space-y-3">
         <div v-for="i in 4" :key="i" class="flex items-center gap-3">
@@ -120,6 +131,8 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
               <th class="hidden sm:table-cell text-center px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Restam</th>
               <th class="hidden sm:table-cell text-center px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Situação</th>
               <th v-if="!compacto" class="hidden md:table-cell text-right px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Valor cobrado</th>
+              <th v-if="!compacto" class="hidden md:table-cell text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Indicado por</th>
+              <th v-if="!compacto" class="hidden md:table-cell text-right px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap" title="Desconto de indicação liberado: você aplica na cobrança dele">Saldo de indicação</th>
               <th v-if="!compacto" class="hidden lg:table-cell text-center px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Instâncias</th>
               <th v-if="!compacto" class="hidden lg:table-cell text-center px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Assistentes</th>
               <th v-if="!compacto" class="hidden xl:table-cell text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Últ. renovação</th>
@@ -136,7 +149,7 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
               <td class="px-3 sm:px-5 py-3">
                 <div class="flex items-center gap-3 min-w-0">
                   <div class="w-8 h-8 rounded bg-purple-100 dark:bg-purple-500/15 border border-purple-200 dark:border-purple-500/20 flex items-center justify-center shrink-0">
-                    <span class="text-purple-700 dark:text-purple-400 text-xs font-bold">{{ c.empresa_nome.charAt(0).toUpperCase() }}</span>
+                    <span class="text-purple-700 dark:text-purple-400 text-xs font-semibold">{{ c.empresa_nome.charAt(0).toUpperCase() }}</span>
                   </div>
                   <div class="min-w-0">
                     <p class="text-sm font-medium text-slate-800 dark:text-white truncate">{{ c.empresa_nome }}</p>
@@ -202,6 +215,25 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
                   <i class="fa-solid fa-pen text-[9px] opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden="true" />
                 </button>
                 <span v-else class="text-xs text-slate-400">Agzap</span>
+              </td>
+
+              <td v-if="!compacto" class="hidden md:table-cell px-5 py-3 text-xs text-slate-600 dark:text-slate-400">
+                <span v-if="c.indicado_por_nome" class="block truncate max-w-[160px]" :title="c.indicado_por_nome">{{ c.indicado_por_nome }}</span>
+                <span v-else class="text-slate-400">—</span>
+              </td>
+
+              <!-- Desconto liberado que o parceiro aplica: clicar abre os ganhos. -->
+              <td v-if="!compacto" class="hidden md:table-cell px-5 py-3 text-right whitespace-nowrap">
+                <button
+                  v-if="(c.saldo_indicacao ?? 0) > 0"
+                  type="button"
+                  @click="abrirDetalhes(c, 'ganhos')"
+                  class="px-2 py-1 rounded text-xs tabular-nums text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-colors"
+                  title="Ver ganhos de indicação"
+                >
+                  {{ fmtBRL(c.saldo_indicacao ?? 0) }}
+                </button>
+                <span v-else class="text-xs text-slate-400">—</span>
               </td>
 
               <td v-if="!compacto" class="hidden lg:table-cell px-5 py-3 text-center text-xs text-slate-600 dark:text-slate-400 tabular-nums">
@@ -293,9 +325,13 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
     <ParceiroClienteDetalhesModal
       :show="showDetalhes"
       :cliente="selecionado"
+      :aba-inicial="abaDetalhes"
+      permite-renovar
       @close="showDetalhes = false"
       @solicitar="abrirSolicitacao"
       @editar-valor="abrirValor"
+      @renovar="renovarDoDetalhe"
+      @changed="emit('changed')"
     />
     <ParceiroValorAssinaturaModal
       :show="showValor"

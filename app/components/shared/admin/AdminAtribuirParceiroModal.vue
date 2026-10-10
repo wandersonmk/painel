@@ -105,7 +105,11 @@ async function salvar() {
       },
       headers: await useAdminAuthHeaders(),
     })
-    if (!resp.success) throw new Error(resp.error || 'Erro')
+    if (!resp.success) {
+      // Recusa com motivo (ex.: cliente do programa de afiliados): mostra o texto da API.
+      toast?.error(resp.error || 'Erro ao salvar atribuição')
+      return
+    }
     toast?.success(vinculo.value ? 'Atribuição atualizada' : 'Cliente atribuído ao parceiro')
     emit('saved')
     emit('close')

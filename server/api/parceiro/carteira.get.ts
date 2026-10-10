@@ -1,6 +1,7 @@
 import { requireParceiroPrepago } from '~~/server/utils/requireParceiro'
 import { getServiceClient } from '~~/server/utils/requireSuperAdmin'
 import { failPublic } from '~~/server/utils/apiError'
+import { buscarEmLotes, centavos } from '~~/server/utils/parceiroLicencas'
 
 export type SituacaoAcesso = 'ativo' | 'vencido' | 'bloqueado_parceiro' | 'bloqueado_admin'
 
@@ -19,7 +20,7 @@ export default defineEventHandler(async (event) => {
       empresas ( id, nome, nome_cliente, email, whatsapp, ativo, created_at,
                  subscription_status, subscription_plan, subscription_price, subscription_price_anual,
                  subscription_renews_at, trial_ends_at,
-                 max_instancias, max_agentes )
+                 max_instancias, max_agentes, indicado_por_empresa_id )
     `)
     .eq('parceiro_id', parceiro.id)
     .eq('ativo', true)
@@ -28,7 +29,18 @@ export default defineEventHandler(async (event) => {
   const linhas = (vinculos ?? []).filter((v: any) => v.empresas)
   const empresaIds = linhas.map((v: any) => v.empresa_id)
 
-  const [saldosRes, uazRes, metaRes, agentesRes, renovacoesRes] = await Promise.all([
+  // Indicação entre clientes: quem indicou (nome, mesmo fora da carteira) e o
+  // saldo liberado que o parceiro deve como desconto. Falha aqui só deixa as
+  // duas colunas vazias — a carteira continua carregando.
+  const nomePorId = new Map<string, string>()
+  for (const v of linhas as any[]) nomePorId.set(v.empresa_id, v.empresas.nome)
+  const indicadorasFora = [...new Set(
+    (linhas as any[])
+      .map(v => v.empresas.indicado_por_empresa_id as string | null)
+      .filter((id): id is string => !!id && !nomePorId.has(id)),
+  )]
+
+  const [saldosRes, uazRes, metaRes, agentesRes, renovacoesRes, nomesForaRes, liberadoRes] = await Promise.all([
     supabase.from('parceiro_creditos_saldo')
       .select('tipo_credito, saldo').eq('parceiro_id', parceiro.id),
     empresaIds.length
@@ -46,7 +58,30 @@ export default defineEventHandler(async (event) => {
       .eq('status', 'concluida')
       .order('executado_em', { ascending: false })
       .limit(500),
+    buscarEmLotes<{ id: string; nome: string }>(
+      indicadorasFora,
+      (lote, de, ate) => supabase.from('empresas').select('id, nome').in('id', lote).order('id').range(de, ate),
+    ),
+    buscarEmLotes<{ id: string; empresa_indicadora_id: string; valor_credito: number }>(
+      empresaIds,
+      (lote, de, ate) => supabase.from('indicacoes_comissoes')
+        .select('id, empresa_indicadora_id, valor_credito')
+        .in('empresa_indicadora_id', lote)
+        .eq('status', 'liberado')
+        .order('id')
+        .range(de, ate),
+    ),
   ])
+
+  if (nomesForaRes.error) console.error('[api:parceiro/carteira] nomes de quem indicou', nomesForaRes.error)
+  if (liberadoRes.error) console.error('[api:parceiro/carteira] saldo de indicação', liberadoRes.error)
+  for (const e of nomesForaRes.data) nomePorId.set(e.id, e.nome)
+  const saldoIndicacao = new Map<string, number>()
+  if (!liberadoRes.error) {
+    for (const c of liberadoRes.data) {
+      saldoIndicacao.set(c.empresa_indicadora_id, (saldoIndicacao.get(c.empresa_indicadora_id) ?? 0) + Number(c.valor_credito || 0))
+    }
+  }
 
   const contar = (linhas: any[] | null) => {
     const mapa = new Map<string, number>()
@@ -114,6 +149,11 @@ export default defineEventHandler(async (event) => {
       ultima_renovacao: ultima
         ? { em: ultima.executado_em, tipo_credito: ultima.tipo_credito, origem: ultima.origem }
         : null,
+      indicado_por_nome: e.indicado_por_empresa_id && e.indicado_por_empresa_id !== v.empresa_id
+        ? (nomePorId.get(e.indicado_por_empresa_id) ?? null)
+        : null,
+      // Desconto de indicação liberado: quem paga é o parceiro.
+      saldo_indicacao: centavos(saldoIndicacao.get(v.empresa_id) ?? 0),
     }
   })
 

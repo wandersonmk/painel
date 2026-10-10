@@ -28,6 +28,137 @@ export interface ClienteCarteira {
   assistentes: number
   max_assistentes: number
   ultima_renovacao: { em: string; tipo_credito: TipoCredito | null; origem: string } | null
+  /** Quem indicou este cliente (nome da empresa), mesmo que não seja da sua carteira. */
+  indicado_por_nome?: string | null
+  /** Desconto de indicação liberado que você deve aplicar na cobrança dele. */
+  saldo_indicacao?: number
+}
+
+// ───────── Rede e desconto de indicação ─────────
+
+export interface ClienteRede {
+  empresa_id: string
+  nome: string
+  responsavel: string | null
+  /** Só preenchido quando quem indicou também é seu cliente. */
+  indicado_por_empresa_id: string | null
+  /** Nome de quem indicou, mesmo de fora da sua rede. */
+  indicado_por_nome: string | null
+  situacao: SituacaoAcesso
+  plano: string | null
+  periodo: string | null
+  status_assinatura: string | null
+  vencimento: string | null
+  aguardando_ativacao: boolean
+  created_at: string
+  vinculado_em: string
+  preco: number | null
+  diretos: number
+}
+
+export type StatusComissao = 'pendente_liberacao' | 'liberado' | 'creditado' | 'utilizado' | 'cancelado' | 'estornado'
+
+export interface ComissaoIndicacao {
+  id: string
+  empresa_indicadora_id: string
+  empresa_indicada_id: string
+  indicada_nome: string | null
+  tipo: 'primeira' | 'recorrente'
+  percentual_aplicado: number
+  valor_base: number
+  valor_credito: number
+  status: StatusComissao
+  programado: boolean
+  liberar_em: string | null
+  liberado_em: string | null
+  utilizado_em: string | null
+  utilizado_descricao: string | null
+  motivo_estorno: string | null
+  estornado_em: string | null
+  parcela: number | null
+  parcelas_total: number | null
+  created_at: string
+  referencia_pagamento: string | null
+}
+
+export interface EfeitoProximaCobranca {
+  tipo: 'nenhum' | 'parcial' | 'gratis'
+  valor: number
+  sobra: number
+  percentual: number | null
+}
+
+export interface SomasIndicacao {
+  retido: number
+  programado: number
+  liberado: number
+  utilizado: number
+}
+
+export interface IndicadoraDesconto extends SomasIndicacao {
+  empresa_id: string
+  nome: string
+  responsavel: string | null
+  mensalidade: number | null
+  indicados: { empresa_id: string; nome: string; responsavel: string | null; situacao: SituacaoAcesso | null }[]
+  efeito_proxima_cobranca: EfeitoProximaCobranca
+}
+
+export interface DescontosParceiro {
+  parceiro: { nome: string; telefone: string | null }
+  totais: SomasIndicacao & { indicadoras: number; gratis_proxima: number; desconto_proxima: number }
+  indicadoras: IndicadoraDesconto[]
+  comissoes: ComissaoIndicacao[]
+}
+
+export interface ClienteDetalhe {
+  dados: {
+    empresa_id: string
+    nome: string
+    responsavel: string | null
+    email: string | null
+    whatsapp: string | null
+    created_at: string
+    vinculado_em: string
+    plano: string | null
+    periodo: string | null
+    status_assinatura: string | null
+    vencimento: string | null
+    situacao: SituacaoAcesso
+    preco: number | null
+    preco_anual: number | null
+    cobranca_agzap: boolean
+    indicado_por_nome: string | null
+  }
+  indicados: {
+    empresa_id: string
+    nome: string
+    responsavel: string | null
+    situacao: SituacaoAcesso
+    plano: string | null
+    periodo: string | null
+    vencimento: string | null
+    created_at: string
+    gera: { tipo: 'primeira' | 'recorrente'; percentual: number; valor: number; previsto: boolean } | null
+  }[]
+  ganhos: SomasIndicacao & { rows: ComissaoIndicacao[] }
+  percentuais: { primeira: number; recorrente: number }
+}
+
+const PLANOS: Record<string, string> = { free: 'Gratuito', basic: 'Básico', pro: 'Pro', enterprise: 'Enterprise' }
+const PERIODOS: Record<string, string> = { '1month': '1 mês', '6months': '6 meses', '12months': '12 meses' }
+
+/**
+ * "Pro · 1 mês", "Em teste"… Só o status diz se está em teste: há empresa
+ * ativa com o período ainda gravado como "trial…".
+ */
+export function rotuloPlanoCliente(plano: string | null, periodo: string | null, status?: string | null) {
+  if (status === 'trial' || status === 'trialing') return 'Em teste'
+  const p = plano ? (PLANOS[plano] ?? plano) : null
+  const d = periodo
+    ? (PERIODOS[periodo] ?? (periodo.startsWith('trial') ? null : periodo))
+    : null
+  return [p, d].filter(Boolean).join(' · ') || '—'
 }
 
 export interface SaldosCredito { mensal_30d: number; anual_12m: number }
@@ -173,9 +304,83 @@ export const useParceiroLicencas = () => {
     return resp.data ?? null
   }
 
+  // ───────── Rede e desconto de indicação (sem estado: quem chama guarda) ─────────
+
+  const erroDe = (err: any, padrao: string) =>
+    String(err?.data?.statusMessage || err?.statusMessage || err?.message || padrao)
+
+  const loadRede = async () => {
+    try {
+      const resp = await $fetch<{
+        success: boolean
+        error?: string
+        data?: { parceiro: { nome: string; telefone: string | null }; clientes: ClienteRede[] }
+      }>('/api/parceiro/rede', { headers: await useAdminAuthHeaders() })
+      if (!resp.success || !resp.data) throw new Error(resp.error || 'Não foi possível carregar sua rede.')
+      return resp.data
+    } catch (err: any) {
+      throw new Error(erroDe(err, 'Não foi possível carregar sua rede.'))
+    }
+  }
+
+  const loadDescontos = async () => {
+    try {
+      const resp = await $fetch<{ success: boolean; error?: string; data?: DescontosParceiro }>(
+        '/api/parceiro/descontos',
+        { headers: await useAdminAuthHeaders() },
+      )
+      if (!resp.success || !resp.data) throw new Error(resp.error || 'Não foi possível carregar os descontos.')
+      return resp.data
+    } catch (err: any) {
+      throw new Error(erroDe(err, 'Não foi possível carregar os descontos.'))
+    }
+  }
+
+  const loadClienteDetalhe = async (empresaId: string) => {
+    try {
+      const resp = await $fetch<{ success: boolean; error?: string; data?: ClienteDetalhe }>(
+        '/api/parceiro/cliente-detalhe',
+        { query: { empresaId }, headers: await useAdminAuthHeaders() },
+      )
+      if (!resp.success || !resp.data) throw new Error(resp.error || 'Não foi possível carregar o cliente.')
+      return resp.data
+    } catch (err: any) {
+      throw new Error(erroDe(err, 'Não foi possível carregar o cliente.'))
+    }
+  }
+
+  /** Dar baixa (utilizar) ou estornar (cancelar) um mês de ganho de indicação. */
+  const acaoDesconto = async (comissaoId: string, acao: 'utilizar' | 'cancelar', descricao: string) => {
+    try {
+      const resp = await $fetch<{ success: boolean; error?: string; data?: { status: StatusComissao; valor: number } }>(
+        '/api/parceiro/desconto-acao',
+        { method: 'POST', body: { comissaoId, acao, descricao }, headers: await useAdminAuthHeaders() },
+      )
+      if (!resp.success || !resp.data) throw new Error(resp.error || 'Não foi possível salvar.')
+      return resp.data
+    } catch (err: any) {
+      throw new Error(erroDe(err, 'Não foi possível salvar.'))
+    }
+  }
+
+  /** Baixa por valor no saldo liberado (do mês mais antigo para o mais novo). */
+  const usarSaldoDesconto = async (empresaId: string, valor: number, descricao: string) => {
+    try {
+      const resp = await $fetch<{ success: boolean; error?: string; data?: { usado: number; restante: number; parcial: boolean } }>(
+        '/api/parceiro/desconto-usar-saldo',
+        { method: 'POST', body: { empresaId, valor, descricao }, headers: await useAdminAuthHeaders() },
+      )
+      if (!resp.success || !resp.data) throw new Error(resp.error || 'Não foi possível registrar a baixa.')
+      return resp.data
+    } catch (err: any) {
+      throw new Error(erroDe(err, 'Não foi possível registrar a baixa.'))
+    }
+  }
+
   return {
     clientes, saldos, indicadores, movimentacoes, precos,
     loading, loadingCreditos, error,
     loadCarteira, loadCreditos, renovar, bloquear, salvarValorAssinatura, novaIdempotencyKey,
+    loadRede, loadDescontos, loadClienteDetalhe, acaoDesconto, usarSaldoDesconto,
   }
 }

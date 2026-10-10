@@ -11,7 +11,8 @@ export default defineEventHandler(async (event) => {
 
   const [parceirosRes, saldosRes, vinculosRes, ledgerRes, renovacoesRes, precosRes] = await Promise.all([
     supabase.from('parceiros')
-      .select('id, nome, email, telefone, ativo, modelo_negocio, migrado_em')
+      // removido_em: parceria removida (some da lista por padrão, fora dos totais).
+      .select('id, nome, email, telefone, ativo, removido_em, modelo_negocio, migrado_em')
       .order('nome'),
     supabase.from('parceiro_creditos_saldo').select('parceiro_id, tipo_credito, saldo'),
     supabase.from('parceiro_empresas')
@@ -64,6 +65,7 @@ export default defineEventHandler(async (event) => {
       email: p.email,
       telefone: p.telefone,
       ativo: p.ativo,
+      removido_em: p.removido_em ?? null,
       modelo_negocio: p.modelo_negocio,
       migrado_em: p.migrado_em,
       saldos: saldoPorParceiro.get(p.id) ?? { mensal_30d: 0, anual_12m: 0 },

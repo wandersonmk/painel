@@ -45,10 +45,20 @@ async function recarregarLicencas() {
 }
 
 async function refreshAll() {
+  if (isRefreshing.value) return
   isRefreshing.value = true
-  await Promise.all([recarregarLicencas(), indicacoesRef.value?.carregar()])
-  isRefreshing.value = false
+  try {
+    await Promise.all([recarregarLicencas(), indicacoesRef.value?.carregar()])
+  } finally {
+    isRefreshing.value = false
+  }
 }
+
+const abas = computed<Array<{ valor: Aba; rotulo: string; icone: string; contagem: number | null }>>(() => [
+  { valor: 'licencas', rotulo: 'Licenças', icone: 'fa-id-card text-purple-500', contagem: null },
+  { valor: 'indicacoes', rotulo: 'Indicações', icone: 'fa-address-card text-pink-500', contagem: indicacoesCount.value },
+  { valor: 'materiais', rotulo: 'Materiais', icone: 'fa-box-open text-emerald-500', contagem: materiaisCount.value },
+])
 
 onMounted(async () => {
   toast = await useToastSafe()
@@ -202,70 +212,55 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
 </script>
 
 <template>
-  <div class="p-4 sm:p-6 md:p-10">
-    <div class="max-w-[1400px] mx-auto space-y-6">
+  <div class="p-4 sm:p-6">
+    <div class="max-w-[1400px] mx-auto space-y-4">
 
-      <!-- Header -->
-      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div class="space-y-1">
-          <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Parceiros</h1>
-          <p class="text-slate-500 dark:text-slate-400 text-sm">Licenças, créditos e conteúdo do portal do parceiro.</p>
-        </div>
-        <div class="flex items-center gap-2">
+      <!-- Barra de cima: abas + novo parceiro + atualizar -->
+      <div class="flex flex-col lg:flex-row lg:items-center gap-3">
+        <div class="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800/60 rounded-lg w-full lg:w-auto shrink-0" role="tablist" aria-label="Seções do programa de parceria">
           <button
-            @click="abrirNovoParceiro"
-            class="inline-flex items-center gap-2 px-4 py-2.5 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded text-sm font-semibold transition-colors"
+            v-for="a in abas"
+            :key="a.valor"
             type="button"
+            role="tab"
+            :aria-selected="abaAtiva === a.valor"
+            class="flex-1 lg:flex-initial px-2.5 sm:px-4 py-2 rounded-md text-sm font-normal transition-colors flex items-center justify-center gap-2 min-w-0"
+            :class="abaAtiva === a.valor
+              ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
+            @click="abaAtiva = a.valor"
           >
-            <i class="fa-solid fa-user-plus text-teal-600 dark:text-teal-400" aria-hidden="true" />
+            <i :class="['fa-solid hidden sm:inline', a.icone]" aria-hidden="true" />
+            <span class="truncate">{{ a.rotulo }}</span>
+            <span
+              v-if="a.contagem !== null"
+              class="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-medium tabular-nums bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 shrink-0"
+            >{{ a.contagem }}</span>
+          </button>
+        </div>
+
+        <div class="flex items-center gap-2 lg:ml-auto">
+          <button
+            type="button"
+            class="flex-1 lg:flex-initial inline-flex items-center justify-center gap-2 h-10 px-4 rounded-md text-sm font-normal bg-purple-600 hover:bg-purple-700 text-white transition-colors"
+            @click="abrirNovoParceiro"
+          >
+            <i class="fa-solid fa-user-plus text-xs" aria-hidden="true" />
             <span>Novo parceiro</span>
           </button>
           <button
-            @click="refreshAll"
-            :disabled="isRefreshing"
-            class="inline-flex items-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded text-sm font-semibold transition-colors"
             type="button"
+            :disabled="isRefreshing"
+            class="inline-flex items-center justify-center w-10 h-10 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 disabled:opacity-60 transition-colors shrink-0"
+            aria-label="Atualizar"
+            title="Atualizar"
+            @click="refreshAll"
           >
-            <i class="fa-solid fa-arrows-rotate" :class="{ 'animate-spin': isRefreshing }" aria-hidden="true" />
-            <span>Atualizar</span>
+            <i class="fa-solid fa-arrows-rotate text-sm" :class="{ 'animate-spin': isRefreshing }" aria-hidden="true" />
           </button>
         </div>
       </div>
 
-      <!-- Abas -->
-      <div class="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800/60 rounded-lg w-full sm:w-fit" role="tablist">
-        <button
-          type="button" role="tab" :aria-selected="abaAtiva === 'licencas'"
-          @click="abaAtiva = 'licencas'"
-          class="flex-1 sm:flex-initial px-4 py-2 rounded-md text-sm font-semibold transition-colors flex items-center justify-center gap-2"
-          :class="abaAtiva === 'licencas' ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
-        >
-          <i class="fa-solid fa-id-card text-purple-500" aria-hidden="true" />
-          Licenças
-        </button>
-        <button
-          type="button" role="tab" :aria-selected="abaAtiva === 'indicacoes'"
-          @click="abaAtiva = 'indicacoes'"
-          class="flex-1 sm:flex-initial px-4 py-2 rounded-md text-sm font-semibold transition-colors flex items-center justify-center gap-2"
-          :class="abaAtiva === 'indicacoes' ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
-        >
-          <i class="fa-solid fa-address-card text-pink-500" aria-hidden="true" />
-          Indicações
-          <span class="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold tabular-nums bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400">{{ indicacoesCount }}</span>
-        </button>
-        <button
-          type="button" role="tab" :aria-selected="abaAtiva === 'materiais'"
-          @click="abaAtiva = 'materiais'"
-          class="flex-1 sm:flex-initial px-4 py-2 rounded-md text-sm font-semibold transition-colors flex items-center justify-center gap-2"
-          :class="abaAtiva === 'materiais' ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
-        >
-          <i class="fa-solid fa-box-open text-emerald-500" aria-hidden="true" />
-          Materiais
-          <span class="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold tabular-nums bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400">{{ materiaisCount }}</span>
-        </button>
-      </div>
-
-      <!-- ══════════════ ABA AULAS ══════════════ -->
       <!-- ══════════════ ABA LICENÇAS ══════════════ -->
       <div v-show="abaAtiva === 'licencas'">
         <AdminLicencasManager
@@ -379,7 +374,7 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
           <!-- Email -->
           <div class="rounded-md bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 px-4 py-3 flex items-center justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Email (login)</p>
+              <p class="text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Email (login)</p>
               <p class="text-sm font-medium text-slate-900 dark:text-white truncate">{{ credenciaisCriadas?.email }}</p>
             </div>
             <button
@@ -396,7 +391,7 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
           <!-- Senha -->
           <div class="rounded-md bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 px-4 py-3 flex items-center justify-between gap-3">
             <div class="min-w-0">
-              <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Senha</p>
+              <p class="text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Senha</p>
               <p class="text-sm font-medium text-slate-900 dark:text-white font-mono truncate">{{ credenciaisCriadas?.senha }}</p>
             </div>
             <button

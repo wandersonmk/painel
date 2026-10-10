@@ -66,6 +66,41 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Informe o email para criar a conta de acesso' })
   }
 
+  // Regra do dono (09/10/2026): cada pessoa é parceiro OU afiliado, nunca os dois
+  // ao mesmo tempo. Afiliação removida (ativo = false) não conta.
+  if (authUserId && !contaCriada) {
+    const { data: afiliado } = await supabase
+      .from('afiliados')
+      .select('id')
+      .eq('auth_user_id', authUserId)
+      .eq('ativo', true)
+      .maybeSingle()
+    if (afiliado) {
+      return { success: false, error: 'Este login é afiliado. Remova a afiliação (tela Afiliados) antes de cadastrá-lo como parceiro.' }
+    }
+
+    // Login que já teve parceria: removida volta a valer (limpa removido_em);
+    // ainda ativa ou suspensa, já está na lista (o insert bateria no UNIQUE).
+    const { data: anterior } = await supabase
+      .from('parceiros')
+      .select('id, ativo, removido_em, observacoes')
+      .eq('auth_user_id', authUserId)
+      .maybeSingle()
+    if (anterior && !anterior.removido_em) {
+      return { success: false, error: anterior.ativo ? 'Este login já é parceiro.' : 'Este login já é parceiro (suspenso). Use "Reativar parceiro" na lista.' }
+    }
+    if (anterior) {
+      // Mantém as notas antigas (inclusive a da remoção) e soma as novas.
+      const observacoesJuntas = [anterior.observacoes?.trim(), payload.observacoes as string | null].filter(Boolean).join('\n') || null
+      const { error: errReativar } = await supabase
+        .from('parceiros')
+        .update({ ...payload, observacoes: observacoesJuntas, ativo: true, removido_em: null })
+        .eq('id', anterior.id)
+      if (errReativar) return { success: false, error: errReativar.message }
+      return { success: true, data: { loginVinculado: true, contaCriada: false, reativado: true } }
+    }
+  }
+
   const { error } = await supabase
     .from('parceiros')
     .insert({ ...payload, auth_user_id: authUserId, ativo: true })

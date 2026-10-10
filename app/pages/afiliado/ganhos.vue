@@ -53,6 +53,8 @@ interface Saque {
   prazo_em: string
   pago_em: string | null
   comprovante: string | null
+  /** Arquivo do PIX (imagem ou PDF) anexado pela Agzap; só vem em saque pago. */
+  comprovante_url?: string | null
   recusa_motivo: string | null
 }
 
@@ -265,6 +267,39 @@ function ehLink(s: string | null) {
   return !!s && /^https?:\/\//i.test(s.trim())
 }
 
+// "Baixar": o arquivo está no R2 (outra origem), onde o atributo download não
+// vale. Passa pela rota do painel (com o token) e baixa por um link temporário.
+const baixandoId = ref<string | null>(null)
+async function baixarComprovante(s: Saque) {
+  if (baixandoId.value) return
+  baixandoId.value = s.id
+  try {
+    const resp = await $fetch.raw<Blob>('/api/afiliado/saque-comprovante', {
+      query: { saqueId: s.id },
+      headers: await useAdminAuthHeaders(),
+      responseType: 'blob',
+    })
+    const blob = resp._data
+    if (!blob || !blob.size) throw new Error('vazio')
+    const nome = /filename="([^"]+)"/.exec(resp.headers.get('content-disposition') || '')?.[1] || 'comprovante-saque'
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = nome
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 5000)
+  }
+  catch (e: any) {
+    const status = Number(e?.statusCode ?? e?.status ?? 0)
+    toast.error(status === 404 ? 'Comprovante não encontrado.' : 'Não foi possível baixar o comprovante. Tente de novo.')
+  }
+  finally {
+    baixandoId.value = null
+  }
+}
+
 const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none'
 </script>
 
@@ -448,18 +483,48 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
                   {{ rotuloSaque(s) }}
                 </span>
                 <!-- Celular: comprovante abaixo -->
-                <p v-if="s.comprovante" class="lg:hidden text-[11px] text-slate-500 mt-1 break-all">
-                  <a v-if="ehLink(s.comprovante)" :href="s.comprovante.trim()" target="_blank" rel="noopener noreferrer" class="text-purple-600 dark:text-purple-400 hover:underline">Ver comprovante</a>
-                  <template v-else>{{ s.comprovante }}</template>
-                </p>
+                <div v-if="s.comprovante_url || s.comprovante" class="lg:hidden text-[11px] text-slate-500 mt-1 space-y-0.5">
+                  <div v-if="s.comprovante_url" class="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                    <a :href="s.comprovante_url" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-purple-600 dark:text-purple-400 hover:underline">
+                      <i class="fa-solid fa-file-invoice text-[10px]" aria-hidden="true" />Ver comprovante
+                    </a>
+                    <button
+                      type="button"
+                      :disabled="baixandoId === s.id"
+                      class="inline-flex items-center gap-1 text-purple-600 dark:text-purple-400 hover:underline disabled:opacity-60"
+                      @click="baixarComprovante(s)"
+                    >
+                      <i class="fa-solid text-[10px]" :class="baixandoId === s.id ? 'fa-circle-notch animate-spin' : 'fa-download'" aria-hidden="true" />{{ baixandoId === s.id ? 'Baixando…' : 'Baixar' }}
+                    </button>
+                  </div>
+                  <p v-if="s.comprovante" class="break-all">
+                    <a v-if="ehLink(s.comprovante)" :href="s.comprovante.trim()" target="_blank" rel="noopener noreferrer" class="text-purple-600 dark:text-purple-400 hover:underline">{{ s.comprovante_url ? 'Abrir link do PIX' : 'Ver comprovante' }}</a>
+                    <template v-else>{{ s.comprovante_url ? 'ID do PIX: ' : '' }}{{ s.comprovante }}</template>
+                  </p>
+                </div>
               </td>
               <td class="hidden lg:table-cell px-4 py-2.5 text-xs text-slate-600 dark:text-slate-400 max-w-[320px]">
-                <template v-if="s.comprovante">
-                  <a v-if="ehLink(s.comprovante)" :href="s.comprovante.trim()" target="_blank" rel="noopener noreferrer" class="text-purple-600 dark:text-purple-400 hover:underline">
-                    <i class="fa-solid fa-arrow-up-right-from-square text-[10px] mr-1" aria-hidden="true" />Ver comprovante
-                  </a>
-                  <span v-else class="break-words">{{ s.comprovante }}</span>
-                </template>
+                <div v-if="s.comprovante_url || s.comprovante" class="space-y-0.5">
+                  <div v-if="s.comprovante_url" class="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                    <a :href="s.comprovante_url" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-purple-600 dark:text-purple-400 hover:underline">
+                      <i class="fa-solid fa-file-invoice text-[10px]" aria-hidden="true" />Ver comprovante
+                    </a>
+                    <button
+                      type="button"
+                      :disabled="baixandoId === s.id"
+                      class="inline-flex items-center gap-1 text-purple-600 dark:text-purple-400 hover:underline disabled:opacity-60"
+                      @click="baixarComprovante(s)"
+                    >
+                      <i class="fa-solid text-[10px]" :class="baixandoId === s.id ? 'fa-circle-notch animate-spin' : 'fa-download'" aria-hidden="true" />{{ baixandoId === s.id ? 'Baixando…' : 'Baixar' }}
+                    </button>
+                  </div>
+                  <p v-if="s.comprovante">
+                    <a v-if="ehLink(s.comprovante)" :href="s.comprovante.trim()" target="_blank" rel="noopener noreferrer" class="text-purple-600 dark:text-purple-400 hover:underline">
+                      <i class="fa-solid fa-arrow-up-right-from-square text-[10px] mr-1" aria-hidden="true" />{{ s.comprovante_url ? 'Abrir link do PIX' : 'Ver comprovante' }}
+                    </a>
+                    <span v-else class="break-words">{{ s.comprovante_url ? 'ID do PIX: ' : '' }}{{ s.comprovante }}</span>
+                  </p>
+                </div>
                 <span v-else class="text-slate-400">—</span>
               </td>
             </tr>

@@ -29,6 +29,8 @@ interface SaqueAdmin {
   prazo_em: string
   pago_em: string | null
   comprovante: string | null
+  /** Arquivo do PIX (imagem ou PDF) no R2. */
+  comprovante_url?: string | null
   recusa_motivo: string | null
 }
 
@@ -97,7 +99,10 @@ onMounted(() => {
   carregar()
   relogio = setInterval(() => { agora.value = Date.now() }, 60_000)
 })
-onBeforeUnmount(() => { if (relogio) clearInterval(relogio) })
+onBeforeUnmount(() => {
+  if (relogio) clearInterval(relogio)
+  limparAnexo()
+})
 
 defineExpose({ carregar })
 
@@ -139,31 +144,288 @@ function aplicarLocal(id: string, status: StatusSaque) {
   }
 }
 
+// ───────── Arquivo do comprovante (R2) ─────────
+// A Vercel corta corpo acima de 4,5 MB: imagem é reduzida aqui no navegador
+// (lado maior até 1600 px, JPEG ~0,8, alvo abaixo de 1,5 MB) e PDF vai até 4 MB.
+const ACEITA = 'image/jpeg,image/png,image/webp,application/pdf'
+const LIMITE_ARQUIVO = 4 * 1024 * 1024
+const ALVO_IMAGEM = 1.5 * 1024 * 1024
+const LADO_MAX = 1600
+
+type TipoAnexo = 'imagem' | 'pdf'
+
+function fmtTamanho(bytes: number) {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`
+}
+
+function tipoDoArquivo(file: File): TipoAnexo | null {
+  const t = (file.type || '').toLowerCase()
+  if (t === 'application/pdf') return 'pdf'
+  if (['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(t)) return 'imagem'
+  if (!t) {
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+    if (ext === 'pdf') return 'pdf'
+    if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) return 'imagem'
+  }
+  return null
+}
+
+function carregarImagem(arquivo: Blob): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(arquivo)
+    const img = new Image()
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img) }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Não foi possível abrir esta imagem. Tente outro arquivo.')) }
+    img.src = url
+  })
+}
+
+/** Imagem já leve vai como está; senão vira JPEG menor (fundo branco para PNG transparente). */
+async function reduzirImagem(file: File): Promise<Blob> {
+  const img = await carregarImagem(file)
+  const w0 = img.naturalWidth
+  const h0 = img.naturalHeight
+  if (!w0 || !h0) throw new Error('Não foi possível abrir esta imagem. Tente outro arquivo.')
+  if (Math.max(w0, h0) <= LADO_MAX && file.size <= ALVO_IMAGEM) return file
+
+  let lado = LADO_MAX
+  let qualidade = 0.8
+  let saida: Blob | null = null
+  for (let tentativa = 0; tentativa < 4; tentativa++) {
+    const escala = Math.min(1, lado / Math.max(w0, h0))
+    const w = Math.max(1, Math.round(w0 * escala))
+    const h = Math.max(1, Math.round(h0 * escala))
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Não foi possível preparar a imagem neste navegador.')
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, w, h)
+    ctx.drawImage(img, 0, 0, w, h)
+    saida = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', qualidade))
+    if (!saida) throw new Error('Não foi possível preparar a imagem neste navegador.')
+    if (saida.size <= ALVO_IMAGEM) break
+    lado = Math.round(lado * 0.8)
+    qualidade = Math.max(0.6, qualidade - 0.1)
+  }
+  return saida as Blob
+}
+
+async function prepararArquivo(file: File): Promise<{ blob: Blob; nome: string; tipo: TipoAnexo }> {
+  const tipo = tipoDoArquivo(file)
+  if (!tipo) throw new Error('Formato não aceito. Envie uma imagem (JPG, PNG ou WEBP) ou um PDF.')
+  if (tipo === 'pdf') {
+    if (file.size > LIMITE_ARQUIVO) {
+      throw new Error(`Este PDF tem ${fmtTamanho(file.size)} e o limite é 4 MB. Envie um PDF menor ou um print do comprovante.`)
+    }
+    return { blob: file, nome: file.name || 'comprovante.pdf', tipo }
+  }
+  const blob = await reduzirImagem(file)
+  if (blob.size > LIMITE_ARQUIVO) throw new Error('A imagem continua grande demais mesmo reduzida. Envie um print menor.')
+  const base = (file.name || '').replace(/\.[^.]+$/, '') || 'comprovante'
+  return { blob, nome: blob === file ? (file.name || `${base}.jpg`) : `${base}.jpg`, tipo }
+}
+
+/** Sobe o arquivo (multipart) com progresso. Saque já pago: o servidor grava na hora. */
+async function enviarComprovante(
+  saqueId: string,
+  arquivo: Blob,
+  nome: string,
+  aoProgredir?: (pct: number) => void,
+  sinal?: AbortSignal,
+): Promise<{ url: string; salvo: boolean }> {
+  const headers = await useAdminAuthHeaders()
+  const form = new FormData()
+  form.append('saqueId', saqueId)
+  form.append('arquivo', arquivo, nome)
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', '/api/admin/afiliados/saque-comprovante')
+    for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v)
+    xhr.responseType = 'json'
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && aoProgredir) aoProgredir(Math.min(100, Math.round((e.loaded / e.total) * 100)))
+    }
+    xhr.onload = () => {
+      const r = xhr.response as any
+      if (xhr.status === 413) return reject(new Error('O arquivo é grande demais para enviar. O limite é 4 MB.'))
+      if (xhr.status >= 400) return reject(new Error(r?.statusMessage || r?.message || 'Não foi possível enviar o comprovante.'))
+      if (!r?.success || !r?.data?.url) return reject(new Error(r?.error || 'Não foi possível enviar o comprovante.'))
+      resolve({ url: String(r.data.url), salvo: !!r.data.salvo })
+    }
+    xhr.onerror = () => reject(new Error('Falha de conexão ao enviar o comprovante. Tente de novo.'))
+    xhr.onabort = () => reject(new Error('Envio cancelado.'))
+    sinal?.addEventListener('abort', () => xhr.abort())
+    xhr.send(form)
+  })
+}
+
+// Anexo do modal "Marcar saque como pago": sobe ao escolher, a URL vai no confirmar.
+interface Anexo { nome: string; tipo: TipoAnexo; tamanho: number; previa: string | null; url: string | null }
+const anexo = ref<Anexo | null>(null)
+const enviandoAnexo = ref(false)
+const progressoAnexo = ref(0)
+const erroAnexo = ref('')
+const arrastando = ref(false)
+const inputAnexo = ref<HTMLInputElement | null>(null)
+let envioAnexo: AbortController | null = null
+let geracaoAnexo = 0
+
+function limparAnexo() {
+  geracaoAnexo++
+  envioAnexo?.abort()
+  envioAnexo = null
+  if (anexo.value?.previa) URL.revokeObjectURL(anexo.value.previa)
+  anexo.value = null
+  enviandoAnexo.value = false
+  progressoAnexo.value = 0
+  erroAnexo.value = ''
+  arrastando.value = false
+}
+
+async function anexarNoModal(file: File | null | undefined) {
+  const s = alvoPagar.value
+  if (!file || !s || pagando.value) return
+  limparAnexo()
+  const geracao = geracaoAnexo
+  enviandoAnexo.value = true
+  try {
+    const preparado = await prepararArquivo(file)
+    if (geracao !== geracaoAnexo) return
+    const controle = new AbortController()
+    envioAnexo = controle
+    anexo.value = {
+      nome: preparado.nome,
+      tipo: preparado.tipo,
+      tamanho: preparado.blob.size,
+      previa: preparado.tipo === 'imagem' ? URL.createObjectURL(preparado.blob) : null,
+      url: null,
+    }
+    const r = await enviarComprovante(s.id, preparado.blob, preparado.nome, (pct) => {
+      if (geracao === geracaoAnexo) progressoAnexo.value = pct
+    }, controle.signal)
+    if (geracao !== geracaoAnexo || !anexo.value) return
+    anexo.value = { ...anexo.value, url: r.url }
+    envioAnexo = null
+    enviandoAnexo.value = false
+  } catch (e: any) {
+    if (geracao !== geracaoAnexo) return
+    const msg = e?.message || 'Não foi possível enviar o comprovante.'
+    limparAnexo()
+    erroAnexo.value = msg
+  }
+}
+
+function aoEscolherNoModal(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  anexarNoModal(file)
+}
+function aoSoltarNoModal(e: DragEvent) {
+  arrastando.value = false
+  anexarNoModal(e.dataTransfer?.files?.[0])
+}
+
+// Anexar (ou trocar) depois, num saque que já está pago: o servidor grava direto.
+const alvoAnexoDepois = ref<SaqueAdmin | null>(null)
+const anexandoId = ref<string | null>(null)
+const progressoDepois = ref(0)
+const inputAnexoDepois = ref<HTMLInputElement | null>(null)
+
+function escolherAnexoDepois(s: SaqueAdmin) {
+  if (anexandoId.value) return
+  alvoAnexoDepois.value = s
+  inputAnexoDepois.value?.click()
+}
+
+async function aoEscolherDepois(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  const s = alvoAnexoDepois.value
+  alvoAnexoDepois.value = null
+  if (!file || !s || anexandoId.value) return
+  anexandoId.value = s.id
+  progressoDepois.value = 0
+  try {
+    const preparado = await prepararArquivo(file)
+    const r = await enviarComprovante(s.id, preparado.blob, preparado.nome, (pct) => { progressoDepois.value = pct })
+    if (!r.salvo) throw new Error('O arquivo foi enviado, mas não ficou gravado no saque. Tente de novo.')
+    saques.value = saques.value.map(x => (x.id === s.id ? { ...x, comprovante_url: r.url } : x))
+    toast.success(s.comprovante_url ? 'Comprovante trocado' : 'Comprovante anexado')
+  } catch (err: any) {
+    toast.error(err?.message || 'Não foi possível anexar o comprovante')
+  } finally {
+    anexandoId.value = null
+  }
+}
+
+// "Baixar": o arquivo está no R2 (outra origem), onde o atributo download não
+// vale. Passa pela rota do painel (com o token) e baixa por um link temporário.
+const baixandoId = ref<string | null>(null)
+async function baixarComprovante(s: SaqueAdmin) {
+  if (baixandoId.value) return
+  baixandoId.value = s.id
+  try {
+    const resp = await $fetch.raw<Blob>('/api/admin/afiliados/saque-comprovante-download', {
+      query: { saqueId: s.id },
+      headers: await useAdminAuthHeaders(),
+      responseType: 'blob',
+    })
+    const blob = resp._data
+    if (!blob || !blob.size) throw new Error('vazio')
+    const nome = /filename="([^"]+)"/.exec(resp.headers.get('content-disposition') || '')?.[1] || 'comprovante-saque'
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = nome
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 5000)
+  } catch (e: any) {
+    const status = Number(e?.statusCode ?? e?.status ?? 0)
+    toast.error(status === 404 ? 'Comprovante não encontrado.' : 'Não foi possível baixar o comprovante. Tente de novo.')
+  } finally {
+    baixandoId.value = null
+  }
+}
+
 // ───────── Marcar como pago ─────────
 const alvoPagar = ref<SaqueAdmin | null>(null)
 const comprovante = ref('')
 const pagando = ref(false)
 
 function abrirPagar(s: SaqueAdmin) {
+  limparAnexo()
   alvoPagar.value = s
   comprovante.value = ''
 }
 function fecharPagar() {
   if (pagando.value) return
+  limparAnexo()
   alvoPagar.value = null
 }
 
 async function confirmarPagamento() {
   const s = alvoPagar.value
-  if (!s || pagando.value) return
+  if (!s || pagando.value || enviandoAnexo.value) return
   pagando.value = true
   try {
     const resp = await $fetch<{ success: boolean; error?: string; aviso?: string }>('/api/admin/afiliados/saque-pagar', {
       method: 'POST',
-      body: { saqueId: s.id, comprovante: comprovante.value.trim() || undefined },
+      body: {
+        saqueId: s.id,
+        comprovante: comprovante.value.trim() || undefined,
+        comprovanteUrl: anexo.value?.url || undefined,
+      },
       headers: await useAdminAuthHeaders(),
     })
     pagando.value = false
+    limparAnexo()
     alvoPagar.value = null
     if (!resp.success) {
       // Outro admin (ou outra aba) já tratou o saque: avisa e mostra o estado atual.
@@ -376,6 +638,7 @@ const inputBase = 'w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border
                 <div class="flex items-center gap-2 min-w-0">
                   <p class="text-sm font-medium text-slate-900 dark:text-white truncate">{{ s.afiliado_nome || 'Afiliado removido' }}</p>
                   <span v-if="s.afiliado_ativo === false" class="shrink-0 inline-flex px-1.5 py-0.5 rounded-full text-[10px] bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-400">bloqueado</span>
+                  <i v-if="s.comprovante_url" class="fa-solid fa-paperclip shrink-0 text-[10px] text-slate-400 dark:text-slate-500" title="Comprovante anexado" aria-label="Comprovante anexado" />
                 </div>
                 <p class="text-xs text-slate-500 dark:text-slate-400 truncate">{{ s.afiliado_email || '—' }}</p>
                 <!-- O que não cabe nas colunas desta largura -->
@@ -519,9 +782,55 @@ const inputBase = 'w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border
                   Recusar
                 </button>
               </div>
+
+              <!-- Pago: ver, anexar ou trocar o arquivo do comprovante -->
+              <div v-if="s.status === 'pago'" class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-2">
+                <template v-if="s.comprovante_url">
+                  <a
+                    :href="s.comprovante_url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-sm font-normal border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 hover:border-purple-300 dark:hover:border-purple-500/40 transition-colors"
+                  >
+                    <i class="fa-solid fa-file-invoice text-xs" aria-hidden="true" />
+                    Ver comprovante
+                  </a>
+                  <button
+                    type="button"
+                    :disabled="baixandoId === s.id"
+                    class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-sm font-normal border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 hover:border-purple-300 dark:hover:border-purple-500/40 disabled:opacity-60 transition-colors"
+                    @click="baixarComprovante(s)"
+                  >
+                    <i class="fa-solid text-xs" :class="baixandoId === s.id ? 'fa-circle-notch animate-spin' : 'fa-download'" aria-hidden="true" />
+                    {{ baixandoId === s.id ? 'Baixando…' : 'Baixar' }}
+                  </button>
+                  <button
+                    type="button"
+                    :disabled="!!anexandoId"
+                    class="inline-flex items-center gap-1.5 px-2.5 py-2 rounded-md text-xs font-normal text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 disabled:opacity-50 transition-colors"
+                    @click="escolherAnexoDepois(s)"
+                  >
+                    <i class="fa-solid text-[10px]" :class="anexandoId === s.id ? 'fa-circle-notch animate-spin' : 'fa-arrows-rotate'" aria-hidden="true" />
+                    {{ anexandoId === s.id ? `Enviando… ${progressoDepois}%` : 'Trocar arquivo' }}
+                  </button>
+                </template>
+                <template v-else>
+                  <button
+                    type="button"
+                    :disabled="!!anexandoId"
+                    class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-sm font-normal border border-purple-200 dark:border-purple-500/25 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-500/10 disabled:opacity-50 transition-colors"
+                    @click="escolherAnexoDepois(s)"
+                  >
+                    <i class="fa-solid text-xs" :class="anexandoId === s.id ? 'fa-circle-notch animate-spin' : 'fa-paperclip'" aria-hidden="true" />
+                    {{ anexandoId === s.id ? `Enviando… ${progressoDepois}%` : 'Anexar comprovante' }}
+                  </button>
+                  <span class="text-[11px] text-slate-400 dark:text-slate-500">Imagem ou PDF até 4 MB</span>
+                </template>
+              </div>
             </div>
           </li>
         </ul>
+        <input ref="inputAnexoDepois" type="file" class="hidden" :accept="ACEITA" @change="aoEscolherDepois">
         <p v-if="truncado" class="px-4 py-3 text-[11px] text-slate-400 dark:text-slate-500 border-t border-slate-100 dark:border-slate-800">
           Mostrando os 500 mais recentes.
         </p>
@@ -530,7 +839,8 @@ const inputBase = 'w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border
 
     <!-- ═════════ Modal: marcar como pago ═════════ -->
     <BaseModal :show="!!alvoPagar" title="Marcar saque como pago" max-width="max-w-lg" @close="fecharPagar">
-      <form v-if="alvoPagar" class="space-y-4" @submit.prevent="confirmarPagamento">
+      <!-- dragover/drop no form: soltar o arquivo fora da área não abre ele na aba -->
+      <form v-if="alvoPagar" class="space-y-4" @submit.prevent="confirmarPagamento" @dragover.prevent @drop.prevent>
         <div class="rounded-md border border-slate-200 dark:border-white/10 divide-y divide-slate-100 dark:divide-white/5">
           <div class="px-4 py-3 flex items-center justify-between gap-3">
             <div class="min-w-0">
@@ -572,6 +882,90 @@ const inputBase = 'w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border
           <p class="pl-4">Se o banco mostrar outro nome, não pague: recuse o saque e explique o motivo para ele corrigir a chave.</p>
         </div>
 
+        <!-- Arquivo do comprovante: sobe na hora, a URL vai no "Confirmar pagamento" -->
+        <div>
+          <p class="text-sm text-slate-700 dark:text-slate-300 mb-1.5">
+            Anexar comprovante <span class="text-slate-400">(imagem ou PDF, opcional)</span>
+          </p>
+          <input ref="inputAnexo" type="file" class="hidden" :accept="ACEITA" @change="aoEscolherNoModal">
+
+          <button
+            v-if="!anexo"
+            type="button"
+            :disabled="pagando || enviandoAnexo"
+            class="w-full flex flex-col items-center justify-center gap-1 px-4 py-5 rounded-md border-2 border-dashed text-center transition-colors disabled:opacity-60 *:pointer-events-none"
+            :class="arrastando
+              ? 'border-purple-400 dark:border-purple-500/60 bg-purple-50 dark:bg-purple-500/10'
+              : 'border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-white/[0.02] hover:border-purple-300 dark:hover:border-purple-500/40'"
+            @click="inputAnexo?.click()"
+            @dragenter.prevent="arrastando = true"
+            @dragover.prevent="arrastando = true"
+            @dragleave.prevent="arrastando = false"
+            @drop.prevent="aoSoltarNoModal"
+          >
+            <i
+              class="fa-solid text-lg"
+              :class="enviandoAnexo ? 'fa-circle-notch animate-spin text-purple-500' : 'fa-cloud-arrow-up text-slate-400 dark:text-slate-500'"
+              aria-hidden="true"
+            />
+            <span v-if="enviandoAnexo" class="text-sm text-slate-600 dark:text-slate-300">Preparando o arquivo…</span>
+            <span v-else class="text-sm text-slate-700 dark:text-slate-300">
+              Arraste o arquivo aqui ou <span class="text-purple-600 dark:text-purple-400">escolha no computador</span>
+            </span>
+            <span class="text-[11px] text-slate-400 dark:text-slate-500">JPG, PNG, WEBP ou PDF até 4 MB. Imagens são reduzidas antes de enviar.</span>
+          </button>
+
+          <div v-else class="flex items-center gap-3 p-2.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+            <a
+              v-if="anexo.previa"
+              :href="anexo.url || anexo.previa"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="shrink-0"
+              title="Abrir o comprovante"
+            >
+              <img :src="anexo.previa" alt="Prévia do comprovante" class="size-14 rounded object-cover border border-slate-200 dark:border-slate-700">
+            </a>
+            <div v-else class="size-14 shrink-0 rounded flex items-center justify-center bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400">
+              <i class="fa-solid fa-file-pdf text-xl" aria-hidden="true" />
+            </div>
+
+            <div class="min-w-0 flex-1">
+              <p class="text-sm text-slate-800 dark:text-slate-200 truncate" :title="anexo.nome">{{ anexo.nome }}</p>
+              <template v-if="enviandoAnexo">
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">Enviando… {{ progressoAnexo }}%</p>
+                <div class="mt-1 h-1 rounded-full bg-slate-100 dark:bg-white/10 overflow-hidden">
+                  <div class="h-full bg-purple-500 transition-all duration-200" :style="{ width: `${progressoAnexo}%` }" />
+                </div>
+              </template>
+              <p v-else class="text-[11px] text-emerald-600 dark:text-emerald-400 tabular-nums">
+                <i class="fa-solid fa-check text-[9px] mr-0.5" aria-hidden="true" />Enviado · {{ fmtTamanho(anexo.tamanho) }}
+                <a
+                  v-if="anexo.url && anexo.tipo === 'pdf'"
+                  :href="anexo.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="ml-1 text-purple-600 dark:text-purple-400 hover:underline"
+                >abrir</a>
+              </p>
+            </div>
+
+            <button
+              type="button"
+              :disabled="pagando"
+              class="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-normal border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-500/30 disabled:opacity-50 transition-colors"
+              @click="limparAnexo"
+            >
+              <i class="fa-solid fa-trash-can text-[10px]" aria-hidden="true" />
+              Remover
+            </button>
+          </div>
+          <p v-if="erroAnexo" class="mt-1.5 text-xs text-red-600 dark:text-red-400 flex items-start gap-1.5">
+            <i class="fa-solid fa-circle-exclamation text-[10px] mt-0.5" aria-hidden="true" />
+            <span>{{ erroAnexo }}</span>
+          </p>
+        </div>
+
         <div>
           <label for="saque-comprovante" class="block text-sm text-slate-700 dark:text-slate-300 mb-1.5">
             Comprovante / ID do PIX <span class="text-slate-400">(opcional)</span>
@@ -597,11 +991,11 @@ const inputBase = 'w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border
           </button>
           <button
             type="submit"
-            :disabled="pagando"
+            :disabled="pagando || enviandoAnexo"
             class="flex-1 px-4 py-2.5 rounded text-sm font-normal bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white transition-colors flex items-center justify-center gap-2"
           >
-            <i v-if="pagando" class="fa-solid fa-circle-notch animate-spin text-xs" aria-hidden="true" />
-            {{ pagando ? 'Salvando…' : 'Confirmar pagamento' }}
+            <i v-if="pagando || enviandoAnexo" class="fa-solid fa-circle-notch animate-spin text-xs" aria-hidden="true" />
+            {{ pagando ? 'Salvando…' : enviandoAnexo ? 'Enviando arquivo…' : 'Confirmar pagamento' }}
           </button>
         </div>
       </form>

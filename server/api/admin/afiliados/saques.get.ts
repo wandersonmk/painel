@@ -39,27 +39,32 @@ export default defineEventHandler(async (event) => {
   const filtro = filtroBruto in FILTROS ? filtroBruto : 'abertos'
   const status = FILTROS[filtro]
 
-  let consulta = supabase
-    .from('afiliado_saques')
-    .select('id, afiliado_id, valor, chave_pix, chave_pix_tipo, titular_nome, titular_documento, status, solicitado_em, prazo_em, pago_em, comprovante, recusa_motivo')
-  if (status) consulta = consulta.in('status', status)
-  consulta = consulta
-    .order('solicitado_em', { ascending: filtro === 'abertos' })
-    .order('id')
-    .limit(LIMITE)
+  const COLUNAS = 'id, afiliado_id, valor, chave_pix, chave_pix_tipo, titular_nome, titular_documento, status, solicitado_em, prazo_em, pago_em, comprovante, recusa_motivo'
+  const consultar = (colunas: string) => {
+    let consulta = supabase
+      .from('afiliado_saques')
+      .select(colunas)
+    if (status) consulta = consulta.in('status', status)
+    return consulta
+      .order('solicitado_em', { ascending: filtro === 'abertos' })
+      .order('id')
+      .limit(LIMITE)
+  }
 
   const contar = (s: string) => supabase
     .from('afiliado_saques')
     .select('id', { count: 'exact', head: true })
     .eq('status', s)
 
-  const [saquesRes, abertosRes, pagosRes, recusadosRes, configRes] = await Promise.all([
-    consulta,
+  let [saquesRes, abertosRes, pagosRes, recusadosRes, configRes] = await Promise.all([
+    consultar(`${COLUNAS}, comprovante_url`),
     contar('solicitado'),
     contar('pago'),
     contar('recusado'),
     supabase.from('afiliado_config').select('prazo_saque_horas').eq('id', true).maybeSingle(),
   ])
+  // Coluna comprovante_url ainda não existe no banco: lista sem ela.
+  if (saquesRes.error?.code === '42703') saquesRes = await consultar(COLUNAS)
   if (saquesRes.error) return failPublic(saquesRes.error, 'admin/afiliados/saques', 'Não foi possível carregar os saques.')
 
   const linhas = (saquesRes.data ?? []) as any[]
@@ -94,6 +99,7 @@ export default defineEventHandler(async (event) => {
       prazo_em: s.prazo_em,
       pago_em: s.pago_em,
       comprovante: s.comprovante,
+      comprovante_url: s.comprovante_url ?? null,
       recusa_motivo: s.recusa_motivo,
     }
   })

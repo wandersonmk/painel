@@ -21,6 +21,23 @@ export default defineEventHandler(async (event) => {
 
   await normalizarLiberacoes(supabase, afiliado.id)
 
+  const COLUNAS_SAQUE = 'id, valor, chave_pix, chave_pix_tipo, titular_nome, titular_documento, status, solicitado_em, prazo_em, pago_em, comprovante, recusa_motivo'
+  const lerSaques = (colunas: string) => consultarPaginado<any>((de, ate) =>
+    supabase
+      .from('afiliado_saques')
+      .select(colunas)
+      .eq('afiliado_id', afiliado.id)
+      .order('solicitado_em', { ascending: false })
+      .order('id')
+      .range(de, ate),
+  )
+  // Coluna comprovante_url ainda não existe no banco: lê sem ela.
+  const lerSaquesComArquivo = () => lerSaques(`${COLUNAS_SAQUE}, comprovante_url`)
+    .catch((e: any) => {
+      if (e?.code === '42703') return lerSaques(COLUNAS_SAQUE)
+      throw e
+    })
+
   try {
     const [comissoes, saques, config] = await Promise.all([
       consultarPaginado<any>((de, ate) =>
@@ -32,15 +49,7 @@ export default defineEventHandler(async (event) => {
           .order('id')
           .range(de, ate),
       ),
-      consultarPaginado<any>((de, ate) =>
-        supabase
-          .from('afiliado_saques')
-          .select('id, valor, chave_pix, chave_pix_tipo, titular_nome, titular_documento, status, solicitado_em, prazo_em, pago_em, comprovante, recusa_motivo')
-          .eq('afiliado_id', afiliado.id)
-          .order('solicitado_em', { ascending: false })
-          .order('id')
-          .range(de, ate),
-      ),
+      lerSaquesComArquivo(),
       carregarConfig(supabase),
     ])
 
@@ -85,6 +94,8 @@ export default defineEventHandler(async (event) => {
           prazo_em: s.prazo_em as string,
           pago_em: (s.pago_em ?? null) as string | null,
           comprovante: (s.comprovante ?? null) as string | null,
+          // Arquivo do PIX só aparece depois de pago.
+          comprovante_url: (s.status === 'pago' ? (s.comprovante_url ?? null) : null) as string | null,
           recusa_motivo: (s.recusa_motivo ?? null) as string | null,
         })),
         config: {

@@ -786,7 +786,9 @@ function abrirModulosDeUso(id: string) {
           <template #topo>
             <div class="px-4 sm:px-5 pt-4 pb-3.5 space-y-3">
               <div class="flex flex-wrap items-center gap-x-4 gap-y-3">
-                <div class="flex items-baseline gap-2 min-w-0">
+                <!-- Busca à esquerda e título à direita (pedido do dono, 10/10/2026);
+                     no celular o título continua em cima. -->
+                <div class="flex items-baseline gap-2 min-w-0 md:order-2 md:ml-auto">
                   <h2 class="text-base font-medium text-slate-900 dark:text-white whitespace-nowrap">
                     {{ abaAtiva === 'vencidos' ? 'Clientes vencidos' : 'Lista de clientes' }}
                   </h2>
@@ -796,7 +798,7 @@ function abrirModulosDeUso(id: string) {
                     <span class="font-semibold text-slate-700 dark:text-slate-200">{{ clientesDaAba.length }}</span>
                   </span>
                 </div>
-                <div class="relative w-full md:w-72 md:ml-auto">
+                <div class="relative w-full md:w-72 md:order-1">
                   <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm" aria-hidden="true" />
                   <input
                     id="search"

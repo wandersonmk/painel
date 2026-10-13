@@ -775,7 +775,7 @@ const pill12 = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11
                       <div class="min-w-0 flex-1 basis-full sm:basis-auto">
                         <p class="text-sm text-slate-900 dark:text-white truncate">{{ c.empresa_nome }}</p>
                         <p class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
-                          Vinculado em {{ fmtData(c.vinculado_em) }} · vence {{ fmtData(c.vencimento) }}
+                          Vinculado em {{ fmtData(c.vinculado_em) }} · vence <span class="font-medium text-slate-900 dark:text-white">{{ fmtData(c.vencimento) }}</span>
                         </p>
                       </div>
                       <span class="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap" :class="SITUACOES[c.situacao]?.cls">

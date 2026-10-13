@@ -351,7 +351,7 @@ function valorInfo(c: AdminCliente) {
             <div class="min-w-0">
               <dt class="text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">Vencimento</dt>
               <dd class="mt-1 flex flex-wrap items-center gap-1.5">
-                <span class="text-sm text-slate-700 dark:text-slate-300 tabular-nums whitespace-nowrap">{{ dataVencimento(c) }}</span>
+                <span class="text-sm font-medium text-slate-900 dark:text-white tabular-nums whitespace-nowrap">{{ dataVencimento(c) }}</span>
                 <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap" :class="diasRestantesCls(c)">{{ diasRestantesText(c) }}</span>
               </dd>
             </div>
@@ -504,7 +504,7 @@ function valorInfo(c: AdminCliente) {
               <!-- Vencimento (abaixo de 2xl leva os dias restantes embaixo) -->
               <td class="px-3 py-4 align-middle">
                 <div class="flex flex-col items-start gap-1">
-                  <span class="text-slate-700 dark:text-slate-300 tabular-nums whitespace-nowrap">{{ dataVencimento(c) }}</span>
+                  <span class="font-medium text-slate-900 dark:text-white tabular-nums whitespace-nowrap">{{ dataVencimento(c) }}</span>
                   <span class="2xl:hidden inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap" :class="diasRestantesCls(c)">
                     {{ diasRestantesText(c) }}
                   </span>

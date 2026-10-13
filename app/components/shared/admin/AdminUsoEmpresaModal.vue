@@ -259,6 +259,31 @@ const cobranca = computed(() => {
 })
 
 const dinheiro = (v: number | null) => (v == null ? 'Não definido' : mask(brl(v)))
+
+// Data de criação da empresa (pedido do dono, 13/10/2026): base para
+// reajuste de valor. "há 1 ano e 2 meses" conta meses de calendário.
+const criadoEm = computed(() => {
+  const s = props.cliente?.created_at
+  if (!s) return null
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return null
+  const hoje = new Date()
+  let meses = (hoje.getFullYear() - d.getFullYear()) * 12 + (hoje.getMonth() - d.getMonth())
+  if (hoje.getDate() < d.getDate()) meses--
+  let ha: string
+  if (meses < 1) {
+    const dias = Math.max(0, Math.floor((hoje.getTime() - d.getTime()) / 86_400_000))
+    ha = dias === 0 ? 'hoje' : `há ${dias} dia${dias === 1 ? '' : 's'}`
+  } else {
+    const anos = Math.floor(meses / 12)
+    const resto = meses % 12
+    const partes: string[] = []
+    if (anos) partes.push(`${anos} ano${anos === 1 ? '' : 's'}`)
+    if (resto) partes.push(`${resto} ${resto === 1 ? 'mês' : 'meses'}`)
+    ha = `há ${partes.join(' e ')}`
+  }
+  return { data: formatDate(s), ha }
+})
 </script>
 
 <template>
@@ -303,6 +328,9 @@ const dinheiro = (v: number | null) => (v == null ? 'Não definido' : mask(brl(v
         <p class="text-[10px] uppercase tracking-wide font-semibold text-slate-400 dark:text-slate-500">{{ cobranca.teste ? 'Após o teste' : 'Valor cobrado' }}</p>
         <p class="text-[15px] font-bold tabular-nums" :class="cobranca.valor == null ? 'text-slate-400 dark:text-slate-600 italic font-medium text-[13px]' : 'text-slate-900 dark:text-white'">
           {{ dinheiro(cobranca.valor) }}<span v-if="cobranca.valor != null" class="text-[11px] font-medium text-slate-500 dark:text-slate-400">{{ cobranca.sufixo }}</span>
+        </p>
+        <p v-if="criadoEm" class="mt-1 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums" :title="`Cliente ${criadoEm.ha}`">
+          Criado em <span class="font-medium text-slate-900 dark:text-white">{{ criadoEm.data }}</span>
         </p>
       </div>
     </div>
@@ -396,6 +424,7 @@ const dinheiro = (v: number | null) => (v == null ? 'Não definido' : mask(brl(v
               { rotulo: 'Situação', valor: cobranca.status + (cliente.cancel_at_period_end ? ' · cancela no fim' : '') },
               { rotulo: 'Vencimento', valor: cobranca.vencimento + (cobranca.dias !== '—' ? ` · ${cobranca.dias}` : '') },
               { rotulo: 'Quem define o valor', valor: cliente.parceiro_nome ? `Parceiro ${cliente.parceiro_nome}` : 'Agzap' },
+              { rotulo: 'Cliente desde', valor: criadoEm ? `${criadoEm.data} · ${criadoEm.ha}` : '—' },
             ]"
             :key="l.rotulo"
             class="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 px-3 py-2"

@@ -6,10 +6,13 @@
 // Subir a versão faz o modal aparecer de novo para TODOS os parceiros.
 // Histórico: 1.0 comissão; 2.0/2.1 licenças pré-pagas (aceite só com data em
 // parceiros.dados_split); 3.0 (09/10/2026) prova completa do aceite, Agzap
-// Systems LTDA + CNPJ, sigilo e LGPD dos dados dos clientes, continuidade.
+// Systems LTDA + CNPJ, sigilo e LGPD dos dados dos clientes, continuidade;
+// 3.1 (13/10/2026) crédito de 12 meses é para o cliente do plano anual e,
+// aplicado em cliente que paga por mês, não é transferido se ele cancelar
+// (cláusulas 2 e 4).
 
-export const VERSAO_TERMO_PARCEIRO = '3.0'
-export const DATA_TERMO_PARCEIRO_EXTENSO = '9 de outubro de 2026'
+export const VERSAO_TERMO_PARCEIRO = '3.1'
+export const DATA_TERMO_PARCEIRO_EXTENSO = '13 de outubro de 2026'
 export const URL_TERMO_PARCEIRO = 'https://painel.agzap.com.br/termos-parceiro'
 export const URL_POLITICA_PRIVACIDADE = 'https://app.agzap.com.br/politica-privacidade'
 
@@ -70,7 +73,7 @@ export const CATEGORIAS_TERMO_PARCEIRO: CategoriaTermoParceiro[] = [
           ${lista([
             `Cada licença adquirida vira um ${b('crédito')} na carteira do Parceiro;`,
             `crédito de ${b('30 dias')} autoriza uma renovação de 30 dias corridos para um cliente;`,
-            `crédito de ${b('12 meses')} autoriza uma renovação de 12 meses para um cliente;`,
+            `crédito de ${b('12 meses')} autoriza uma renovação de 12 meses para um cliente e é destinado ao ${b('cliente que contrata o plano anual')};`,
             `a ativação ou renovação de qualquer cliente consome exatamente ${b('1 crédito')}.`,
           ])}
         `,
@@ -99,6 +102,7 @@ export const CATEGORIAS_TERMO_PARCEIRO: CategoriaTermoParceiro[] = [
             'estorno ou chargeback da cobrança feita pelo Parceiro ao cliente final;',
             'exclusão administrativa do cliente.',
           ])}
+          <p>${b('Crédito de 12 meses em cliente que paga por mês.')} Se o Parceiro aplicar um crédito de 12 meses em um cliente que paga a ele mensalmente, isso é decisão e risco do próprio Parceiro. Se esse cliente cancelar, deixar de pagar ou for desvinculado antes do fim dos 12 meses, o período restante continua na conta desse cliente: a Agzap ${b('não tem obrigação de transferir o crédito ou o período restante para outro cliente')}, nem de devolvê-lo ao saldo ou reembolsá-lo.</p>
           <p>Correções por erro operacional só podem ser lançadas pela Agzap, mediante análise, e ficam registradas em auditoria; o histórico original nunca é apagado.</p>
         `,
       },

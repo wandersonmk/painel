@@ -82,14 +82,20 @@ const margensMensais = computed(() => {
   }))
 })
 
-/** No anual, o que interessa é o custo por mês e o ganho no ano inteiro. */
+/** Preço sugerido do PLANO ANUAL ao cliente final (o mesmo que a Agzap cobra). */
+const precoRevendaAnual = computed(() => Number(precosAnuais.value[0]?.preco_sugerido_revenda ?? 0))
+
+/**
+ * No anual: quanto sai o mês e o lucro revendendo o PLANO ANUAL. Não mostra
+ * mais "cobrando o mensal do cliente, são X no ano" (pedido do dono,
+ * 13/10/2026): incentivava comprar a licença anual e cobrar mês a mês, e o
+ * crédito anual é para o cliente que assina o plano anual (cláusula 4 do Termo).
+ */
 const anualDetalhe = computed(() => {
   if (!precoAnual.value) return null
-  const receitaAno = precoRevenda.value * 12
   return {
     porMes: precoAnual.value / 12,
-    receitaAno,
-    lucroAno: receitaAno ? receitaAno - precoAnual.value : 0,
+    lucroAno: precoRevendaAnual.value ? precoRevendaAnual.value - precoAnual.value : 0,
   }
 })
 
@@ -227,7 +233,7 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
                   <p class="text-sm font-semibold text-slate-900 dark:text-white">Licença de 12 meses</p>
-                  <p class="text-[11px] text-slate-500 dark:text-slate-400">Renova um cliente por um ano inteiro</p>
+                  <p class="text-[11px] text-slate-500 dark:text-slate-400">Para o cliente que assina o plano anual</p>
                 </div>
                 <span class="shrink-0 w-9 h-9 rounded-lg bg-indigo-100 dark:bg-indigo-500/15 flex items-center justify-center">
                   <i class="fa-solid fa-calendar-days text-indigo-600 dark:text-indigo-400 text-sm" aria-hidden="true" />
@@ -239,8 +245,7 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
                 <span class="text-xs text-slate-400">/licença</span>
               </p>
 
-              <!-- Só as duas contas que importam no anual: quanto sai o mês e
-                   quanto sobra vendendo esse ano no preço mensal. -->
+              <!-- Quanto sai o mês e o lucro revendendo o plano anual. -->
               <div v-if="anualDetalhe" class="mt-3 pt-3 border-t border-slate-100 dark:border-white/5 space-y-2">
                 <p class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
                   Sai a <span class="font-semibold text-slate-800 dark:text-slate-200 tabular-nums">{{ fmtBRL(anualDetalhe.porMes) }}</span> por mês
@@ -248,9 +253,8 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
                     — contra {{ fmtBRL(melhorPrecoMensal) }} na licença de 30 dias
                   </template>
                 </p>
-                <p v-if="precoRevenda" class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                  Cobrando <span class="font-semibold text-slate-800 dark:text-slate-200 tabular-nums">{{ fmtBRL(precoRevenda) }}</span> por mês
-                  do seu cliente, são <span class="font-semibold text-slate-800 dark:text-slate-200 tabular-nums">{{ fmtBRL(anualDetalhe.receitaAno) }}</span> no ano:
+                <p v-if="precoRevendaAnual" class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                  Revendendo o plano anual a <span class="font-semibold text-slate-800 dark:text-slate-200 tabular-nums">{{ fmtBRL(precoRevendaAnual) }}</span>,
                   lucre <span class="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{{ fmtBRL(anualDetalhe.lucroAno) }}</span>
                 </p>
               </div>
@@ -260,9 +264,10 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
           <p class="mt-3 text-xs text-slate-400 dark:text-slate-500 flex items-start gap-1.5">
             <i class="fa-solid fa-circle-info text-[10px] mt-0.5 shrink-0" aria-hidden="true" />
             <span>
-              <strong>Você revende pelo valor que quiser</strong> — os {{ precoRevenda ? fmtBRL(precoRevenda) : 'valores' }} acima são
-              só a referência sugerida pela Agzap para o cálculo. O crédito entra na carteira depois que a
-              Agzap confirma o pagamento.
+              <strong>Você revende pelo valor que quiser</strong> — os valores de revenda acima
+              <template v-if="precoRevenda && precoRevendaAnual">({{ fmtBRL(precoRevenda) }} no mensal e {{ fmtBRL(precoRevendaAnual) }} no anual)</template>
+              são só a referência sugerida pela Agzap para o cálculo. A licença de 12 meses é para o cliente
+              que assina o plano anual. O crédito entra na carteira depois que a Agzap confirma o pagamento.
             </span>
           </p>
         </section>

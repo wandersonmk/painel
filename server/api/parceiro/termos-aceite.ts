@@ -19,7 +19,7 @@ import { VERSAO_TERMO_PARCEIRO, textosConfirmacaoParceiro } from '~~/app/constan
  * e atualize HASH_TERMO_PARCEIRO_OFICIAL (SHA-256 de textoCanonicoTermoParceiro()).
  * Hash divergente NÃO bloqueia o aceite: grava com hash_confere = false.
  */
-const HASH_TERMO_PARCEIRO_OFICIAL = '06cd1a5b2b790c74df159934db0276cb6ad546096c15dcaafa92b726aaf57738'
+const HASH_TERMO_PARCEIRO_OFICIAL = '4a0ca58c0fcbd240e1e7ade8c076eea3f563f9152aced8b8d19116f6e4a8e535' // versão 3.1
 
 export default defineEventHandler(async (event) => {
   const { parceiro, userId } = await requireParceiro(event)

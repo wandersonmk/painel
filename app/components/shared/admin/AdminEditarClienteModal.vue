@@ -190,7 +190,7 @@ function handleSubmit() {
         <input v-model="naoPagante" type="checkbox" class="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-slate-700 text-purple-600 focus:ring-purple-500 shrink-0" />
         <span class="text-sm">
           <span class="font-semibold text-slate-700 dark:text-slate-300">Não pagante</span>
-          <span class="block text-xs text-slate-500 dark:text-slate-400">Cortesia ou conta interna. Fica fora do faturamento do Dashboard; o acesso ao app não muda.</span>
+          <span class="block text-xs text-slate-500 dark:text-slate-400">Permuta, cortesia ou conta interna. Fica fora do faturamento do Dashboard; o acesso ao app não muda.</span>
         </span>
       </label>
 

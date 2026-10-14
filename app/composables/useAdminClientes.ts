@@ -236,6 +236,18 @@ export const useAdminClientes = () => {
     }
   }
 
+  // Permuta, cortesia ou conta interna: fora do faturamento do Dashboard.
+  const marcarNaoPagante = async (id: string, naoPagante: boolean) => {
+    const resp = await $fetch<{ success: boolean; error?: string }>('/api/admin/nao-pagante', {
+      method: 'POST',
+      body: { clienteId: id, naoPagante },
+      headers: await getAuthHeaders(),
+    })
+    if (!resp.success) throw new Error(resp.error || 'Erro ao atualizar')
+    const c = clientes.value.find(x => x.id === id)
+    if (c) c.nao_pagante = naoPagante
+  }
+
   const excluirCliente = async (id: string) => {
     const resp = await $fetch<{ success: boolean }>('/api/admin/excluir', { method: 'POST', body: { clienteId: id }, headers: await getAuthHeaders() })
     if (!resp.success) throw new Error('Erro ao excluir')
@@ -342,6 +354,7 @@ export const useAdminClientes = () => {
     desativarCliente,
     reativarCliente,
     renovarAssinatura,
+    marcarNaoPagante,
     excluirCliente,
     editarCliente,
     isVencido,

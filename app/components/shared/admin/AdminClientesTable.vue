@@ -21,13 +21,14 @@ const emit = defineEmits<{
   'ver-uso': [clienteId: string]
   'saldo-indicacao': [clienteId: string]
   'ver-indicacao': [clienteId: string]
+  pagante: [clienteId: string]
 }>()
 
 // Menu de ações (bottom sheet no mobile, painel central no desktop)
 const menuCliente = ref<AdminCliente | null>(null)
 function openMenu(c: AdminCliente) { menuCliente.value = c }
 function closeMenu() { menuCliente.value = null }
-function emitAction(action: 'editar' | 'limite-instancias' | 'renovar' | 'desativar' | 'reativar' | 'excluir' | 'atribuir-parceiro' | 'remover-parceiro' | 'tornar-parceiro' | 'tornar-afiliado' | 'remover-parceria' | 'remover-afiliacao' | 'modulos' | 'saldo-indicacao' | 'ver-indicacao', id: string) {
+function emitAction(action: 'editar' | 'limite-instancias' | 'renovar' | 'desativar' | 'reativar' | 'excluir' | 'atribuir-parceiro' | 'remover-parceiro' | 'tornar-parceiro' | 'tornar-afiliado' | 'remover-parceria' | 'remover-afiliacao' | 'modulos' | 'saldo-indicacao' | 'ver-indicacao' | 'pagante', id: string) {
   emit(action as any, id)
   closeMenu()
 }
@@ -174,7 +175,7 @@ function categorias(c: AdminCliente): Selo[] {
   }
   // Cortesia ou conta interna (marcado em "Editar cliente"): fora do faturamento.
   if (c.nao_pagante) {
-    selos.push({ key: 'nao-pagante', text: 'Não pagante', title: 'Cortesia ou conta interna: fica fora do faturamento do Dashboard. Altere em "Editar cliente".', cls: SELO_CLS.apagado, icon: 'fa-gift' })
+    selos.push({ key: 'nao-pagante', text: 'Não pagante', title: 'Permuta, cortesia ou conta interna: fica fora do faturamento do Dashboard. Para voltar a contar, use "Marcar como pagante" no menu do cliente.', cls: SELO_CLS.apagado, icon: 'fa-gift' })
   }
   // Quem TROUXE o cliente (1ª conexão, afiliado_empresas). Diferente de
   // "É afiliado", que fala do papel do dono desta conta.
@@ -664,6 +665,20 @@ function valorInfo(c: AdminCliente) {
                         <template v-else>Todos os módulos liberados</template>
                         <template v-if="resumoModulos(menuCliente).addons.length"> · <span class="text-purple-600 dark:text-purple-400 font-medium">+ {{ resumoModulos(menuCliente).addons.join(', ') }}</span></template>
                       </span>
+                    </span>
+                  </button>
+                  <!-- Pagante x não pagante (permuta, cortesia ou conta interna).
+                       A conta da equipe (superAdmin) já fica sempre fora do faturamento. -->
+                  <button v-if="menuCliente.role !== 'superAdmin'" type="button" @click="emitAction('pagante', menuCliente.id)" class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-purple-300 dark:hover:border-purple-500/40 hover:bg-purple-50/40 dark:hover:bg-purple-500/5">
+                    <span
+                      class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center"
+                      :class="menuCliente.nao_pagante
+                        ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'"
+                    ><i class="fa-solid" :class="menuCliente.nao_pagante ? 'fa-sack-dollar' : 'fa-gift'" aria-hidden="true" /></span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-semibold text-slate-800 dark:text-slate-200">{{ menuCliente.nao_pagante ? 'Marcar como pagante' : 'Marcar como não pagante' }}</span>
+                      <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">{{ menuCliente.nao_pagante ? 'Hoje fora do faturamento' : 'Permuta, cortesia ou conta interna' }}</span>
                     </span>
                   </button>
                 </div>

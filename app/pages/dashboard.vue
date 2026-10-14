@@ -660,7 +660,7 @@ const revenueChartOptions = computed(() => ({
           />
         </div>
         <p class="text-[11px] leading-snug text-slate-500 dark:text-slate-400">
-          <i class="fa-solid fa-circle-info mr-1 text-slate-400 dark:text-slate-500" aria-hidden="true" />Só conta quem paga a Agzap e está em dia. Não pagantes (cortesia ou conta interna, marcados em “Editar cliente”), vencidos, cancelados, testes e clientes que pagam o parceiro ficam de fora.
+          <i class="fa-solid fa-circle-info mr-1 text-slate-400 dark:text-slate-500" aria-hidden="true" />Só conta quem paga a Agzap e está em dia. Não pagantes (permuta, cortesia ou conta interna, marcados no menu do cliente), vencidos, cancelados, testes e clientes que pagam o parceiro ficam de fora.
         </p>
       </section>
 

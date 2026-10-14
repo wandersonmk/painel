@@ -6,12 +6,14 @@ defineProps<{
   clienteNome?: string
   confirmLabel?: string
   variant?: 'danger' | 'warning' | 'info'
+  // Largura do modal (classe max-w-*). Ausente = padrão do BaseModal (max-w-md).
+  maxWidth?: string
 }>()
 defineEmits<{ close: []; confirm: [] }>()
 </script>
 
 <template>
-  <BaseModal :show="show" :title="title" @close="$emit('close')">
+  <BaseModal :show="show" :title="title" :max-width="maxWidth" @close="$emit('close')">
     <p class="text-sm text-slate-600 dark:text-slate-400">
       {{ message }}
       <span v-if="clienteNome" class="font-semibold text-slate-900 dark:text-white">{{ clienteNome }}</span>?

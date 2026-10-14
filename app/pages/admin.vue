@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import type { AdminCliente } from '~/composables/useAdminClientes'
+import type { AdminCliente, CategoriaFaturamento } from '~/composables/useAdminClientes'
 
 definePageMeta({
   middleware: ['auth', 'super-admin'],
@@ -10,7 +10,7 @@ definePageMeta({
 const {
   clientes, stats, loading, error,
   loadClientes, desativarCliente, reativarCliente, renovarAssinatura,
-  excluirCliente, editarCliente, diasParaVencimento, isVencido,
+  excluirCliente, editarCliente, diasParaVencimento, isVencido, marcarNaoPagante, faturamento,
 } = useAdminClientes()
 
 let toast: Awaited<ReturnType<typeof useToastSafe>> | null = null
@@ -20,6 +20,26 @@ onMounted(async () => {
 })
 
 const showRenovarModal = ref(false)
+
+// Pagante x não pagante (permuta, cortesia ou conta interna), pelo menu do
+// cliente. Só muda o faturamento do Dashboard (14/10/2026).
+const clientePagante = ref<{ id: string; nome: string; naoPaganteAtual: boolean } | null>(null)
+function handlePagante(id: string) {
+  const c = clientes.value.find(x => x.id === id)
+  if (c) clientePagante.value = { id: c.id, nome: c.nome, naoPaganteAtual: !!c.nao_pagante }
+}
+async function confirmPagante() {
+  const alvo = clientePagante.value
+  if (!alvo) return
+  try {
+    await marcarNaoPagante(alvo.id, !alvo.naoPaganteAtual)
+    toast?.success(alvo.naoPaganteAtual
+      ? `${alvo.nome} agora é pagante e volta a contar no faturamento`
+      : `${alvo.nome} marcado como não pagante e saiu do faturamento`)
+  } catch { toast?.error('Erro ao atualizar o cliente') }
+  clientePagante.value = null
+}
+
 // Saldo de indicação (ver/usar em desconto ou serviço)
 const showSaldoIndicacao = ref(false)
 const clienteSaldoIndicacao = ref<{ id: string; nome: string } | null>(null)
@@ -109,23 +129,31 @@ const isRefreshing = ref(false)
 //  - Estatísticas: os indicadores e a distribuição por plano;
 //  - Token OpenAI: a configuração do token global.
 // A aba vai na URL (?aba=), então um F5 volta pra mesma aba.
-type Aba = 'em-dia' | 'vencidos' | 'estatisticas' | 'token'
-const ABAS_VALIDAS: Aba[] = ['em-dia', 'vencidos', 'estatisticas', 'token']
+//  - Pagantes (14/10/2026): só quem entra no faturamento do Dashboard.
+type Aba = 'em-dia' | 'pagantes' | 'vencidos' | 'estatisticas' | 'token'
+const ABAS_VALIDAS: Aba[] = ['em-dia', 'pagantes', 'vencidos', 'estatisticas', 'token']
 const rotaAdmin = useRoute()
 const roteadorAdmin = useRouter()
 const abaDaUrl = String(rotaAdmin.query.aba || '') as Aba
 const abaAtiva = ref<Aba>(ABAS_VALIDAS.includes(abaDaUrl) ? abaDaUrl : 'em-dia')
-const ehAbaDeLista = computed(() => abaAtiva.value === 'em-dia' || abaAtiva.value === 'vencidos')
+const ehAbaDeLista = computed(() => abaAtiva.value === 'em-dia' || abaAtiva.value === 'pagantes' || abaAtiva.value === 'vencidos')
 
-const clientesDaAba = computed(() =>
-  clientes.value.filter(c => isVencido(c) === (abaAtiva.value === 'vencidos')),
-)
+// Pagantes = mesma regra dos cards de faturamento do Dashboard (`faturamento`):
+// ativo, em dia, pagando a Agzap (sem não pagante, teste ou cliente que paga o
+// parceiro). Assim o número da aba bate com o Dashboard.
+const pagantes = computed(() => clientes.value.filter(c => 'categoria' in faturamento(c)))
+
+const clientesDaAba = computed(() => {
+  if (abaAtiva.value === 'pagantes') return pagantes.value
+  return clientes.value.filter(c => isVencido(c) === (abaAtiva.value === 'vencidos'))
+})
 
 // count null = aba sem contador (Estatísticas e Token não são listas)
 const abas = computed<{ value: Aba; label: string; icon: string; count: number | null; tone: '' | 'red' }[]>(() => {
   const vencidos = clientes.value.filter(c => isVencido(c)).length
   return [
     { value: 'em-dia', label: 'Clientes em dia', icon: 'fa-users', count: clientes.value.length - vencidos, tone: '' },
+    { value: 'pagantes', label: 'Pagantes', icon: 'fa-sack-dollar', count: pagantes.value.length, tone: '' },
     { value: 'vencidos', label: 'Vencidos', icon: 'fa-triangle-exclamation', count: vencidos, tone: 'red' },
     { value: 'estatisticas', label: 'Estatísticas', icon: 'fa-chart-pie', count: null, tone: '' },
     { value: 'token', label: 'Token OpenAI', icon: 'fa-key', count: null, tone: '' },
@@ -163,6 +191,12 @@ const filteredClientes = computed(() => {
   if (filterStatus.value !== 'all') {
     if (filterStatus.value === 'vencendo-hoje') {
       filtered = filtered.filter(c => diasParaVencimento(c) === 0)
+    } else if (CATEGORIAS_PAGANTE.includes(filterStatus.value as CategoriaFaturamento)) {
+      // Chips da aba Pagantes: forma de pagamento.
+      filtered = filtered.filter(c => {
+        const f = faturamento(c)
+        return 'categoria' in f && f.categoria === filterStatus.value
+      })
     } else {
       filtered = filtered.filter(c => c.subscription_status === filterStatus.value)
     }
@@ -203,6 +237,10 @@ const planDistribution = computed(() => {
 // Contagem por status dentro da aba atual (mesma lógica do filteredClientes)
 const statusCounts = computed<Record<string, number>>(() => {
   const base = clientesDaAba.value
+  const porCategoria = (cat: CategoriaFaturamento) => base.filter(c => {
+    const f = faturamento(c)
+    return 'categoria' in f && f.categoria === cat
+  }).length
   return {
     all: base.length,
     active: base.filter(c => c.subscription_status === 'active').length,
@@ -210,16 +248,34 @@ const statusCounts = computed<Record<string, number>>(() => {
     'vencendo-hoje': base.filter(c => diasParaVencimento(c) === 0).length,
     // Base inteira, igual ao filtro (ver filteredClientes).
     canceled: clientes.value.filter(c => c.subscription_status === 'canceled').length,
+    mensal_stripe: porCategoria('mensal_stripe'),
+    mensal_pix: porCategoria('mensal_pix'),
+    anual: porCategoria('anual'),
+    semestral: porCategoria('semestral'),
   }
 })
 
-const statusChips = [
+interface ChipStatus { value: string; label: string; tone?: 'orange' }
+const statusChips: ChipStatus[] = [
   { value: 'all', label: 'Todos' },
   { value: 'active', label: 'Ativos' },
   { value: 'trial', label: 'Trial' },
   { value: 'vencendo-hoje', label: 'Vencendo hoje', tone: 'orange' },
   { value: 'canceled', label: 'Cancelados' },
-] as const
+]
+// Na aba Pagantes os chips são a forma de pagamento (mesmos cards do Dashboard).
+const CATEGORIAS_PAGANTE: CategoriaFaturamento[] = ['mensal_stripe', 'mensal_pix', 'anual', 'semestral']
+const chipsDaAba = computed<ChipStatus[]>(() => {
+  if (abaAtiva.value !== 'pagantes') return statusChips
+  const chips: ChipStatus[] = [
+    { value: 'all', label: 'Todos' },
+    { value: 'mensal_stripe', label: 'Mensal · Stripe' },
+    { value: 'mensal_pix', label: 'Mensal · Pix' },
+    { value: 'anual', label: 'Anuais' },
+  ]
+  if (statusCounts.value.semestral) chips.push({ value: 'semestral', label: 'Semestrais' })
+  return chips
+})
 
 // ───────── Filtros por parceiro e por afiliado (09/10/2026) ─────────
 // As opções listam só quem tem cliente na base. A contagem entre parênteses é
@@ -302,7 +358,8 @@ const cardsResumo = computed<CardResumo[]>(() => {
         ? `+${stats.value.clientesEssaSemana} nos últimos 7 dias`
         : 'Nenhum novo nos últimos 7 dias',
       tiles: [
-        { label: 'Ativos', icon: 'fa-circle-check', iconCls: 'text-emerald-500', valor: String(ativos.length), detalhe: 'assinatura em dia' },
+        // "de fato" = aba Pagantes (mesma regra do faturamento do Dashboard).
+        { label: 'Ativos', icon: 'fa-circle-check', iconCls: 'text-emerald-500', valor: String(ativos.length), detalhe: `${plural(pagantes.value.length, 'pagante', 'pagantes')} de fato` },
         { label: 'Em teste', icon: 'fa-hourglass-half', iconCls: 'text-amber-500', valor: String(emTeste.length), detalhe: 'trial em andamento' },
       ],
     },
@@ -784,6 +841,7 @@ function abrirModulosDeUso(id: string) {
           @ver-uso="handleVerUso"
           @saldo-indicacao="handleSaldoIndicacao"
           @ver-indicacao="handleVerIndicacao"
+          @pagante="handlePagante"
         >
           <!-- Cabeçalho do painel da lista: título + contagem, busca, plano e
                chips de status (mesmas funções de antes, agora dentro do painel). -->
@@ -794,7 +852,7 @@ function abrirModulosDeUso(id: string) {
                      no celular o título continua em cima. -->
                 <div class="flex items-baseline gap-2 min-w-0 md:order-2 md:ml-auto">
                   <h2 class="text-base font-medium text-slate-900 dark:text-white whitespace-nowrap">
-                    {{ abaAtiva === 'vencidos' ? 'Clientes vencidos' : 'Lista de clientes' }}
+                    {{ abaAtiva === 'vencidos' ? 'Clientes vencidos' : abaAtiva === 'pagantes' ? 'Clientes pagantes' : 'Lista de clientes' }}
                   </h2>
                   <span class="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap tabular-nums">
                     <span class="font-semibold text-slate-700 dark:text-slate-200">{{ filteredClientes.length }}</span>
@@ -816,11 +874,12 @@ function abrirModulosDeUso(id: string) {
               </div>
 
               <div class="flex flex-wrap items-center gap-2">
-              <!-- Chips de status. Só na aba "Em dia": a lista de vencidos é curta e
-                   serve pra cobrar, não pra fatiar por status. -->
-              <div v-if="abaAtiva === 'em-dia'" class="flex flex-wrap items-center gap-2 mr-auto" role="group" aria-label="Filtrar por status">
+              <!-- Chips de status. Na aba "Em dia" filtram por status; na aba
+                   "Pagantes", pela forma de pagamento. Os vencidos não têm chips:
+                   a lista é curta e serve pra cobrar, não pra fatiar por status. -->
+              <div v-if="abaAtiva === 'em-dia' || abaAtiva === 'pagantes'" class="flex flex-wrap items-center gap-2 mr-auto" role="group" :aria-label="abaAtiva === 'pagantes' ? 'Filtrar por forma de pagamento' : 'Filtrar por status'">
                 <button
-                  v-for="chip in statusChips"
+                  v-for="chip in chipsDaAba"
                   :key="chip.value"
                   type="button"
                   @click="filterStatus = chip.value"
@@ -940,6 +999,20 @@ function abrirModulosDeUso(id: string) {
         variant="info"
         @close="showReativarModal = false; selectedCliente = null"
         @confirm="confirmReativar"
+      />
+
+      <AdminConfirmacaoModal
+        :show="!!clientePagante"
+        :title="clientePagante?.naoPaganteAtual ? 'Marcar como pagante' : 'Marcar como não pagante'"
+        :message="clientePagante?.naoPaganteAtual
+          ? 'Volta a contar no faturamento do Dashboard quando estiver ativo e em dia (confira o valor no Editar). Marcar como pagante o cliente'
+          : 'Permuta, cortesia ou conta interna: sai do faturamento do Dashboard. O acesso ao app, o plano e o vencimento não mudam. Marcar como não pagante o cliente'"
+        :cliente-nome="clientePagante?.nome"
+        :confirm-label="clientePagante?.naoPaganteAtual ? 'Marcar como pagante' : 'Marcar como não pagante'"
+        variant="info"
+        max-width="max-w-xl"
+        @close="clientePagante = null"
+        @confirm="confirmPagante"
       />
 
       <AdminExcluirClienteModal

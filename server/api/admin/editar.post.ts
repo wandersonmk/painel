@@ -10,6 +10,8 @@ export default defineEventHandler(async (event) => {
     subscription_price: number | null
     /** Só é enviado pelo modal para clientes de parceiro. */
     preco_anual?: number | null
+    /** Cortesia ou conta interna: fica fora do faturamento do Dashboard. */
+    nao_pagante?: boolean
   }>(event)
 
   if (!body?.clienteId) {
@@ -49,6 +51,10 @@ export default defineEventHandler(async (event) => {
       // Ausente no corpo = preserva o preço anual atual.
       ...(body.preco_anual !== undefined
         ? { subscription_price_anual: precoAnual }
+        : {}),
+      // Ausente no corpo = preserva a marca atual.
+      ...(typeof body.nao_pagante === 'boolean'
+        ? { nao_pagante: body.nao_pagante }
         : {}),
       updated_at: new Date().toISOString(),
     })

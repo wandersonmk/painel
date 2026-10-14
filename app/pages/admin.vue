@@ -147,7 +147,10 @@ async function refreshData() {
 }
 
 const filteredClientes = computed(() => {
-  let filtered = clientesDaAba.value
+  // Cancelado é estado final e não depende do vencimento: esse filtro olha a
+  // base inteira. Antes o card do topo contava o cancelado e o chip mostrava 0,
+  // porque ele (já vencido) estava na aba Vencidos (14/10/2026).
+  let filtered = filterStatus.value === 'canceled' ? clientes.value : clientesDaAba.value
   if (searchQuery.value) {
     const q = searchQuery.value.toLowerCase()
     filtered = filtered.filter(c =>
@@ -205,7 +208,8 @@ const statusCounts = computed<Record<string, number>>(() => {
     active: base.filter(c => c.subscription_status === 'active').length,
     trial: base.filter(c => c.subscription_status === 'trial').length,
     'vencendo-hoje': base.filter(c => diasParaVencimento(c) === 0).length,
-    canceled: base.filter(c => c.subscription_status === 'canceled').length,
+    // Base inteira, igual ao filtro (ver filteredClientes).
+    canceled: clientes.value.filter(c => c.subscription_status === 'canceled').length,
   }
 })
 

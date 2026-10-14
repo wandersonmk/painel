@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   try {
     const { data: empresas, error } = await supabase
       .from('empresas')
-      .select('id, nome, nome_cliente, email, whatsapp, subscription_status, subscription_plan, subscription_period, trial_ends_at, subscription_renews_at, subscription_price, subscription_price_anual, ativo, created_at, auth_user_id, max_instancias, max_agentes, max_webhooks_entrada, max_webhooks_saida, max_profissionais, max_clientes, cancel_at_period_end, roteamento_habilitado, agendamentos_habilitado, pagina_agendamento_habilitada, api_assistente_habilitada, webhooks_habilitado, documentacao_habilitada, envios_habilitado, max_envios_mes, delivery_modulo_ativo, max_macros, max_acoes_macro, max_pedidos_mes, max_produtos_vitrine, vitrine_habilitada, imoveis_modulo_ativo, max_imoveis, indicado_por_empresa_id')
+      .select('id, nome, nome_cliente, email, whatsapp, subscription_status, subscription_plan, subscription_period, trial_ends_at, subscription_renews_at, subscription_price, subscription_price_anual, ativo, created_at, auth_user_id, max_instancias, max_agentes, max_webhooks_entrada, max_webhooks_saida, max_profissionais, max_clientes, cancel_at_period_end, roteamento_habilitado, agendamentos_habilitado, pagina_agendamento_habilitada, api_assistente_habilitada, webhooks_habilitado, documentacao_habilitada, envios_habilitado, max_envios_mes, delivery_modulo_ativo, max_macros, max_acoes_macro, max_pedidos_mes, max_produtos_vitrine, vitrine_habilitada, imoveis_modulo_ativo, max_imoveis, indicado_por_empresa_id, subscription_id, nao_pagante')
       .order('created_at', { ascending: false })
     if (error) throw error
 
@@ -84,6 +84,12 @@ export default defineEventHandler(async (event) => {
           ? null
           : Number(emp.subscription_price_anual),
         ativo: emp.ativo,
+        // Faturamento do Dashboard (14/10/2026). Assinatura no Stripe = tem
+        // `sub_…`; sem ela, o cliente mensal paga por Pix (renovação manual).
+        // O id em si não sai daqui, só o booleano.
+        cobranca_stripe: typeof emp.subscription_id === 'string' && emp.subscription_id.startsWith('sub_'),
+        // Cortesia ou conta interna: fora do faturamento.
+        nao_pagante: emp.nao_pagante === true,
         created_at: emp.created_at,
         role: userRole,
         max_instancias: emp.max_instancias ?? 1,

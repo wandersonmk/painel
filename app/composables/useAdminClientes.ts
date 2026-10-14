@@ -28,6 +28,10 @@ export interface AdminCliente {
   /** Valor fechado do plano de 12 meses. */
   subscription_price_anual?: number | null
   ativo: boolean
+  /** Tem assinatura no Stripe (`sub_…`). Sem ela, o mensal paga por Pix. */
+  cobranca_stripe?: boolean
+  /** Cortesia ou conta interna: fora do faturamento do Dashboard. */
+  nao_pagante?: boolean
   created_at: string
   role?: 'user' | 'admin' | 'manager' | 'superAdmin'
   max_instancias?: number
@@ -88,6 +92,14 @@ export interface AdminCliente {
   // Limite de imóveis cadastrados. Padrão 100, 0 = sem limite.
   max_imoveis?: number
 }
+
+// Faturamento do Dashboard (14/10/2026): onde cada cliente entra, ou por que fica de fora.
+export type CategoriaFaturamento = 'mensal_stripe' | 'mensal_pix' | 'anual' | 'semestral'
+export type MotivoForaFaturamento =
+  | 'nao_pagante' | 'cancelado' | 'vencido' | 'teste' | 'desativado' | 'parceiro' | 'sem_valor'
+export type Faturamento =
+  | { categoria: CategoriaFaturamento; valor: number }
+  | { fora: MotivoForaFaturamento }
 
 export interface AdminStats {
   totalClientes: number
@@ -227,6 +239,7 @@ export const useAdminClientes = () => {
       subscription_price: number | null
       // Só vai no corpo para cliente com parceiro; ausente preserva o valor.
       preco_anual?: number | null
+      nao_pagante?: boolean
     },
   ) => {
     const resp = await $fetch<{ success: boolean }>('/api/admin/editar', { method: 'POST', body: { clienteId: id, ...dados }, headers: await getAuthHeaders() })
@@ -274,6 +287,37 @@ export const useAdminClientes = () => {
   // Cliente de parceiro paga o PARCEIRO (o parceiro compra crédito da Agzap),
   // exceto quando o vínculo está marcado como "cobrado pela Agzap".
   const pagaParceiro = (c: AdminCliente) => !!c.parceiro_nome && !c.parceiro_cobranca_agzap
+
+  // Onde o cliente entra no faturamento do Dashboard, ou por que fica de fora.
+  // Só conta quem paga a Agzap de verdade: assinatura ativa, em dia, conta
+  // ligada, sem marca de não pagante e sem ser cliente que paga o parceiro.
+  // Mensal se divide por Stripe (tem `sub_…`) e Pix (renovação manual). Anual
+  // conta o valor fechado do ano, sem dividir por 12.
+  const faturamento = (c: AdminCliente): Faturamento => {
+    if (c.nao_pagante || c.role === 'superAdmin') return { fora: 'nao_pagante' }
+    if (c.subscription_status === 'canceled') return { fora: 'cancelado' }
+    if (isVencido(c)) return { fora: 'vencido' }
+    if (c.subscription_status !== 'active') return { fora: 'teste' }
+    if (!c.ativo) return { fora: 'desativado' }
+    if (pagaParceiro(c)) return { fora: 'parceiro' }
+    const positivo = (v: unknown) => (v != null && Number(v) > 0 ? Number(v) : 0)
+    if (c.subscription_period === '12months') {
+      const valor = positivo(c.subscription_price_anual)
+      return valor ? { categoria: 'anual', valor } : { fora: 'sem_valor' }
+    }
+    if (c.subscription_period === '6months') {
+      const valor = positivo(c.subscription_price)
+      return valor ? { categoria: 'semestral', valor } : { fora: 'sem_valor' }
+    }
+    if (c.subscription_period === '1month') {
+      const valor = positivo(c.subscription_price)
+      if (!valor) return { fora: 'sem_valor' }
+      return { categoria: c.cobranca_stripe ? 'mensal_stripe' : 'mensal_pix', valor }
+    }
+    // Períodos de teste (trial, trial1d…) com status ativo não são pagamento.
+    return { fora: 'teste' }
+  }
+
   const formatBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
   return {
@@ -296,6 +340,7 @@ export const useAdminClientes = () => {
     valorAssinatura,
     valorMensalEquivalente,
     pagaParceiro,
+    faturamento,
     formatBRL,
   }
 }

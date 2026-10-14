@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import type { MotivoForaFaturamento } from '~/composables/useAdminClientes'
 
 definePageMeta({
   middleware: ['auth', 'super-admin'],
@@ -8,7 +9,7 @@ definePageMeta({
 
 const {
   clientes, stats, loading: clientesLoading, error: clientesError,
-  loadClientes, diasParaVencimento, isVencido, valorMensalEquivalente, pagaParceiro,
+  loadClientes, diasParaVencimento, faturamento,
 } = useAdminClientes()
 
 interface StripePayment {
@@ -210,27 +211,87 @@ const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um :
 // Mesmo estilo dos cartões da página Clientes (AdminResumoCard). Cada número
 // é o mesmo que o Dashboard já mostrava, só reorganizado.
 
-// Mensalidades cadastradas (veio da página Clientes, pedido do dono): o valor
-// gravado em cada cliente (plano de 12 meses entra como anual ÷ 12), NÃO o que
-// entrou no caixa. Separado por quem recebe: cliente de parceiro paga o
-// PARCEIRO (que compra crédito da Agzap), salvo vínculo marcado como "cobrado
-// pela Agzap", que entra em "Pagam a Agzap".
-const mensalidades = computed(() => {
-  const pagantes = clientes.value.filter(c =>
-    !isVencido(c) && c.subscription_status === 'active' && c.ativo
-    && c.role !== 'superAdmin' && valorMensalEquivalente(c) > 0)
-  const pagamParceiro = pagantes.filter(c => pagaParceiro(c))
-  const pagamAgzap = pagantes.filter(c => !pagaParceiro(c))
-  const soma = (l: typeof pagantes) => l.reduce((s, c) => s + valorMensalEquivalente(c), 0)
+// Faturamento real (14/10/2026, pedido do dono). Antes era um card só,
+// "Mensalidades cadastradas", que somava tudo por mês (anual ÷ 12) e incluía
+// contas internas e cortesias: dava R$ 7.625/mês. Agora a regra de quem conta
+// fica em `faturamento()` (useAdminClientes) e o Dashboard separa Mensal no
+// Stripe, Mensal no Pix e Anuais, sem misturar. É o valor CADASTRADO de quem
+// está pagando; o que de fato caiu no Stripe continua no card "Receita do mês".
+const fat = computed(() => {
+  const novoMensal = () => ({ qtd: 0, total: 0, vence7Qtd: 0, vence7Valor: 0 })
+  const r = {
+    stripe: novoMensal(),
+    pix: novoMensal(),
+    anual: { qtd: 0, total: 0, renova30Qtd: 0, renova30Valor: 0 },
+    semestral: { qtd: 0, total: 0 },
+    fora: { nao_pagante: 0, cancelado: 0, vencido: 0, teste: 0, desativado: 0, parceiro: 0, sem_valor: 0 } as Record<MotivoForaFaturamento, number>,
+  }
+  for (const c of clientes.value) {
+    const f = faturamento(c)
+    if ('fora' in f) { r.fora[f.fora]++; continue }
+    const d = diasParaVencimento(c)
+    if (f.categoria === 'mensal_stripe' || f.categoria === 'mensal_pix') {
+      const alvo = f.categoria === 'mensal_stripe' ? r.stripe : r.pix
+      alvo.qtd++
+      alvo.total += f.valor
+      if (d >= 0 && d <= 7) { alvo.vence7Qtd++; alvo.vence7Valor += f.valor }
+    } else if (f.categoria === 'anual') {
+      r.anual.qtd++
+      r.anual.total += f.valor
+      if (d >= 0 && d <= 30) { r.anual.renova30Qtd++; r.anual.renova30Valor += f.valor }
+    } else {
+      r.semestral.qtd++
+      r.semestral.total += f.valor
+    }
+  }
+  return r
+})
+
+const brlMascarado = (v: number) => maskValue(formatBRL(v))
+
+// Faixa acima dos cards: o que entra todo mês e o que ficou de fora (e por quê).
+const resumoFaturamento = computed(() => {
+  const { stripe, pix, fora } = fat.value
+  const motivos: [number, string, string][] = [
+    [fora.nao_pagante, 'não pagante', 'não pagantes'],
+    [fora.cancelado, 'cancelado', 'cancelados'],
+    [fora.vencido, 'vencido', 'vencidos'],
+    [fora.teste, 'em teste', 'em teste'],
+    [fora.desativado, 'desativado', 'desativados'],
+    [fora.parceiro, 'paga o parceiro', 'pagam o parceiro'],
+    [fora.sem_valor, 'sem valor cadastrado', 'sem valor cadastrado'],
+  ]
   return {
-    pagantes: pagantes.length,
-    total: soma(pagantes),
-    agzap: soma(pagamAgzap),
-    agzapQtd: pagamAgzap.length,
-    deParceiroCobradosAgzap: pagamAgzap.filter(c => !!c.parceiro_nome).length,
-    parceiro: soma(pagamParceiro),
-    parceiroQtd: pagamParceiro.length,
-    anuais: pagantes.filter(c => c.subscription_period === '12months').length,
+    mensal: brlMascarado(stripe.total + pix.total),
+    mensalDetalhe: `${plural(stripe.qtd + pix.qtd, 'cliente', 'clientes')} · anuais à parte`,
+    fora: motivos.filter(([n]) => n > 0).map(([n, um, varios]) => plural(n, um, varios)).join(' · '),
+  }
+})
+
+function cardMensal(m: { qtd: number; total: number; vence7Qtd: number; vence7Valor: number }, detalhe: string) {
+  return {
+    principalLabel: `Soma por mês · ${plural(m.qtd, 'cliente', 'clientes')}`,
+    principal: brlMascarado(m.total),
+    principalDetalhe: detalhe,
+    tiles: [
+      { label: 'Vencem em 7 dias', icon: 'fa-calendar-day', iconCls: 'text-amber-500', valor: brlMascarado(m.vence7Valor), detalhe: plural(m.vence7Qtd, 'cliente', 'clientes') },
+      { label: 'Ticket médio', icon: 'fa-receipt', iconCls: 'text-sky-500', valor: brlMascarado(m.qtd ? m.total / m.qtd : 0), detalhe: 'por cliente' },
+    ],
+  }
+}
+const cardMensalStripe = computed(() => cardMensal(fat.value.stripe, 'Assinatura recorrente no cartão'))
+const cardMensalPix = computed(() => cardMensal(fat.value.pix, 'Renovação manual no painel'))
+
+const cardAnuais = computed(() => {
+  const { anual: a, semestral: s } = fat.value
+  return {
+    principalLabel: `Valor do ano · ${plural(a.qtd, 'contrato', 'contratos')}`,
+    principal: brlMascarado(a.total),
+    principalDetalhe: a.qtd ? `equivale a ${brlMascarado(a.total / 12)} por mês` : 'Nenhum plano anual ativo',
+    tiles: [
+      { label: 'Renovam em 30 dias', icon: 'fa-rotate', iconCls: 'text-amber-500', valor: brlMascarado(a.renova30Valor), detalhe: plural(a.renova30Qtd, 'contrato', 'contratos') },
+      { label: 'Semestrais', icon: 'fa-calendar-week', iconCls: 'text-purple-500', valor: brlMascarado(s.total), detalhe: s.qtd ? `${plural(s.qtd, 'cliente', 'clientes')} · valor por mês` : 'nenhum ativo' },
+    ],
   }
 })
 
@@ -254,34 +315,6 @@ const cardAssinaturas = computed(() => {
     tiles: [
       { label: 'Inadimplentes', icon: 'fa-clock-rotate-left', iconCls: 'text-rose-500', valor: s ? String(s.pastDueSubscriptions) : '', detalhe: 'em atraso' },
       { label: 'Em teste', icon: 'fa-flask', iconCls: 'text-amber-500', valor: s ? String(s.trialingSubscriptions) : '', detalhe: 'trial no Stripe' },
-    ],
-  }
-})
-
-const cardMensalidades = computed(() => {
-  const m = mensalidades.value
-  return {
-    principalLabel: `Soma por mês · ${plural(m.pagantes, 'assinatura ativa', 'assinaturas ativas')}`,
-    principal: maskValue(formatBRL(m.total)),
-    principalDetalhe: m.anuais
-      ? `${plural(m.anuais, 'plano anual entra', 'planos anuais entram')} como valor ÷ 12`
-      : 'Valor cadastrado em cada cliente',
-    tiles: [
-      {
-        label: 'Pagam a Agzap',
-        icon: 'fa-building',
-        iconCls: 'text-emerald-500',
-        valor: maskValue(formatBRL(m.agzap)),
-        detalhe: plural(m.agzapQtd, 'cliente', 'clientes')
-          + (m.deParceiroCobradosAgzap ? ` · ${m.deParceiroCobradosAgzap} de parceiro` : ''),
-      },
-      {
-        label: 'Pagam o parceiro',
-        icon: 'fa-handshake',
-        iconCls: 'text-purple-500',
-        valor: maskValue(formatBRL(m.parceiro)),
-        detalhe: plural(m.parceiroQtd, 'cliente', 'clientes'),
-      },
     ],
   }
 })
@@ -534,13 +567,73 @@ const revenueChartOptions = computed(() => ({
         </div>
       </div>
 
-      <!-- ─────────────── FINANCEIRO ─────────────── -->
+      <!-- ─────────────── FATURAMENTO (14/10/2026) ─────────────── -->
+      <section aria-labelledby="sec-faturamento" class="space-y-2">
+        <h2 id="sec-faturamento" class="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          <i class="fa-solid fa-sack-dollar text-emerald-500" aria-hidden="true" />
+          Faturamento
+        </h2>
+        <!-- O que entra todo mês e o que ficou de fora (e por quê) -->
+        <div :class="painel" class="px-4 py-3 flex flex-col lg:flex-row lg:items-center gap-1.5 lg:gap-6">
+          <div class="flex items-baseline gap-x-2 gap-y-0.5 flex-wrap">
+            <span class="text-xs text-slate-500 dark:text-slate-400">Entra todo mês (Stripe + Pix)</span>
+            <span class="font-display text-xl font-semibold tabular-nums text-slate-900 dark:text-white">{{ clientesPronto ? resumoFaturamento.mensal : '—' }}</span>
+            <span class="text-[11px] text-slate-500 dark:text-slate-400">{{ clientesPronto ? resumoFaturamento.mensalDetalhe : avisoClientes }}</span>
+          </div>
+          <p v-if="clientesPronto && resumoFaturamento.fora" class="lg:ml-auto text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+            <i class="fa-solid fa-circle-minus mr-1 text-slate-400 dark:text-slate-500" aria-hidden="true" />Fora do faturamento: {{ resumoFaturamento.fora }}
+          </p>
+        </div>
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <AdminResumoCard
+            titulo="Mensal · Stripe"
+            icon="fa-credit-card"
+            tom="ceu"
+            :principal-label="cardMensalStripe.principalLabel"
+            :principal="cardMensalStripe.principal"
+            :principal-detalhe="cardMensalStripe.principalDetalhe"
+            :tiles="cardMensalStripe.tiles"
+            :pronto="clientesPronto"
+            :aviso="avisoClientes"
+            nota="Clientes mensais com assinatura no Stripe, em dia. Valor cadastrado em cada cliente."
+          />
+          <AdminResumoCard
+            titulo="Mensal · Pix"
+            icon="fa-qrcode"
+            tom="menta"
+            :principal-label="cardMensalPix.principalLabel"
+            :principal="cardMensalPix.principal"
+            :principal-detalhe="cardMensalPix.principalDetalhe"
+            :tiles="cardMensalPix.tiles"
+            :pronto="clientesPronto"
+            :aviso="avisoClientes"
+            nota="Clientes mensais sem assinatura no Stripe: pagam por Pix e são renovados no painel."
+          />
+          <AdminResumoCard
+            titulo="Anuais"
+            icon="fa-calendar-check"
+            tom="ambar"
+            :principal-label="cardAnuais.principalLabel"
+            :principal="cardAnuais.principal"
+            :principal-detalhe="cardAnuais.principalDetalhe"
+            :tiles="cardAnuais.tiles"
+            :pronto="clientesPronto"
+            :aviso="avisoClientes"
+            nota="Valor fechado do plano de 12 meses, pago uma vez por ano. Não entra na soma do mensal."
+          />
+        </div>
+        <p class="text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+          <i class="fa-solid fa-circle-info mr-1 text-slate-400 dark:text-slate-500" aria-hidden="true" />Só conta quem paga a Agzap e está em dia. Não pagantes (cortesia ou conta interna, marcados em “Editar cliente”), vencidos, cancelados, testes e clientes que pagam o parceiro ficam de fora.
+        </p>
+      </section>
+
+      <!-- ─────────────── STRIPE (o que caiu no caixa) ─────────────── -->
       <section aria-labelledby="sec-financeiro" class="space-y-2">
         <h2 id="sec-financeiro" class="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
           <i class="fa-brands fa-stripe-s text-[#635BFF]" aria-hidden="true" />
-          Financeiro
+          Stripe
         </h2>
-        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <AdminResumoCard
             titulo="Receita do mês"
             icon="fa-arrow-trend-up"
@@ -563,18 +656,6 @@ const revenueChartOptions = computed(() => ({
             :tiles="cardAssinaturas.tiles"
             :pronto="stripePronto"
             :aviso="avisoStripe"
-          />
-          <AdminResumoCard
-            titulo="Mensalidades cadastradas"
-            icon="fa-wallet"
-            tom="menta"
-            :principal-label="cardMensalidades.principalLabel"
-            :principal="cardMensalidades.principal"
-            :principal-detalhe="cardMensalidades.principalDetalhe"
-            :tiles="cardMensalidades.tiles"
-            :pronto="clientesPronto"
-            :aviso="avisoClientes"
-            nota="Valor cadastrado, não o que entrou no caixa. Cliente de parceiro paga o parceiro; a Agzap recebe do parceiro pela compra de créditos. Parceiro marcado como cobrança Agzap entra em “Pagam a Agzap”."
           />
         </div>
         <div v-if="stripeError" role="alert" class="rounded-xl bg-red-50 dark:bg-red-500/10 px-4 py-3 text-red-700 dark:text-red-300 text-sm flex items-center gap-2">

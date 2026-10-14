@@ -11,10 +11,12 @@ const emit = defineEmits<{
     whatsapp: string | null
     subscription_price: number | null
     preco_anual: number | null
+    nao_pagante: boolean
   }]
 }>()
 
 const nome = ref('')
+const naoPagante = ref(false)
 const email = ref('')
 const whatsapp = ref('')
 const priceCents = ref(0)
@@ -102,6 +104,7 @@ watch(() => props.show, async (open) => {
     priceCents.value = Math.round(price * 100)
     const priceAnual = Number(props.cliente.subscription_price_anual) || 2897
     priceAnualCents.value = Math.round(priceAnual * 100)
+    naoPagante.value = !!props.cliente.nao_pagante
     toast = await useToastSafe()
     tokenEditing.value = false
     novoToken.value = ''
@@ -116,6 +119,7 @@ function handleSubmit() {
     whatsapp: whatsapp.value.trim() || null,
     subscription_price: priceCents.value > 0 ? priceCents.value / 100 : null,
     preco_anual: priceAnualCents.value > 0 ? priceAnualCents.value / 100 : null,
+    nao_pagante: naoPagante.value,
   })
 }
 </script>
@@ -180,6 +184,15 @@ function handleSubmit() {
           </p>
         </div>
       </div>
+
+      <!-- Não pagante: cortesia ou conta interna fica fora do faturamento do Dashboard -->
+      <label class="flex items-start gap-2.5 rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
+        <input v-model="naoPagante" type="checkbox" class="mt-0.5 w-4 h-4 rounded border-slate-300 dark:border-slate-700 text-purple-600 focus:ring-purple-500 shrink-0" />
+        <span class="text-sm">
+          <span class="font-semibold text-slate-700 dark:text-slate-300">Não pagante</span>
+          <span class="block text-xs text-slate-500 dark:text-slate-400">Cortesia ou conta interna. Fica fora do faturamento do Dashboard; o acesso ao app não muda.</span>
+        </span>
+      </label>
 
       <!-- Bloco: Token OpenAI da empresa -->
       <div class="border-t border-slate-200 dark:border-slate-800 pt-4">

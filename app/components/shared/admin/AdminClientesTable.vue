@@ -172,6 +172,10 @@ function categorias(c: AdminCliente): Selo[] {
   } else {
     selos.push({ key: 'agzap', text: 'Agzap', title: 'Cliente direto da Agzap', cls: SELO_CLS.agzap, icon: 'fa-building' })
   }
+  // Cortesia ou conta interna (marcado em "Editar cliente"): fora do faturamento.
+  if (c.nao_pagante) {
+    selos.push({ key: 'nao-pagante', text: 'Não pagante', title: 'Cortesia ou conta interna: fica fora do faturamento do Dashboard. Altere em "Editar cliente".', cls: SELO_CLS.apagado, icon: 'fa-gift' })
+  }
   // Quem TROUXE o cliente (1ª conexão, afiliado_empresas). Diferente de
   // "É afiliado", que fala do papel do dono desta conta.
   if (c.afiliado_id) {

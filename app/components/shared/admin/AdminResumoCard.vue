@@ -30,6 +30,8 @@ interface Props {
   // (a partir de sm) fica ao lado. 'nunca' = sempre ao lado a partir de sm.
   empilharEm?: 'lg' | 'xl' | 'nunca'
   tituloTag?: 'h2' | 'h3'
+  // Botão discreto no canto do título (ex.: "Ver clientes"). Ausente = sem botão.
+  acao?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -39,7 +41,9 @@ const props = withDefaults(defineProps<Props>(), {
   aviso: 'Carregando…',
   empilharEm: 'xl',
   tituloTag: 'h3',
+  acao: '',
 })
+const emit = defineEmits<{ acao: [] }>()
 
 const TONS: Record<Tom, { card: string; icone: string }> = {
   lavanda: { card: 'bg-purple-50 dark:bg-purple-500/10', icone: 'bg-white text-purple-600 dark:bg-purple-500/15 dark:text-purple-300' },
@@ -63,6 +67,15 @@ const LAYOUT: Record<NonNullable<Props['empilharEm']>, { grade: string; menores:
         <i :class="['fa-solid', props.icon, 'text-sm']" aria-hidden="true" />
       </span>
       <component :is="props.tituloTag" class="text-[15px] font-medium text-slate-800 dark:text-slate-100">{{ props.titulo }}</component>
+      <button
+        v-if="props.acao"
+        type="button"
+        class="ml-auto inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-slate-600 dark:text-slate-300 bg-white/70 dark:bg-slate-900/50 hover:bg-white dark:hover:bg-slate-900 shadow-sm transition-colors"
+        @click="emit('acao')"
+      >
+        {{ props.acao }}
+        <i class="fa-solid fa-chevron-right text-[10px]" aria-hidden="true" />
+      </button>
     </div>
 
     <div class="mt-3.5 grid grid-cols-1 gap-2" :class="LAYOUT[props.empilharEm].grade">

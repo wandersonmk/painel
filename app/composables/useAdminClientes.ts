@@ -100,6 +100,19 @@ export type MotivoForaFaturamento =
 export type Faturamento =
   | { categoria: CategoriaFaturamento; valor: number }
   | { fora: MotivoForaFaturamento }
+// Linha da lista "Quem está no faturamento" (modal do Dashboard).
+export interface ItemFaturamento {
+  id: string
+  nome: string
+  responsavel: string | null
+  /** Valor que entra no card: mensalidade, valor do ano (anual) ou 0 (fora). */
+  valor: number
+  vencimento: string | null
+  dias: number
+  motivo?: MotivoForaFaturamento
+}
+export type AbaFaturamento = 'mensal_stripe' | 'mensal_pix' | 'anual' | 'fora'
+export type ListasFaturamento = Record<CategoriaFaturamento | 'fora', ItemFaturamento[]>
 
 export interface AdminStats {
   totalClientes: number

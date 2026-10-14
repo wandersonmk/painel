@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import type { MotivoForaFaturamento } from '~/composables/useAdminClientes'
+import type {
+  AdminCliente, AbaFaturamento, ItemFaturamento, ListasFaturamento, MotivoForaFaturamento,
+} from '~/composables/useAdminClientes'
 
 definePageMeta({
   middleware: ['auth', 'super-admin'],
@@ -9,7 +11,7 @@ definePageMeta({
 
 const {
   clientes, stats, loading: clientesLoading, error: clientesError,
-  loadClientes, diasParaVencimento, faturamento,
+  loadClientes, diasParaVencimento, faturamento, getDataVencimento,
 } = useAdminClientes()
 
 interface StripePayment {
@@ -225,10 +227,27 @@ const fat = computed(() => {
     anual: { qtd: 0, total: 0, renova30Qtd: 0, renova30Valor: 0 },
     semestral: { qtd: 0, total: 0 },
     fora: { nao_pagante: 0, cancelado: 0, vencido: 0, teste: 0, desativado: 0, parceiro: 0, sem_valor: 0 } as Record<MotivoForaFaturamento, number>,
+    // Quem está em cada card (modal "Ver clientes"), montado na mesma passada
+    // para o total da lista bater sempre com o card.
+    listas: { mensal_stripe: [], mensal_pix: [], anual: [], semestral: [], fora: [] } as ListasFaturamento,
   }
+  const item = (c: AdminCliente, valor: number, motivo?: MotivoForaFaturamento): ItemFaturamento => ({
+    id: c.id,
+    nome: c.nome,
+    responsavel: c.nome_cliente ?? null,
+    valor,
+    vencimento: getDataVencimento(c),
+    dias: diasParaVencimento(c),
+    motivo,
+  })
   for (const c of clientes.value) {
     const f = faturamento(c)
-    if ('fora' in f) { r.fora[f.fora]++; continue }
+    if ('fora' in f) {
+      r.fora[f.fora]++
+      r.listas.fora.push(item(c, 0, f.fora))
+      continue
+    }
+    r.listas[f.categoria].push(item(c, f.valor))
     const d = diasParaVencimento(c)
     if (f.categoria === 'mensal_stripe' || f.categoria === 'mensal_pix') {
       const alvo = f.categoria === 'mensal_stripe' ? r.stripe : r.pix
@@ -248,6 +267,12 @@ const fat = computed(() => {
 })
 
 const brlMascarado = (v: number) => maskValue(formatBRL(v))
+
+// Modal "Quem está no faturamento": abre na aba do card clicado.
+const modalFaturamento = ref<{ aberto: boolean; aba: AbaFaturamento }>({ aberto: false, aba: 'mensal_stripe' })
+function abrirFaturamento(aba: AbaFaturamento) {
+  modalFaturamento.value = { aberto: true, aba }
+}
 
 // Faixa acima dos cards: o que entra todo mês e o que ficou de fora (e por quê).
 const resumoFaturamento = computed(() => {
@@ -580,15 +605,23 @@ const revenueChartOptions = computed(() => ({
             <span class="font-display text-xl font-semibold tabular-nums text-slate-900 dark:text-white">{{ clientesPronto ? resumoFaturamento.mensal : '—' }}</span>
             <span class="text-[11px] text-slate-500 dark:text-slate-400">{{ clientesPronto ? resumoFaturamento.mensalDetalhe : avisoClientes }}</span>
           </div>
-          <p v-if="clientesPronto && resumoFaturamento.fora" class="lg:ml-auto text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+          <button
+            v-if="clientesPronto && resumoFaturamento.fora"
+            type="button"
+            class="lg:ml-auto text-left text-[11px] leading-snug text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 underline-offset-2 hover:underline"
+            title="Ver quem ficou fora do faturamento"
+            @click="abrirFaturamento('fora')"
+          >
             <i class="fa-solid fa-circle-minus mr-1 text-slate-400 dark:text-slate-500" aria-hidden="true" />Fora do faturamento: {{ resumoFaturamento.fora }}
-          </p>
+          </button>
         </div>
         <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
           <AdminResumoCard
             titulo="Mensal · Stripe"
             icon="fa-credit-card"
             tom="ceu"
+            acao="Ver clientes"
+            @acao="abrirFaturamento('mensal_stripe')"
             :principal-label="cardMensalStripe.principalLabel"
             :principal="cardMensalStripe.principal"
             :principal-detalhe="cardMensalStripe.principalDetalhe"
@@ -601,6 +634,8 @@ const revenueChartOptions = computed(() => ({
             titulo="Mensal · Pix"
             icon="fa-qrcode"
             tom="menta"
+            acao="Ver clientes"
+            @acao="abrirFaturamento('mensal_pix')"
             :principal-label="cardMensalPix.principalLabel"
             :principal="cardMensalPix.principal"
             :principal-detalhe="cardMensalPix.principalDetalhe"
@@ -613,6 +648,8 @@ const revenueChartOptions = computed(() => ({
             titulo="Anuais"
             icon="fa-calendar-check"
             tom="ambar"
+            acao="Ver clientes"
+            @acao="abrirFaturamento('anual')"
             :principal-label="cardAnuais.principalLabel"
             :principal="cardAnuais.principal"
             :principal-detalhe="cardAnuais.principalDetalhe"
@@ -1128,5 +1165,13 @@ const revenueChartOptions = computed(() => ({
       </section>
 
     </div>
+
+    <!-- Quem está em cada card do Faturamento -->
+    <AdminFaturamentoClientesModal
+      :show="modalFaturamento.aberto"
+      :aba="modalFaturamento.aba"
+      :listas="fat.listas"
+      @close="modalFaturamento.aberto = false"
+    />
   </div>
 </template>

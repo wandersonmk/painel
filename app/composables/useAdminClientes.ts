@@ -202,15 +202,18 @@ export const useAdminClientes = () => {
 
   // ancora: de onde o novo período conta — 'vencimento' (mantém o dia do
   // vencimento atual) ou 'hoje'. Ausente = regra antiga do servidor (hoje + dias).
+  // vencimentoEm ('AAAA-MM-DD', só planos): data escolhida do novo vencimento;
+  // quando vem, o servidor usa ela e ignora a âncora.
   const renovarAssinatura = async (
     id: string,
     plan: 'free' | 'basic' | 'pro' | 'enterprise',
     period: AdminCliente['subscription_period'],
     ancora?: 'vencimento' | 'hoje',
+    vencimentoEm?: string | null,
   ) => {
     const resp = await $fetch<{ success: boolean; error?: string; subscription_renews_at?: string | null; trial_ends_at?: string | null }>('/api/admin/renovar-assinatura', {
       method: 'POST',
-      body: { clienteId: id, plan, period, ...(ancora ? { ancora } : {}) },
+      body: { clienteId: id, plan, period, ...(ancora ? { ancora } : {}), ...(vencimentoEm ? { vencimento_em: vencimentoEm } : {}) },
       headers: await getAuthHeaders(),
     })
     if (!resp.success) throw new Error(resp.error || 'Erro ao renovar assinatura')

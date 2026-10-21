@@ -44,6 +44,49 @@ function somarPeriodoSP(base: Date, meses: number, dias: number): Date {
 }
 const diaSP = (d: Date) => Math.floor(paredeSP(d.getTime()) / 86_400_000)
 
+// ── Data escolhida para o novo vencimento (`vencimento_em`) ────────────────
+// INÍCIO-DATA-ESCOLHIDA: mesma conta do AdminRenovarAssinaturaModal.vue (lá o
+// bloco tem também dataComDia, que só a tela usa para sugerir a data).
+// Um "dia" aqui é o dia de calendário de SP como número (dias desde
+// 01/01/1970, o mesmo que diaSP devolve) e vira texto 'AAAA-MM-DD'.
+const MAX_MESES_DATA_ESCOLHIDA = 13
+const DIA_MS = 86_400_000
+// 'AAAA-MM-DD' → dia. null se o texto não é uma data que existe (ex.: 30/02).
+function diaDeIso(iso: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!m) return null
+  const ano = Number(m[1]), mes = Number(m[2]), dia = Number(m[3])
+  const x = new Date(Date.UTC(ano, mes - 1, dia))
+  if (x.getUTCFullYear() !== ano || x.getUTCMonth() !== mes - 1 || x.getUTCDate() !== dia) return null
+  return x.getTime() / DIA_MS
+}
+const isoDeDia = (n: number) => new Date(n * DIA_MS).toISOString().slice(0, 10)
+// Dia `dia` do mês (ano, mes0). Dia que não existe no mês vira o último.
+function diaNoMes(ano: number, mes0: number, dia: number): number {
+  const ultimo = new Date(Date.UTC(ano, mes0 + 1, 0)).getUTCDate()
+  return Date.UTC(ano, mes0, Math.min(dia, ultimo)) / DIA_MS
+}
+// Soma meses de calendário a um dia (31/01 + 1 mês = último dia de fevereiro).
+function somarMesesDia(n: number, meses: number): number {
+  const w = new Date(n * DIA_MS)
+  return diaNoMes(w.getUTCFullYear(), w.getUTCMonth() + meses, w.getUTCDate())
+}
+// Período da renovação com data escolhida. Começa no vencimento atual se ele
+// ainda não passou (o cliente já tem esses dias); senão, hoje. `referencia` é
+// o fim do período normal do plano; `limite`, a data mais longe aceita.
+function periodoDataEscolhida(hoje: number, vencimento: number | null, meses: number) {
+  const inicio = vencimento !== null && vencimento >= hoje ? vencimento : hoje
+  return {
+    inicio,
+    referencia: somarMesesDia(inicio, meses),
+    limite: somarMesesDia(inicio, MAX_MESES_DATA_ESCOLHIDA),
+  }
+}
+// FIM-DATA-ESCOLHIDA
+// Fim do dia (23:59:59) no relógio de SP, o mesmo horário do resto da base.
+const fimDoDiaSP = (n: number) => new Date(deParedeSP(n * DIA_MS + (23 * 3600 + 59 * 60 + 59) * 1000))
+const fmtDataBR = (n: number) => isoDeDia(n).split('-').reverse().join('/')
+
 // Vencimento atual, na mesma regra da coluna "Vencimento" (getDataVencimento).
 function vencimentoAtual(e: { subscription_status?: string | null; subscription_renews_at?: string | null; trial_ends_at?: string | null } | null): Date | null {
   if (!e) return null
@@ -57,7 +100,9 @@ function vencimentoAtual(e: { subscription_status?: string | null; subscription_
 
 export default defineEventHandler(async (event) => {
   const adminUserId = await requireSuperAdmin(event)
-  const body = await readBody<{ clienteId: string; plan: string; period: string; motivo?: string; ancora?: Ancora }>(event)
+  // vencimento_em ('AAAA-MM-DD', opcional, só para os planos): data escolhida
+  // do novo vencimento. Quando vem, ela manda e `ancora` é ignorada.
+  const body = await readBody<{ clienteId: string; plan: string; period: string; motivo?: string; ancora?: Ancora; vencimento_em?: string | null }>(event)
 
   if (!body?.clienteId || !body.plan || !body.period) {
     throw createError({ statusCode: 400, statusMessage: 'Dados incompletos' })
@@ -71,6 +116,13 @@ export default defineEventHandler(async (event) => {
 
   const ancora: Ancora | null = body.ancora === 'vencimento' || body.ancora === 'hoje' ? body.ancora : null
   const ehTeste = body.period.startsWith('trial')
+  if (body.vencimento_em != null && typeof body.vencimento_em !== 'string') {
+    throw createError({ statusCode: 400, statusMessage: 'Data do novo vencimento inválida.' })
+  }
+  const vencimentoEm = body.vencimento_em?.trim() || null
+  if (vencimentoEm && ehTeste) {
+    throw createError({ statusCode: 400, statusMessage: 'A data do vencimento só pode ser escolhida nos planos, não no teste grátis.' })
+  }
 
   const supabase = getServiceClient()
 
@@ -78,13 +130,35 @@ export default defineEventHandler(async (event) => {
   // da renovação administrativa.
   const { data: antes, error: erroAntes } = await supabase
     .from('empresas')
-    .select('nome, subscription_status, subscription_renews_at, trial_ends_at')
+    .select('nome, subscription_status, subscription_renews_at, trial_ends_at, subscription_id')
     .eq('id', body.clienteId)
     .maybeSingle()
 
   const agora = new Date()
   let renewDate: Date
-  if (!ancora) {
+  if (vencimentoEm) {
+    if (erroAntes) throw createError({ statusCode: 500, statusMessage: 'Não consegui ler o vencimento atual' })
+    if (!antes) throw createError({ statusCode: 404, statusMessage: 'Cliente não encontrado' })
+    // Assinatura viva no Stripe: o webhook invoice.paid regrava o vencimento
+    // com a data da cobrança. Uma data escolhida aqui não muda a cobrança e,
+    // se cair antes dela, bloqueia o cliente antes de o Stripe cobrar.
+    const subId = (antes as any).subscription_id
+    if (typeof subId === 'string' && subId.startsWith('sub_')) {
+      throw createError({ statusCode: 400, statusMessage: 'Cliente cobrado pelo Stripe: o vencimento segue a data da cobrança no Stripe.' })
+    }
+    const escolhido = diaDeIso(vencimentoEm)
+    if (escolhido === null) throw createError({ statusCode: 400, statusMessage: 'Data do novo vencimento inválida.' })
+    const hoje = diaSP(agora)
+    const atual = vencimentoAtual(antes as any)
+    const { limite } = periodoDataEscolhida(hoje, atual ? diaSP(atual) : null, PERIOD_MESES[body.period] ?? 1)
+    if (escolhido <= hoje) {
+      throw createError({ statusCode: 400, statusMessage: 'O novo vencimento precisa ser depois de hoje.' })
+    }
+    if (escolhido > limite) {
+      throw createError({ statusCode: 400, statusMessage: `O novo vencimento passa de ${MAX_MESES_DATA_ESCOLHIDA} meses: escolha até ${fmtDataBR(limite)}.` })
+    }
+    renewDate = fimDoDiaSP(escolhido)
+  } else if (!ancora) {
     renewDate = new Date()
     renewDate.setDate(renewDate.getDate() + days)
   } else {
@@ -132,6 +206,7 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
 
   if (vinculo) {
+    const motivo = body.motivo?.trim() || ''
     await supabase.from('parceiro_renovacoes').insert({
       parceiro_id: (vinculo as any).parceiro_id,
       empresa_id: body.clienteId,
@@ -143,7 +218,11 @@ export default defineEventHandler(async (event) => {
       vencimento_novo: renewDate.toISOString(),
       status: 'concluida',
       idempotency_key: `admrenov:${randomUUID()}`,
-      motivo: body.motivo?.trim().slice(0, 300) || null,
+      // A data escolhida no painel fica escrita no motivo (vencimento_novo já
+      // guarda o instante gravado).
+      motivo: (vencimentoEm
+        ? `Vencimento escolhido no painel: ${vencimentoEm.split('-').reverse().join('/')}${motivo ? `. ${motivo}` : ''}`
+        : motivo).slice(0, 300) || null,
       executado_por: adminUserId,
     }).then(({ error: e }) => {
       if (e) console.error('[api:admin/renovar-assinatura] registro de renovação', e)

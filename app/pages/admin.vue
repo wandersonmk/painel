@@ -421,10 +421,10 @@ function handleRenovar(id: string) {
   const c = clientes.value.find(x => x.id === id)
   if (c) { selectedCliente.value = { id: c.id, nome: c.nome }; showRenovarModal.value = true }
 }
-async function confirmRenovar(plan: string, period: string, abater = 0, ancora?: 'vencimento' | 'hoje') {
+async function confirmRenovar(plan: string, period: string, abater = 0, ancora?: 'vencimento' | 'hoje', vencimentoEm?: string | null) {
   if (!selectedCliente.value) return
   try {
-    await renovarAssinatura(selectedCliente.value.id, plan as any, period as any, ancora)
+    await renovarAssinatura(selectedCliente.value.id, plan as any, period as any, ancora, vencimentoEm)
     if (abater > 0) {
       // Desconto do saldo de indicação nesta renovação (cliente de Pix)
       try {
@@ -439,7 +439,10 @@ async function confirmRenovar(plan: string, period: string, abater = 0, ancora?:
     } else {
       toast?.success('Assinatura renovada')
     }
-  } catch { toast?.error('Erro ao renovar assinatura') }
+  } catch (e: any) {
+    // Recusa do servidor (ex.: data fora do limite) vem com o motivo.
+    toast?.error(e?.data?.statusMessage || 'Erro ao renovar assinatura')
+  }
   showRenovarModal.value = false
   selectedCliente.value = null
 }

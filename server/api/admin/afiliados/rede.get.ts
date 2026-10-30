@@ -67,12 +67,28 @@ interface AfiliadoLinha {
 }
 
 interface ComissaoLinha {
+  id: string
   empresa_pagante_id: string
   conexao: number
+  tipo: string | null
+  percentual_aplicado: number | string | null
+  valor_base: number | string | null
   valor: number | string
+  meses: number | null
+  origem_pagamento: string | null
   status: string
   liberar_em: string
+  liberado_em: string | null
   created_at: string
+}
+
+// stripe_invoice = cartão pelo Stripe (retém 15 dias); pix_admin = renovação
+// marcada no painel, PIX ou dinheiro (retém 7 dias).
+type FormaPagamento = 'cartao' | 'pix' | 'outro'
+function formaDe(origem: string | null): FormaPagamento {
+  if (origem === 'stripe_invoice') return 'cartao'
+  if (origem === 'pix_admin') return 'pix'
+  return 'outro'
 }
 
 type Plano = 'mensal' | 'semestral' | 'anual' | null
@@ -118,14 +134,16 @@ export default defineEventHandler(async (event) => {
     const regras = await carregarRegras(supabase)
 
     // ───────── Rede: 1ª a 5ª conexão ─────────
-    const vinculos = await consultarPaginado<{ empresa_id: string }>((de, ate) =>
+    const vinculos = await consultarPaginado<{ empresa_id: string; created_at: string }>((de, ate) =>
       supabase
         .from('afiliado_empresas')
-        .select('empresa_id')
+        .select('empresa_id, created_at')
         .eq('afiliado_id', afiliado.id)
         .order('empresa_id')
         .range(de, ate),
     )
+    // Quando o cliente entrou pelo link (a 1ª conexão "foi indicada" aqui).
+    const vinculadoEm = new Map(vinculos.map(v => [v.empresa_id, v.created_at]))
 
     const visitados = new Set<string>()
     const nos: Array<{ e: EmpresaRede; nivel: number; pai_id: string | null }> = []
@@ -166,7 +184,7 @@ export default defineEventHandler(async (event) => {
     const comissoes = await consultarPaginado<ComissaoLinha>((de, ate) =>
       supabase
         .from('afiliado_comissoes')
-        .select('empresa_pagante_id, conexao, valor, status, liberar_em, created_at')
+        .select('id, empresa_pagante_id, conexao, tipo, percentual_aplicado, valor_base, valor, meses, origem_pagamento, status, liberar_em, liberado_em, created_at')
         .eq('afiliado_id', afiliado.id)
         .order('id')
         .range(de, ate),
@@ -177,6 +195,9 @@ export default defineEventHandler(async (event) => {
     const agora = Date.now()
     const porConexao = new Map<number, Saldos>()
     const porEmpresa = new Map<string, { gerado: number; ultima: string | null }>()
+    // Cada pagamento do cliente que gerou comissão: quando pagou, como pagou,
+    // quanto gerou e quando libera (pedido do dono, 30/10/2026).
+    const pagamentosDe = new Map<string, Array<Record<string, unknown>>>()
     const total = saldosVazios()
     for (const c of comissoes) {
       const nivel = Number(c.conexao)
@@ -198,6 +219,24 @@ export default defineEventHandler(async (event) => {
         if (!atual.ultima || c.created_at > atual.ultima) atual.ultima = c.created_at
         porEmpresa.set(c.empresa_pagante_id, atual)
       }
+
+      const lista = pagamentosDe.get(c.empresa_pagante_id) ?? []
+      lista.push({
+        id: c.id,
+        conexao: nivel,
+        primeiro: c.tipo === 'primeira',
+        percentual: Number(c.percentual_aplicado ?? 0),
+        valor_base: c.valor_base === null ? null : Number(c.valor_base),
+        valor: valor / 100,
+        meses: Number(c.meses ?? 1),
+        forma: formaDe(c.origem_pagamento),
+        situacao: chave,
+        estornado: c.status === 'estornado',
+        pago_em: c.created_at,
+        liberar_em: c.liberar_em,
+        liberado_em: c.liberado_em,
+      })
+      pagamentosDe.set(c.empresa_pagante_id, lista)
     }
 
     // ───────── Montagem ─────────
@@ -230,6 +269,11 @@ export default defineEventHandler(async (event) => {
         comissao_gerada: (gerado?.gerado ?? 0) / 100,
         ultima_comissao_em: gerado?.ultima ?? null,
         cadastrado_em: n.e.created_at,
+        // 1ª conexão: quando entrou pelo link; nas outras, o cadastro (indicado
+        // pelo cliente de cima).
+        indicado_em: (n.nivel === 1 ? vinculadoEm.get(n.e.id) : null) ?? n.e.created_at,
+        pagamentos: (pagamentosDe.get(n.e.id) ?? [])
+          .sort((x, y) => String(y.pago_em).localeCompare(String(x.pago_em))),
       }
     })
 

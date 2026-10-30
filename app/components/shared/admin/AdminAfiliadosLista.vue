@@ -77,6 +77,27 @@ interface ClienteRede {
   comissao_gerada: number
   ultima_comissao_em: string | null
   cadastrado_em: string
+  indicado_em: string
+  pagamentos: PagamentoRede[]
+}
+
+type FormaPagamento = 'cartao' | 'pix' | 'outro'
+
+/** Pagamento do cliente que gerou comissão para o afiliado. */
+interface PagamentoRede {
+  id: string
+  conexao: number
+  primeiro: boolean
+  percentual: number
+  valor_base: number | null
+  valor: number
+  meses: number
+  forma: FormaPagamento
+  situacao: keyof SaldosRede
+  estornado: boolean
+  pago_em: string
+  liberar_em: string
+  liberado_em: string | null
 }
 
 interface RedeAdmin {
@@ -197,13 +218,18 @@ function alternar(a: AfiliadoAdmin) {
     return
   }
   abertos.value.add(a.id)
+  // Só a 1ª conexão nasce aberta; da 2ª à 5ª, clica para ver (pedido do dono,
+  // 30/10/2026: com muitos clientes a rede inteira aberta ficava gigante).
+  niveisAbertos.value.add(`${a.id}:1`)
   if (!redes.value[a.id] && !redeCarregando.value[a.id]) carregarRede(a.id)
 }
 
-// Clientes de cada conexão (recolhidos) e "ver todos" quando a lista é longa.
+// Conexões recolhidas (menos a 1ª), busca e "ver todos" quando a lista é longa.
 const LIMITE_CLIENTES = 30
+const BUSCA_A_PARTIR_DE = 10
 const niveisAbertos = ref(new Set<string>())
 const niveisCompletos = ref(new Set<string>())
+const buscaNivel = ref<Record<string, string>>({})
 
 function alternarNivel(afiliadoId: string, conexao: number) {
   const chave = `${afiliadoId}:${conexao}`
@@ -211,11 +237,39 @@ function alternarNivel(afiliadoId: string, conexao: number) {
   else niveisAbertos.value.add(chave)
 }
 
-function clientesDoNivel(afiliadoId: string, conexao: number) {
-  const lista = (redes.value[afiliadoId]?.clientes ?? [])
+const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+
+function clientesFiltrados(afiliadoId: string, conexao: number) {
+  const q = semAcento((buscaNivel.value[`${afiliadoId}:${conexao}`] ?? '').trim())
+  return (redes.value[afiliadoId]?.clientes ?? [])
     .filter(c => c.nivel === conexao)
+    .filter(c => !q || semAcento(`${c.nome} ${c.responsavel ?? ''}`).includes(q))
     .sort((x, y) => Number(y.situacao === 'pagando') - Number(x.situacao === 'pagando') || x.nome.localeCompare(y.nome, 'pt-BR'))
+}
+
+function clientesDoNivel(afiliadoId: string, conexao: number) {
+  const lista = clientesFiltrados(afiliadoId, conexao)
   return niveisCompletos.value.has(`${afiliadoId}:${conexao}`) ? lista : lista.slice(0, LIMITE_CLIENTES)
+}
+
+// Pagamentos de um cliente (abre ao clicar na linha dele).
+const clientesAbertos = ref(new Set<string>())
+function alternarCliente(afiliadoId: string, empresaId: string) {
+  const chave = `${afiliadoId}:${empresaId}`
+  if (clientesAbertos.value.has(chave)) clientesAbertos.value.delete(chave)
+  else clientesAbertos.value.add(chave)
+}
+
+/** Comissão total da conexão (tudo menos cancelado). */
+function geradoNoNivel(n: NivelRede) {
+  return n.comissoes.retido + n.comissoes.disponivel + n.comissoes.em_saque + n.comissoes.sacado
+}
+
+/** Comissões retidas do afiliado, da que libera primeiro para a última. */
+function proximasLiberacoes(afiliadoId: string) {
+  return (redes.value[afiliadoId]?.clientes ?? [])
+    .flatMap(c => c.pagamentos.filter(p => p.situacao === 'retido').map(p => ({ ...p, cliente: c.nome })))
+    .sort((x, y) => x.liberar_em.localeCompare(y.liberar_em))
 }
 
 // ───────── Menu de ações ─────────
@@ -356,8 +410,86 @@ function fmtData(s: string | null) {
   if (!s) return '—'
   return new Date(s).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
 }
+function fmtDataHora(s: string | null) {
+  if (!s) return '—'
+  return new Date(s).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
 function fmtPct(v: number) {
   return `${Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`
+}
+
+// ───────── Pagamentos que geraram comissão ─────────
+const DIA = 86_400_000
+
+/** "libera hoje", "falta 1 dia", "faltam 6 dias". */
+function faltaLiberar(iso: string) {
+  const dias = Math.ceil((new Date(iso).getTime() - Date.now()) / DIA)
+  if (dias <= 0) return 'libera hoje'
+  return dias === 1 ? 'falta 1 dia' : `faltam ${dias} dias`
+}
+
+/** Dias de retenção do pagamento: 15 no cartão, 7 no PIX (vem da regra
+ *  aplicada quando a comissão nasceu, por isso conta pelas datas). */
+function diasRetencao(p: PagamentoRede) {
+  return Math.round((new Date(p.liberar_em).getTime() - new Date(p.pago_em).getTime()) / DIA)
+}
+
+const FORMAS: Record<FormaPagamento, { rotulo: string; curto: string; icone: string; cls: string }> = {
+  cartao: {
+    rotulo: 'Cartão (Stripe)',
+    curto: 'Cartão',
+    icone: 'fa-solid fa-credit-card',
+    cls: 'bg-indigo-100 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300',
+  },
+  pix: {
+    rotulo: 'PIX / renovação no painel',
+    curto: 'PIX',
+    icone: 'fa-brands fa-pix',
+    cls: 'bg-teal-100 dark:bg-teal-500/15 text-teal-700 dark:text-teal-300',
+  },
+  outro: {
+    rotulo: 'Outra forma',
+    curto: 'Outra',
+    icone: 'fa-solid fa-circle-question',
+    cls: 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300',
+  },
+}
+
+function situacaoPagamento(p: PagamentoRede): { rotulo: string; detalhe: string; cls: string } {
+  switch (p.situacao) {
+    case 'retido':
+      return {
+        rotulo: 'Retido',
+        detalhe: `libera ${fmtData(p.liberar_em)} · ${faltaLiberar(p.liberar_em)}`,
+        cls: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400',
+      }
+    case 'disponivel':
+      return {
+        rotulo: 'Disponível',
+        detalhe: `desde ${fmtData(p.liberado_em ?? p.liberar_em)}`,
+        cls: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
+      }
+    case 'em_saque':
+      return { rotulo: 'Em saque', detalhe: '', cls: 'bg-orange-100 dark:bg-orange-500/15 text-orange-700 dark:text-orange-400' }
+    case 'sacado':
+      return { rotulo: 'Sacado', detalhe: '', cls: 'bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-slate-200' }
+    default:
+      return {
+        rotulo: p.estornado ? 'Estornado' : 'Cancelado',
+        detalhe: '',
+        cls: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-400',
+      }
+  }
+}
+
+/** "30% de R$ 397,00 · 1º pagamento" (e "anual, 12 meses" quando é pacote). */
+function calculoPagamento(p: PagamentoRede) {
+  const partes = [
+    p.valor_base !== null ? `${fmtPct(p.percentual)} de ${fmtBRL(p.valor_base)}` : fmtPct(p.percentual),
+    p.primeiro ? '1º pagamento' : 'recorrente',
+  ]
+  if (p.meses > 1) partes.push(`${p.meses} meses de uma vez`)
+  return partes.join(' · ')
 }
 function rotuloConexoes(a: AfiliadoAdmin) {
   return a.conexoes_liberadas <= 1 ? 'Só a 1ª' : `1ª à ${a.conexoes_liberadas}ª`
@@ -817,8 +949,16 @@ const itemMenu = 'w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left t
                   </div>
 
                   <ul v-else class="divide-y divide-slate-100 dark:divide-slate-800">
-                    <li v-for="n in redes[a.id]!.niveis" :key="n.conexao" class="px-4 py-3">
-                      <div class="flex items-start gap-3">
+                    <li v-for="n in redes[a.id]!.niveis" :key="n.conexao">
+                      <!-- Cabeçalho da conexão: sempre visível; clicar abre ou fecha.
+                           Só a 1ª nasce aberta. -->
+                      <button
+                        type="button"
+                        class="w-full px-4 py-3 flex items-start gap-3 text-left hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors"
+                        :aria-expanded="niveisAbertos.has(`${a.id}:${n.conexao}`)"
+                        :aria-label="`${niveisAbertos.has(`${a.id}:${n.conexao}`) ? 'Recolher' : 'Abrir'} a ${n.conexao}ª conexão`"
+                        @click="alternarNivel(a.id, n.conexao)"
+                      >
                         <div
                           class="size-8 rounded-md flex items-center justify-center text-xs font-medium shrink-0 tabular-nums"
                           :class="n.liberada
@@ -845,8 +985,26 @@ const itemMenu = 'w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left t
                             <template v-if="n.conexao === 1"> · sempre liberada</template>
                             <template v-else-if="n.liberada"> · meta de {{ n.meta_clientes }} ativos batida</template>
                           </p>
+                        </div>
 
-                          <div v-if="!n.liberada" class="mt-2 max-w-sm">
+                        <span class="shrink-0 pt-1 text-[11px] text-right tabular-nums text-slate-500 dark:text-slate-400">
+                          <template v-if="n.clientes_total">
+                            <span :class="n.clientes_ativos ? 'text-emerald-600 dark:text-emerald-400' : ''">{{ n.clientes_ativos }}</span>
+                            de {{ plural(n.clientes_total, 'cliente', 'clientes') }}
+                            <span v-if="geradoNoNivel(n)" class="block text-emerald-600 dark:text-emerald-400">gerou {{ fmtBRL(geradoNoNivel(n)) }}</span>
+                          </template>
+                          <template v-else-if="!n.liberada">faltam {{ n.faltam }} ativos</template>
+                          <template v-else>Nenhum cliente</template>
+                        </span>
+                        <i
+                          class="fa-solid fa-chevron-down text-[10px] text-slate-400 shrink-0 mt-2 transition-transform duration-200"
+                          :class="{ 'rotate-180': niveisAbertos.has(`${a.id}:${n.conexao}`) }"
+                          aria-hidden="true"
+                        />
+                      </button>
+
+                      <div v-if="niveisAbertos.has(`${a.id}:${n.conexao}`)" class="px-4 pb-4 sm:pl-[3.75rem]">
+                          <div v-if="!n.liberada" class="mb-2 max-w-sm">
                             <div class="flex items-center justify-between gap-3 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
                               <span>{{ redes[a.id]!.proprios_ativos }} de {{ n.meta_clientes }} clientes ativos diretos</span>
                               <span class="shrink-0">faltam {{ n.faltam }}</span>
@@ -881,57 +1039,113 @@ const itemMenu = 'w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left t
                               <dd class="text-xs tabular-nums" :class="n.comissoes.sacado ? 'text-slate-900 dark:text-white' : 'text-slate-400'">{{ fmtBRL(n.comissoes.sacado) }}</dd>
                             </div>
                           </dl>
-                        </div>
 
-                        <button
-                          v-if="n.clientes_total"
-                          type="button"
-                          class="shrink-0 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-xs text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:border-purple-300 dark:hover:border-purple-500/40 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
-                          :aria-expanded="niveisAbertos.has(`${a.id}:${n.conexao}`)"
-                          :aria-label="`${niveisAbertos.has(`${a.id}:${n.conexao}`) ? 'Esconder' : 'Ver'} clientes da ${n.conexao}ª conexão`"
-                          @click="alternarNivel(a.id, n.conexao)"
-                        >
-                          <span class="hidden sm:inline">Clientes</span>
-                          <span class="tabular-nums">{{ n.clientes_total }}</span>
-                          <i class="fa-solid fa-chevron-down text-[10px] transition-transform duration-200" :class="{ 'rotate-180': niveisAbertos.has(`${a.id}:${n.conexao}`) }" aria-hidden="true" />
-                        </button>
-                        <span v-else class="shrink-0 text-[11px] text-slate-400 dark:text-slate-500 pt-1.5">Nenhum cliente</span>
-                      </div>
-
-                      <!-- Clientes desta conexão -->
-                      <div v-if="n.clientes_total && niveisAbertos.has(`${a.id}:${n.conexao}`)" class="mt-3 sm:ml-11">
-                        <ul class="rounded-md border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 bg-slate-50/50 dark:bg-white/[0.02]">
-                          <li
-                            v-for="c in clientesDoNivel(a.id, n.conexao)"
-                            :key="c.empresa_id"
-                            class="px-3 py-2 flex flex-wrap lg:flex-nowrap items-center gap-x-3 gap-y-1"
-                          >
-                            <div class="min-w-0 flex-1 basis-full lg:basis-auto">
-                              <p class="text-sm text-slate-900 dark:text-white truncate" :title="c.responsavel ? `${c.nome} · ${c.responsavel}` : c.nome">{{ c.nome }}</p>
-                              <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                                <template v-if="c.nivel === 1">pelo link de {{ a.nome }}</template>
-                                <template v-else>indicado por {{ c.indicado_por_nome || '—' }}</template>
-                                <template v-if="c.diretos"> · indicou {{ c.diretos }}</template>
-                              </p>
+                          <!-- Clientes desta conexão. Com muitos: busca, rolagem
+                               própria e 30 por vez. Clicar no cliente mostra os
+                               pagamentos dele. -->
+                          <div v-if="n.clientes_total" class="mt-3">
+                            <div v-if="n.clientes_total > BUSCA_A_PARTIR_DE" class="relative mb-2 max-w-xs">
+                              <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-slate-400" aria-hidden="true" />
+                              <input
+                                v-model="buscaNivel[`${a.id}:${n.conexao}`]"
+                                type="search"
+                                :placeholder="`Buscar entre os ${n.clientes_total} clientes`"
+                                class="w-full h-8 pl-7 pr-2.5 rounded-md text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/30"
+                              >
                             </div>
-                            <span class="inline-flex px-1.5 py-0.5 rounded-full text-[10px] whitespace-nowrap shrink-0" :class="SITUACOES[c.situacao]?.cls">{{ SITUACOES[c.situacao]?.rotulo ?? c.situacao }}</span>
-                            <span class="text-xs tabular-nums text-slate-700 dark:text-slate-300 whitespace-nowrap shrink-0 lg:w-36 lg:text-right" title="Valor do plano">
-                              {{ c.preco !== null ? fmtBRL(c.preco) : 'Sem valor' }}
-                              <span class="text-slate-400">· {{ c.plano ? PLANOS[c.plano] : 'sem plano' }}</span>
-                            </span>
-                            <span class="text-xs tabular-nums whitespace-nowrap shrink-0 lg:w-28 lg:text-right" :class="c.comissao_gerada ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'" title="Comissão que este cliente já gerou para o afiliado">
-                              gerou {{ fmtBRL(c.comissao_gerada) }}
-                            </span>
-                          </li>
-                        </ul>
-                        <button
-                          v-if="n.clientes_total > LIMITE_CLIENTES && !niveisCompletos.has(`${a.id}:${n.conexao}`)"
-                          type="button"
-                          class="mt-2 text-xs text-purple-600 dark:text-purple-400 hover:underline"
-                          @click="niveisCompletos.add(`${a.id}:${n.conexao}`)"
-                        >
-                          Mostrar todos os {{ n.clientes_total }} clientes
-                        </button>
+
+                            <p v-if="!clientesFiltrados(a.id, n.conexao).length" class="text-[11px] text-slate-400 dark:text-slate-500">Nenhum cliente com essa busca.</p>
+                            <ul v-else class="max-h-[32rem] overflow-y-auto rounded-md border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 bg-slate-50/50 dark:bg-white/[0.02]">
+                              <li v-for="c in clientesDoNivel(a.id, n.conexao)" :key="c.empresa_id">
+                                <button
+                                  type="button"
+                                  class="w-full px-3 py-2 flex flex-wrap lg:flex-nowrap items-center gap-x-3 gap-y-1 text-left hover:bg-white dark:hover:bg-white/[0.03] transition-colors"
+                                  :aria-expanded="clientesAbertos.has(`${a.id}:${c.empresa_id}`)"
+                                  :aria-label="`${clientesAbertos.has(`${a.id}:${c.empresa_id}`) ? 'Esconder' : 'Ver'} os pagamentos de ${c.nome}`"
+                                  @click="alternarCliente(a.id, c.empresa_id)"
+                                >
+                                  <div class="min-w-0 flex-1 basis-full lg:basis-auto">
+                                    <p class="text-sm text-slate-900 dark:text-white truncate" :title="c.responsavel ? `${c.nome} · ${c.responsavel}` : c.nome">{{ c.nome }}</p>
+                                    <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                                      <template v-if="c.nivel === 1">pelo link de {{ a.nome }}</template>
+                                      <template v-else>indicado por {{ c.indicado_por_nome || '—' }}</template>
+                                      em {{ fmtData(c.indicado_em) }}
+                                      <template v-if="c.diretos"> · indicou {{ c.diretos }}</template>
+                                    </p>
+                                  </div>
+                                  <span
+                                    v-if="c.pagamentos.length"
+                                    class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] whitespace-nowrap shrink-0"
+                                    :class="FORMAS[c.pagamentos[0]!.forma].cls"
+                                    :title="`Último pagamento: ${FORMAS[c.pagamentos[0]!.forma].rotulo}`"
+                                  >
+                                    <i class="text-[9px]" :class="FORMAS[c.pagamentos[0]!.forma].icone" aria-hidden="true" />
+                                    {{ FORMAS[c.pagamentos[0]!.forma].curto }}
+                                  </span>
+                                  <span class="inline-flex px-1.5 py-0.5 rounded-full text-[10px] whitespace-nowrap shrink-0" :class="SITUACOES[c.situacao]?.cls">{{ SITUACOES[c.situacao]?.rotulo ?? c.situacao }}</span>
+                                  <span class="text-xs tabular-nums text-slate-700 dark:text-slate-300 whitespace-nowrap shrink-0 lg:w-36 lg:text-right" title="Valor do plano">
+                                    {{ c.preco !== null ? fmtBRL(c.preco) : 'Sem valor' }}
+                                    <span class="text-slate-400">· {{ c.plano ? PLANOS[c.plano] : 'sem plano' }}</span>
+                                  </span>
+                                  <span class="text-xs tabular-nums whitespace-nowrap shrink-0 lg:w-28 lg:text-right" :class="c.comissao_gerada ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'" title="Comissão que este cliente já gerou para o afiliado">
+                                    gerou {{ fmtBRL(c.comissao_gerada) }}
+                                  </span>
+                                  <i
+                                    class="fa-solid fa-chevron-down text-[10px] text-slate-400 shrink-0 transition-transform duration-200"
+                                    :class="{ 'rotate-180': clientesAbertos.has(`${a.id}:${c.empresa_id}`) }"
+                                    aria-hidden="true"
+                                  />
+                                </button>
+
+                                <!-- Pagamentos que geraram comissão: quando pagou,
+                                     como pagou, quanto gerou e quando libera. -->
+                                <div v-if="clientesAbertos.has(`${a.id}:${c.empresa_id}`)" class="px-3 pb-3">
+                                  <p v-if="!c.pagamentos.length" class="text-[11px] text-slate-500 dark:text-slate-400">
+                                    Ainda não houve pagamento que gerasse comissão.
+                                  </p>
+                                  <ul v-else class="space-y-1.5">
+                                    <li
+                                      v-for="p in c.pagamentos"
+                                      :key="p.id"
+                                      class="rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs"
+                                    >
+                                      <div class="min-w-0">
+                                        <p class="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500">Pagou em</p>
+                                        <p class="tabular-nums text-slate-800 dark:text-slate-100">{{ fmtDataHora(p.pago_em) }}</p>
+                                      </div>
+                                      <div class="min-w-0">
+                                        <p class="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500">Forma</p>
+                                        <p class="inline-flex items-center gap-1.5 text-slate-800 dark:text-slate-100">
+                                          <i class="text-[11px]" :class="[FORMAS[p.forma].icone, p.forma === 'cartao' ? 'text-indigo-500' : p.forma === 'pix' ? 'text-teal-500' : 'text-slate-400']" aria-hidden="true" />
+                                          {{ FORMAS[p.forma].rotulo }}
+                                          <span class="text-slate-400">· retém {{ diasRetencao(p) }} dias</span>
+                                        </p>
+                                      </div>
+                                      <div class="min-w-0">
+                                        <p class="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500">Comissão</p>
+                                        <p class="tabular-nums text-slate-800 dark:text-slate-100">
+                                          {{ fmtBRL(p.valor) }}
+                                          <span class="text-slate-400">· {{ calculoPagamento(p) }}</span>
+                                        </p>
+                                      </div>
+                                      <div class="min-w-0 sm:ml-auto sm:text-right">
+                                        <span class="inline-flex px-1.5 py-0.5 rounded-full text-[10px] whitespace-nowrap" :class="situacaoPagamento(p).cls">{{ situacaoPagamento(p).rotulo }}</span>
+                                        <p v-if="situacaoPagamento(p).detalhe" class="mt-0.5 text-[11px] tabular-nums text-slate-500 dark:text-slate-400">{{ situacaoPagamento(p).detalhe }}</p>
+                                      </div>
+                                    </li>
+                                  </ul>
+                                </div>
+                              </li>
+                            </ul>
+                            <button
+                              v-if="clientesFiltrados(a.id, n.conexao).length > LIMITE_CLIENTES && !niveisCompletos.has(`${a.id}:${n.conexao}`)"
+                              type="button"
+                              class="mt-2 text-xs text-purple-600 dark:text-purple-400 hover:underline"
+                              @click="niveisCompletos.add(`${a.id}:${n.conexao}`)"
+                            >
+                              Mostrar todos os {{ clientesFiltrados(a.id, n.conexao).length }} clientes
+                            </button>
+                          </div>
                       </div>
                     </li>
                   </ul>
@@ -961,6 +1175,24 @@ const itemMenu = 'w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left t
                         <dd class="text-base tabular-nums truncate" :class="a.sacado ? 'text-slate-900 dark:text-white' : 'text-slate-400'">{{ fmtBRL(a.sacado) }}</dd>
                       </div>
                     </dl>
+                    <!-- Quando o retido libera: data, quanto falta, de quem e como pagou. -->
+                    <div v-if="proximasLiberacoes(a.id).length" class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                      <p class="text-[11px] text-slate-500 dark:text-slate-400">Liberações previstas</p>
+                      <ul class="mt-1.5 space-y-2">
+                        <li v-for="p in proximasLiberacoes(a.id).slice(0, 5)" :key="p.id" class="text-xs">
+                          <div class="flex items-baseline justify-between gap-3">
+                            <span class="tabular-nums text-slate-800 dark:text-slate-100">{{ fmtData(p.liberar_em) }} · <span class="text-amber-600 dark:text-amber-400">{{ faltaLiberar(p.liberar_em) }}</span></span>
+                            <span class="tabular-nums text-slate-900 dark:text-white shrink-0">{{ fmtBRL(p.valor) }}</span>
+                          </div>
+                          <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate" :title="p.cliente">
+                            {{ p.cliente }} · <i class="text-[9px]" :class="FORMAS[p.forma].icone" aria-hidden="true" /> {{ FORMAS[p.forma].curto }} em {{ fmtData(p.pago_em) }}
+                          </p>
+                        </li>
+                      </ul>
+                      <p v-if="proximasLiberacoes(a.id).length > 5" class="mt-1.5 text-[11px] text-slate-400">
+                        e mais {{ proximasLiberacoes(a.id).length - 5 }} nos pagamentos de cada cliente
+                      </p>
+                    </div>
                     <p v-if="redes[a.id]?.totais.cancelado" class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
                       {{ fmtBRL(redes[a.id]!.totais.cancelado) }} cancelado ou estornado
                     </p>

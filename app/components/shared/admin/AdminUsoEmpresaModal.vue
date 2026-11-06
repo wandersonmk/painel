@@ -435,7 +435,7 @@ const criadoEm = computed(() => {
         </div>
 
         <p v-if="cobranca.mensal == null" class="text-[11px] text-slate-500 dark:text-slate-400">
-          Sem valor mensal definido: o checkout do app usa R$ 397,00. Dá pra definir em <strong>Editar cliente</strong>.
+          Sem valor mensal definido: o checkout do app usa R$ 297,00. Dá pra definir em <strong>Editar cliente</strong>.
         </p>
       </div>
 

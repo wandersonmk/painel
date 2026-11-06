@@ -35,7 +35,7 @@ export default defineEventHandler(async (event) => {
   // Limpar/zerar restaura o padrão que a página de assinatura deve exibir.
   const valorAnualFinal = valorAnualRecebido != null && valorAnualRecebido > 0
     ? valorAnualRecebido
-    : 2299
+    : 2499
 
   aplicarRateLimit(`valor:${parceiro.id}`, 30, 60_000)
 

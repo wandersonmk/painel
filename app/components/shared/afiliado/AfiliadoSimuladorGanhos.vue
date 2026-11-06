@@ -14,7 +14,7 @@ const CLIENTES_MAX = 50
 const CLIENTES_PADRAO = 10
 const MENSALIDADE_MIN = 1
 const MENSALIDADE_MAX = 9999.99
-const MENSALIDADE_PADRAO = 397 // plano mais comum hoje
+const MENSALIDADE_PADRAO = 297 // tabela do plano mensal
 
 const moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
 const decimal = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })

@@ -102,7 +102,7 @@ watch(() => props.show, async (open) => {
     whatsapp.value = props.cliente.whatsapp || ''
     const price = props.cliente.subscription_price ?? 297
     priceCents.value = Math.round(price * 100)
-    const priceAnual = Number(props.cliente.subscription_price_anual) || 2897
+    const priceAnual = Number(props.cliente.subscription_price_anual) || 2499
     priceAnualCents.value = Math.round(priceAnual * 100)
     naoPagante.value = !!props.cliente.nao_pagante
     toast = await useToastSafe()

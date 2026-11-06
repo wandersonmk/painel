@@ -112,6 +112,9 @@ export interface ItemFaturamento {
   motivo?: MotivoForaFaturamento
 }
 export type AbaFaturamento = 'mensal_stripe' | 'mensal_pix' | 'anual' | 'fora'
+// Aba da página Clientes onde cada cliente fica (06/11/2026): sempre uma só, e
+// a soma delas é a base inteira. "Pagantes" fica fora: é um recorte, não um estado.
+export type AbaCliente = 'em-dia' | 'vencidos' | 'em-cancelamento' | 'cancelados' | 'desativados'
 export type ListasFaturamento = Record<CategoriaFaturamento | 'fora', ItemFaturamento[]>
 
 export interface AdminStats {
@@ -151,7 +154,8 @@ export const useAdminClientes = () => {
     const basic = clientes.value.filter(c => c.subscription_plan === 'basic').length
     const enterprise = clientes.value.filter(c => c.subscription_plan === 'enterprise').length
     const ativos = clientes.value.filter(c => c.ativo).length
-    const vencidos = clientes.value.filter(c => c.subscription_status === 'expired' || diasParaVencimento(c) < 0).length
+    // Mesma regra da aba Vencidos, para o aviso do Dashboard não abrir aba vazia.
+    const vencidos = clientes.value.filter(c => abaDoCliente(c) === 'vencidos').length
 
     const umaSemanaAtras = new Date()
     umaSemanaAtras.setDate(umaSemanaAtras.getDate() - 7)
@@ -281,6 +285,19 @@ export const useAdminClientes = () => {
   }
 
   const isVencido = (c: AdminCliente) => c.subscription_status === 'expired' || diasParaVencimento(c) < 0
+
+  // Desativar pelo painel (ou o bloqueio do parceiro) grava `ativo = false` e
+  // também status `canceled`; o Stripe, ao encerrar a assinatura, só muda o
+  // status. Por isso `ativo` é olhado primeiro: é ele que separa os dois casos.
+  // Quem pediu cancelamento e já passou da data continua aqui até o Stripe
+  // encerrar: não adianta cobrar quem já avisou que vai sair.
+  const abaDoCliente = (c: AdminCliente): AbaCliente => {
+    if (!c.ativo) return 'desativados'
+    if (c.subscription_status === 'canceled') return 'cancelados'
+    if (c.cancel_at_period_end) return 'em-cancelamento'
+    if (isVencido(c)) return 'vencidos'
+    return 'em-dia'
+  }
   const formatDiasVencimento = (c: AdminCliente) => {
     const d = diasParaVencimento(c)
     if (!Number.isFinite(d)) return '—'
@@ -323,10 +340,11 @@ export const useAdminClientes = () => {
   // conta o valor fechado do ano, sem dividir por 12.
   const faturamento = (c: AdminCliente): Faturamento => {
     if (c.nao_pagante || c.role === 'superAdmin') return { fora: 'nao_pagante' }
+    // Antes do status: desativar grava `canceled` junto (ver abaDoCliente).
+    if (!c.ativo) return { fora: 'desativado' }
     if (c.subscription_status === 'canceled') return { fora: 'cancelado' }
     if (isVencido(c)) return { fora: 'vencido' }
     if (c.subscription_status !== 'active') return { fora: 'teste' }
-    if (!c.ativo) return { fora: 'desativado' }
     if (pagaParceiro(c)) return { fora: 'parceiro' }
     const positivo = (v: unknown) => (v != null && Number(v) > 0 ? Number(v) : 0)
     if (c.subscription_period === '12months') {
@@ -361,6 +379,7 @@ export const useAdminClientes = () => {
     excluirCliente,
     editarCliente,
     isVencido,
+    abaDoCliente,
     diasParaVencimento,
     formatDiasVencimento,
     formatDate,

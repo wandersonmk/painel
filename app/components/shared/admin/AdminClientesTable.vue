@@ -44,6 +44,14 @@ const statusConfig: Record<string, { label: string; cls: string; dot: string }> 
   canceled: { label: 'Cancelado', cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',           dot: 'bg-slate-400' },
   expired:  { label: 'Expirado',  cls: 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300',                 dot: 'bg-red-500' },
 }
+const statusDesativado = { label: 'Desativado', cls: 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300', dot: 'bg-slate-500' }
+
+// Conta desligada grava status `canceled` junto, mas na lista ela é Desativado:
+// o cancelado de verdade é quem teve a assinatura encerrada no Stripe.
+function statusDoCliente(c: AdminCliente) {
+  if (!c.ativo) return statusDesativado
+  return statusConfig[c.subscription_status] ?? { ...statusConfig.canceled!, label: c.subscription_status }
+}
 
 function diasRestantesCls(c: AdminCliente) {
   if (c.subscription_status === 'trial' && !getDataVencimento(c))
@@ -122,6 +130,14 @@ function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: str
       icon: 'fa-ban',
     }
   }
+  if (!c.ativo) {
+    return {
+      text: 'Desativado',
+      title: 'Conta desativada pelo painel',
+      cls: 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300',
+      icon: 'fa-power-off',
+    }
+  }
   if (c.subscription_status === 'canceled') {
     return {
       text: 'Cancelado',
@@ -133,11 +149,11 @@ function situacaoBadge(c: AdminCliente): { text: string; title: string; cls: str
   return null
 }
 
-// Na coluna Status o pill já diz "Cancelado": o selo extra só entra quando
-// acrescenta informação (bloqueio do parceiro ou cancelamento agendado).
+// Na coluna Status o pill já diz "Cancelado" ou "Desativado": o selo extra só
+// entra quando acrescenta informação (bloqueio do parceiro ou cancelamento agendado).
 function situacaoExtra(c: AdminCliente) {
   const s = situacaoBadge(c)
-  return s && s.text !== 'Cancelado' ? s : null
+  return s && s.text !== 'Cancelado' && s.text !== 'Desativado' ? s : null
 }
 
 // Categoria do cliente (coluna "Categoria"): de quem ele é cliente e o papel
@@ -321,10 +337,10 @@ function valorInfo(c: AdminCliente) {
               <dd class="mt-1 flex flex-wrap items-center gap-1">
                 <span
                   class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium"
-                  :class="statusConfig[c.subscription_status]?.cls ?? statusConfig.canceled!.cls"
+                  :class="statusDoCliente(c).cls"
                 >
-                  <span class="w-1.5 h-1.5 rounded-full" :class="statusConfig[c.subscription_status]?.dot ?? 'bg-slate-400'" aria-hidden="true" />
-                  {{ statusConfig[c.subscription_status]?.label ?? c.subscription_status }}
+                  <span class="w-1.5 h-1.5 rounded-full" :class="statusDoCliente(c).dot" aria-hidden="true" />
+                  {{ statusDoCliente(c).label }}
                 </span>
                 <span
                   v-if="situacaoExtra(c)"
@@ -334,9 +350,6 @@ function valorInfo(c: AdminCliente) {
                 >
                   <i class="fa-solid" :class="situacaoExtra(c)!.icon" aria-hidden="true" />
                   {{ situacaoExtra(c)!.text }}
-                </span>
-                <span v-if="!c.ativo" class="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-                  Inativo
                 </span>
               </dd>
             </div>
@@ -474,10 +487,10 @@ function valorInfo(c: AdminCliente) {
                 <div class="flex flex-col items-start gap-1">
                   <span
                     class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium whitespace-nowrap"
-                    :class="statusConfig[c.subscription_status]?.cls ?? statusConfig.canceled!.cls"
+                    :class="statusDoCliente(c).cls"
                   >
-                    <span class="w-1.5 h-1.5 rounded-full" :class="statusConfig[c.subscription_status]?.dot ?? 'bg-slate-400'" aria-hidden="true" />
-                    {{ statusConfig[c.subscription_status]?.label ?? c.subscription_status }}
+                    <span class="w-1.5 h-1.5 rounded-full" :class="statusDoCliente(c).dot" aria-hidden="true" />
+                    {{ statusDoCliente(c).label }}
                   </span>
                   <span
                     v-if="situacaoExtra(c)"
@@ -487,10 +500,6 @@ function valorInfo(c: AdminCliente) {
                   >
                     <i class="fa-solid mt-px" :class="situacaoExtra(c)!.icon" aria-hidden="true" />
                     <span>{{ situacaoExtra(c)!.text }}</span>
-                  </span>
-                  <!-- Sem a coluna "Ativo" (abaixo de 2xl), a conta desativada aparece aqui -->
-                  <span v-if="!c.ativo" class="2xl:hidden inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-                    Inativo
                   </span>
                 </div>
               </td>

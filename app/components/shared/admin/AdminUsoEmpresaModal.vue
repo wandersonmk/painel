@@ -253,7 +253,7 @@ const cobranca = computed(() => {
     valor: ehAnual ? anual : mensal,
     sufixo: ehAnual ? '/ano' : '/mês',
     periodo,
-    status: STATUS[c.subscription_status] || c.subscription_status,
+    status: !c.ativo ? 'Desativado' : (STATUS[c.subscription_status] || c.subscription_status),
     vencimento: formatDate(getDataVencimento(c)),
     dias: formatDiasVencimento(c),
   }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import type { AdminCliente, CategoriaFaturamento } from '~/composables/useAdminClientes'
+import { ref, computed, nextTick, onMounted, watch } from 'vue'
+import type { AbaCliente, AdminCliente, CategoriaFaturamento } from '~/composables/useAdminClientes'
 
 definePageMeta({
   middleware: ['auth', 'super-admin'],
@@ -10,11 +10,12 @@ definePageMeta({
 const {
   clientes, stats, loading, error,
   loadClientes, desativarCliente, reativarCliente, renovarAssinatura,
-  excluirCliente, editarCliente, diasParaVencimento, isVencido, marcarNaoPagante, faturamento,
+  excluirCliente, editarCliente, diasParaVencimento, abaDoCliente, marcarNaoPagante, faturamento,
 } = useAdminClientes()
 
 let toast: Awaited<ReturnType<typeof useToastSafe>> | null = null
 onMounted(async () => {
+  mostrarAbaAtiva()
   toast = await useToastSafe()
   await loadClientes()
 })
@@ -130,13 +131,25 @@ const isRefreshing = ref(false)
 //  - Token OpenAI: a configuração do token global.
 // A aba vai na URL (?aba=), então um F5 volta pra mesma aba.
 //  - Pagantes (14/10/2026): só quem entra no faturamento do Dashboard.
-type Aba = 'em-dia' | 'pagantes' | 'vencidos' | 'estatisticas' | 'token'
-const ABAS_VALIDAS: Aba[] = ['em-dia', 'pagantes', 'vencidos', 'estatisticas', 'token']
+//  - Em cancelamento, Cancelados e Desativados (06/11/2026): antes esses clientes
+//    se misturavam em Vencidos. A regra de cada aba está em `abaDoCliente`.
+type Aba = 'em-dia' | 'pagantes' | 'vencidos' | 'em-cancelamento' | 'cancelados' | 'desativados' | 'estatisticas' | 'token'
+const ABAS_VALIDAS: Aba[] = ['em-dia', 'pagantes', 'vencidos', 'em-cancelamento', 'cancelados', 'desativados', 'estatisticas', 'token']
 const rotaAdmin = useRoute()
 const roteadorAdmin = useRouter()
 const abaDaUrl = String(rotaAdmin.query.aba || '') as Aba
 const abaAtiva = ref<Aba>(ABAS_VALIDAS.includes(abaDaUrl) ? abaDaUrl : 'em-dia')
-const ehAbaDeLista = computed(() => abaAtiva.value === 'em-dia' || abaAtiva.value === 'pagantes' || abaAtiva.value === 'vencidos')
+
+// As abas não cabem numa linha em telas menores: a linha rola até a aba aberta,
+// senão quem abre pelo link ou dá F5 cai numa aba que não aparece.
+const navAbas = ref<HTMLElement | null>(null)
+function mostrarAbaAtiva() {
+  nextTick(() => {
+    navAbas.value?.querySelector('[aria-selected="true"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'center' })
+  })
+}
+watch(abaAtiva, mostrarAbaAtiva)
 
 // Pagantes = mesma regra dos cards de faturamento do Dashboard (`faturamento`):
 // ativo, em dia, pagando a Agzap (sem não pagante, teste ou cliente que paga o
@@ -145,20 +158,31 @@ const pagantes = computed(() => clientes.value.filter(c => 'categoria' in fatura
 
 const clientesDaAba = computed(() => {
   if (abaAtiva.value === 'pagantes') return pagantes.value
-  return clientes.value.filter(c => isVencido(c) === (abaAtiva.value === 'vencidos'))
+  return clientes.value.filter(c => abaDoCliente(c) === abaAtiva.value)
 })
 
 // count null = aba sem contador (Estatísticas e Token não são listas)
 const abas = computed<{ value: Aba; label: string; icon: string; count: number | null; tone: '' | 'red' }[]>(() => {
-  const vencidos = clientes.value.filter(c => isVencido(c)).length
+  const total = (aba: AbaCliente) => clientes.value.filter(c => abaDoCliente(c) === aba).length
   return [
-    { value: 'em-dia', label: 'Clientes em dia', icon: 'fa-users', count: clientes.value.length - vencidos, tone: '' },
+    { value: 'em-dia', label: 'Clientes em dia', icon: 'fa-users', count: total('em-dia'), tone: '' },
     { value: 'pagantes', label: 'Pagantes', icon: 'fa-sack-dollar', count: pagantes.value.length, tone: '' },
-    { value: 'vencidos', label: 'Vencidos', icon: 'fa-triangle-exclamation', count: vencidos, tone: 'red' },
+    { value: 'vencidos', label: 'Vencidos', icon: 'fa-triangle-exclamation', count: total('vencidos'), tone: 'red' },
+    { value: 'em-cancelamento', label: 'Em cancelamento', icon: 'fa-hourglass-half', count: total('em-cancelamento'), tone: '' },
+    { value: 'cancelados', label: 'Cancelados', icon: 'fa-ban', count: total('cancelados'), tone: '' },
+    { value: 'desativados', label: 'Desativados', icon: 'fa-power-off', count: total('desativados'), tone: '' },
     { value: 'estatisticas', label: 'Estatísticas', icon: 'fa-chart-pie', count: null, tone: '' },
     { value: 'token', label: 'Token OpenAI', icon: 'fa-key', count: null, tone: '' },
   ]
 })
+
+const TITULO_DA_LISTA: Partial<Record<Aba, string>> = {
+  pagantes: 'Clientes pagantes',
+  vencidos: 'Clientes vencidos',
+  'em-cancelamento': 'Clientes em cancelamento',
+  cancelados: 'Clientes cancelados',
+  desativados: 'Clientes desativados',
+}
 
 // Os chips valem só dentro da aba, e cada aba tem status diferentes — trocar
 // de aba mantendo o chip anterior daria lista vazia sem explicação.
@@ -175,10 +199,7 @@ async function refreshData() {
 }
 
 const filteredClientes = computed(() => {
-  // Cancelado é estado final e não depende do vencimento: esse filtro olha a
-  // base inteira. Antes o card do topo contava o cancelado e o chip mostrava 0,
-  // porque ele (já vencido) estava na aba Vencidos (14/10/2026).
-  let filtered = filterStatus.value === 'canceled' ? clientes.value : clientesDaAba.value
+  let filtered = clientesDaAba.value
   if (searchQuery.value) {
     const q = searchQuery.value.toLowerCase()
     filtered = filtered.filter(c =>
@@ -246,8 +267,6 @@ const statusCounts = computed<Record<string, number>>(() => {
     active: base.filter(c => c.subscription_status === 'active').length,
     trial: base.filter(c => c.subscription_status === 'trial').length,
     'vencendo-hoje': base.filter(c => diasParaVencimento(c) === 0).length,
-    // Base inteira, igual ao filtro (ver filteredClientes).
-    canceled: clientes.value.filter(c => c.subscription_status === 'canceled').length,
     mensal_stripe: porCategoria('mensal_stripe'),
     mensal_pix: porCategoria('mensal_pix'),
     anual: porCategoria('anual'),
@@ -261,7 +280,6 @@ const statusChips: ChipStatus[] = [
   { value: 'active', label: 'Ativos' },
   { value: 'trial', label: 'Trial' },
   { value: 'vencendo-hoje', label: 'Vencendo hoje', tone: 'orange' },
-  { value: 'canceled', label: 'Cancelados' },
 ]
 // Na aba Pagantes os chips são a forma de pagamento (mesmos cards do Dashboard).
 const CATEGORIAS_PAGANTE: CategoriaFaturamento[] = ['mensal_stripe', 'mensal_pix', 'anual', 'semestral']
@@ -316,7 +334,7 @@ watch([opcoesParceiro, opcoesAfiliado], () => {
 
 // ───────── Resumo do topo (redesenho 09/10/2026) ─────────
 // Dois cartões (Clientes e Vencimentos) calculados da lista carregada, sempre
-// sobre TODA a base (as duas abas de lista). Nada de número inventado. O
+// sobre TODA a base. Nada de número inventado. O
 // cartão de mensalidades cadastradas foi para o Dashboard (pedido do dono).
 interface CardResumo {
   key: string
@@ -333,7 +351,8 @@ const resumoPronto = computed(() => clientes.value.length > 0 || (!loading.value
 const cardsResumo = computed<CardResumo[]>(() => {
   const todos = clientes.value
   const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`
-  const emDia = todos.filter(c => !isVencido(c))
+  const naAba = (aba: AbaCliente) => todos.filter(c => abaDoCliente(c) === aba)
+  const emDia = naAba('em-dia')
   // Mesmas regras dos chips "Ativos" e "Trial" da aba Clientes em dia.
   const ativos = emDia.filter(c => c.subscription_status === 'active')
   const emTeste = emDia.filter(c => c.subscription_status === 'trial')
@@ -342,9 +361,10 @@ const cardsResumo = computed<CardResumo[]>(() => {
     return Number.isFinite(d) && d >= 0 && d <= 7
   }).length
   const vencemHoje = emDia.filter(c => diasParaVencimento(c) === 0).length
-  const vencidos = todos.length - emDia.length
-  const cancelados = todos.filter(c => c.subscription_status === 'canceled').length
-  const cancelamentoAgendado = todos.filter(c => c.cancel_at_period_end && c.subscription_status !== 'canceled').length
+  const vencidos = naAba('vencidos').length
+  const cancelados = naAba('cancelados').length
+  const emCancelamento = naAba('em-cancelamento').length
+  const desativados = naAba('desativados').length
 
   return [
     {
@@ -380,9 +400,7 @@ const cardsResumo = computed<CardResumo[]>(() => {
           icon: 'fa-ban',
           iconCls: 'text-slate-400',
           valor: String(cancelados),
-          detalhe: cancelamentoAgendado
-            ? `+${cancelamentoAgendado} com cancelamento agendado`
-            : 'assinatura encerrada',
+          detalhe: `${emCancelamento} em cancelamento · ${plural(desativados, 'desativado', 'desativados')}`,
         },
       ],
     },
@@ -720,7 +738,7 @@ function abrirModulosDeUso(id: string) {
            em cima: as abas já dizem onde se está, e o conteúdo sobe. O
            atualizar virou ícone na ponta da linha das abas. -->
       <div class="flex items-end gap-3 border-b border-slate-200 dark:border-slate-800">
-        <nav class="-mb-px flex flex-1 min-w-0 gap-6 overflow-x-auto" role="tablist" aria-label="Seções de clientes">
+        <nav ref="navAbas" class="-mb-px flex flex-1 min-w-0 gap-6 overflow-x-auto" role="tablist" aria-label="Seções de clientes">
           <button
             v-for="aba in abas"
             :key="aba.value"
@@ -808,14 +826,14 @@ function abrirModulosDeUso(id: string) {
       <!-- Aba: Token OpenAI global -->
       <AdminTokenGlobalCard v-else-if="abaAtiva === 'token'" />
 
-      <!-- Abas de lista: Clientes em dia / Vencidos -->
+      <!-- Abas de lista -->
       <template v-else>
         <!-- Resumo (redesenho 09/10/2026, organização da referência do dono):
              dois cartões suaves (Clientes e Vencimentos), sempre sobre toda a
              base. O de mensalidades cadastradas foi para o Dashboard. -->
         <section aria-labelledby="resumo-base-titulo" class="space-y-2">
           <p id="resumo-base-titulo" class="text-xs text-slate-500 dark:text-slate-400">
-            Resumo de toda a base · as duas abas de lista
+            Resumo de toda a base
           </p>
           <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <AdminResumoCard
@@ -869,7 +887,7 @@ function abrirModulosDeUso(id: string) {
                      no celular o título continua em cima. -->
                 <div class="flex items-baseline gap-2 min-w-0 md:order-2 md:ml-auto">
                   <h2 class="text-base font-medium text-slate-900 dark:text-white whitespace-nowrap">
-                    {{ abaAtiva === 'vencidos' ? 'Clientes vencidos' : abaAtiva === 'pagantes' ? 'Clientes pagantes' : 'Lista de clientes' }}
+                    {{ TITULO_DA_LISTA[abaAtiva] || 'Lista de clientes' }}
                   </h2>
                   <span class="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap tabular-nums">
                     <span class="font-semibold text-slate-700 dark:text-slate-200">{{ filteredClientes.length }}</span>
@@ -892,8 +910,8 @@ function abrirModulosDeUso(id: string) {
 
               <div class="flex flex-wrap items-center gap-2">
               <!-- Chips de status. Na aba "Em dia" filtram por status; na aba
-                   "Pagantes", pela forma de pagamento. Os vencidos não têm chips:
-                   a lista é curta e serve pra cobrar, não pra fatiar por status. -->
+                   "Pagantes", pela forma de pagamento. As outras abas não têm chips:
+                   a lista é curta e não precisa ser fatiada por status. -->
               <div v-if="abaAtiva === 'em-dia' || abaAtiva === 'pagantes'" class="flex flex-wrap items-center gap-2 mr-auto" role="group" :aria-label="abaAtiva === 'pagantes' ? 'Filtrar por forma de pagamento' : 'Filtrar por status'">
                 <button
                   v-for="chip in chipsDaAba"

@@ -9,10 +9,12 @@
 // Systems LTDA + CNPJ, sigilo e LGPD dos dados dos clientes, continuidade;
 // 3.1 (13/10/2026) crédito de 12 meses é para o cliente do plano anual e,
 // aplicado em cliente que paga por mês, não é transferido se ele cancelar
-// (cláusulas 2 e 4).
+// (cláusulas 2 e 4); 3.2 (06/11/2026) crédito de Delivery: uso restrito a quem
+// vende pelo módulo, liberar e remover o módulo, cota e pedidos extras da Agzap
+// e cobrança da diferença no uso indevido (cláusulas 2, 6, 7, 9 e 10).
 
-export const VERSAO_TERMO_PARCEIRO = '3.1'
-export const DATA_TERMO_PARCEIRO_EXTENSO = '13 de outubro de 2026'
+export const VERSAO_TERMO_PARCEIRO = '3.2'
+export const DATA_TERMO_PARCEIRO_EXTENSO = '6 de novembro de 2026'
 export const URL_TERMO_PARCEIRO = 'https://painel.agzap.com.br/termos-parceiro'
 export const URL_POLITICA_PRIVACIDADE = 'https://app.agzap.com.br/politica-privacidade'
 
@@ -74,6 +76,7 @@ export const CATEGORIAS_TERMO_PARCEIRO: CategoriaTermoParceiro[] = [
             `Cada licença adquirida vira um ${b('crédito')} na carteira do Parceiro;`,
             `crédito de ${b('30 dias')} autoriza uma renovação de 30 dias corridos para um cliente;`,
             `crédito de ${b('12 meses')} autoriza uma renovação de 12 meses para um cliente e é destinado ao ${b('cliente que contrata o plano anual')};`,
+            `crédito de ${b('Delivery até 500')} e crédito de ${b('Delivery acima de 500')} autorizam uma renovação de 30 dias, somente para empresa que vende pelo módulo Delivery, e definem a cota de pedidos do cliente;`,
             `a ativação ou renovação de qualquer cliente consome exatamente ${b('1 crédito')}.`,
           ])}
         `,
@@ -135,6 +138,7 @@ export const CATEGORIAS_TERMO_PARCEIRO: CategoriaTermoParceiro[] = [
           'acompanhar status, vencimento, dias restantes e uso de instâncias e assistentes;',
           'ativar ou renovar um cliente vinculado, consumindo um crédito disponível;',
           'bloquear e desbloquear o acesso de um cliente vinculado a ele;',
+          'liberar e remover o módulo Delivery de um cliente vinculado;',
           'consultar o extrato dos próprios créditos;',
           'solicitar à Agzap novos créditos, exclusões, instâncias, números ou assistentes adicionais.',
         ]),
@@ -147,6 +151,7 @@ export const CATEGORIAS_TERMO_PARCEIRO: CategoriaTermoParceiro[] = [
           ${lista([
             `${b('Exclusão de clientes')} e qualquer alteração estrutural da conta;`,
             `quantidade de ${b('instâncias, números e assistentes')} de cada cliente;`,
+            'aumento de cota e venda de pedidos extras do Delivery;',
             'vínculo, transferência e desvinculação de clientes entre parceiros;',
             'concessão, correção e ajuste de créditos;',
             'renovação administrativa, que não consome crédito do Parceiro;',
@@ -188,6 +193,7 @@ export const CATEGORIAS_TERMO_PARCEIRO: CategoriaTermoParceiro[] = [
             'tentar acessar clientes, saldos ou dados de outro parceiro, ou áreas administrativas da Agzap;',
             'compartilhar suas credenciais de acesso com terceiros, ou usar credenciais de terceiros;',
             'usar indevidamente dados pessoais de clientes, em desacordo com a cláusula 11 e com a LGPD (Lei nº 13.709/2018);',
+            'usar crédito de Delivery para renovar empresa que não venda pelo módulo Delivery, liberar o módulo apenas para obter o preço menor, ou simular pedidos para cumprir a regra de uso;',
             'praticar spam, publicidade enganosa ou abordagens abusivas em nome da Agzap.',
           ])}
           <p>${b('Tudo é registrado.')} Cada operação no portal grava autoria, data, hora, endereço IP e o estado anterior e posterior do dado em trilha de auditoria permanente, e os registros de acesso são mantidos nos termos do art. 15 da Lei nº 12.965/2014 (Marco Civil da Internet). Divergências entre saldo, consumo e renovações são conferidas periodicamente pela Agzap.</p>
@@ -203,6 +209,7 @@ export const CATEGORIAS_TERMO_PARCEIRO: CategoriaTermoParceiro[] = [
             `${b('banimento definitivo do Programa de Parceria')}, com encerramento imediato do acesso ao portal e sem direito a indenização;`,
             `${b('cancelamento dos créditos')} e reversão das ativações e renovações originadas da conduta; os clientes envolvidos voltam ao estado anterior;`,
             `${b('cobrança do valor de tabela')} de todas as licenças obtidas sem o devido pagamento, acrescida de perdas e danos e lucros cessantes;`,
+            `${b('cobrança da diferença')} entre o crédito normal e o crédito de Delivery em cada renovação feita dessa forma, sem prejuízo das demais penalidades desta cláusula;`,
             `${b('suspensão preventiva')} do acesso e das operações durante a apuração de qualquer suspeita ou divergência contábil, em processo administrativo interno com direito de manifestação;`,
             `${b('responsabilização civil e criminal')}, com uso dos registros de auditoria e de acesso como prova, e comunicação às autoridades competentes.`,
           ])}

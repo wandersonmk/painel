@@ -47,11 +47,12 @@ interface AceiteResumo {
   hash_confere: boolean
 }
 interface RecusaResumo { id: string; versao_termos: string; recusado_em: string; ip: string | null }
-const termos = ref<{ aceites: AceiteResumo[]; recusas: RecusaResumo[]; versaoVigente: string | null } | null>(null)
+const termos = ref<{ aceites: AceiteResumo[]; recusas: RecusaResumo[]; versaoVigente: string | null; versaoMinima: string | null } | null>(null)
 // Aceitou só versões antigas: o titular vê a tela de novo no próximo acesso.
 const termosPendenteVigente = computed(() => {
   const t = termos.value
-  return !!t && t.aceites.length > 0 && !!t.versaoVigente && !t.aceites.some(a => a.versao_termos === t.versaoVigente)
+  const minima = t?.versaoMinima || t?.versaoVigente
+  return !!t && t.aceites.length > 0 && !!minima && !t.aceites.some(a => a.versao_termos >= minima)
 })
 const termosCarregando = ref(false)
 const termosErro = ref(false)
@@ -67,11 +68,11 @@ async function carregarTermos() {
   termosCarregando.value = true
   termosErro.value = false
   try {
-    const resp = await $fetch<{ success: boolean; data: { aceites: AceiteResumo[]; recusas: RecusaResumo[]; versao_vigente?: string } }>('/api/admin/termos-aceite', {
+    const resp = await $fetch<{ success: boolean; data: { aceites: AceiteResumo[]; recusas: RecusaResumo[]; versao_vigente?: string; versao_minima?: string } }>('/api/admin/termos-aceite', {
       query: { empresaId: props.cliente.id },
       headers: await useAdminAuthHeaders(),
     })
-    termos.value = { aceites: resp.data?.aceites || [], recusas: resp.data?.recusas || [], versaoVigente: resp.data?.versao_vigente || null }
+    termos.value = { aceites: resp.data?.aceites || [], recusas: resp.data?.recusas || [], versaoVigente: resp.data?.versao_vigente || null, versaoMinima: resp.data?.versao_minima || null }
   } catch {
     termosErro.value = true
   } finally {

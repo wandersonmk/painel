@@ -15,6 +15,10 @@ import { requireSuperAdmin, getServiceClient } from '~~/server/utils/requireSupe
 // app/constants/termosServico.ts do repo do app). Subiu lá? Suba aqui também,
 // senão a aba Termos não avisa quem precisa aceitar a versão nova.
 const VERSAO_TERMOS_VIGENTE = '2026-11-06.1'
+// Quem tem aceite desta versão ou mais nova não vê a tela de novo no app (=
+// VERSAO_MINIMA_ACEITE em server/api/termos/aceite.ts do repo do app). Subiu lá?
+// Suba aqui também, senão a aba Termos avisa errado.
+const VERSAO_MINIMA_ACEITE = '2026-10-09.3'
 
 export default defineEventHandler(async (event) => {
   await requireSuperAdmin(event)
@@ -59,5 +63,5 @@ export default defineEventHandler(async (event) => {
   ])
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
 
-  return { success: true, data: { aceites: aceites || [], recusas: recusas || [], exigido: true, versao_vigente: VERSAO_TERMOS_VIGENTE } }
+  return { success: true, data: { aceites: aceites || [], recusas: recusas || [], exigido: true, versao_vigente: VERSAO_TERMOS_VIGENTE, versao_minima: VERSAO_MINIMA_ACEITE } }
 })

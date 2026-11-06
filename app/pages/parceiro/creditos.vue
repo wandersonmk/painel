@@ -53,6 +53,26 @@ function valorUnitario(m: MovimentacaoCredito) {
 const precosMensais = computed(() => precos.value.filter(p => p.tipo_credito === 'mensal_30d'))
 const precosAnuais = computed(() => precos.value.filter(p => p.tipo_credito === 'anual_12m'))
 
+/** Uma linha por cota, com as faixas e o ganho já calculados a partir da tabela. */
+const linhasDelivery = computed(() => ([
+  { tipo: 'delivery_ate500_30d', titulo: 'Até 500 pedidos por mês' },
+  { tipo: 'delivery_acima500_30d', titulo: 'Acima de 500, até 5.000 pedidos por mês' },
+] as const).map((linha) => {
+  const faixas = precos.value.filter(p => p.tipo_credito === linha.tipo)
+  const valores = faixas.map(p => Number(p.preco_unitario))
+  const revenda = Number(faixas[0]?.preco_sugerido_revenda ?? 0)
+  return {
+    ...linha,
+    faixas,
+    revenda,
+    ganhoMenor: revenda ? revenda - Math.max(...valores) : 0,
+    ganhoMaior: revenda ? revenda - Math.min(...valores) : 0,
+  }
+}).filter(linha => linha.faixas.length > 0))
+
+const melhorPrecoDelivery = computed(() =>
+  Math.min(...linhasDelivery.value.flatMap(l => l.faixas.map(p => Number(p.preco_unitario)))))
+
 const melhorPrecoMensal = computed(() =>
   Math.min(...precosMensais.value.map(p => Number(p.preco_unitario))))
 const precoEntradaMensal = computed(() =>
@@ -148,7 +168,7 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
          o resto, no mesmo formato da página de Indicados. Abaixo disso, empilha. -->
     <div class="grid gap-6 2xl:grid-cols-[420px_minmax(0,1fr)] items-start">
 
-      <div class="space-y-6 min-w-0">
+      <div class="order-1 space-y-6 min-w-0">
         <!-- Saldos -->
         <section>
           <!-- Mesma altura da linha "Movimentações" (que tem os filtros) para alinhar as colunas -->
@@ -164,6 +184,12 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
             </KpiCard>
             <KpiCard label="Créditos de 12 meses" unit="disponíveis" icon="fa-solid fa-calendar-days" color="indigo" :loading="loadingCreditos">
               {{ saldos.anual_12m }}
+            </KpiCard>
+            <KpiCard label="Delivery até 500" unit="500 pedidos por mês" icon="fa-solid fa-motorcycle" color="orange" :loading="loadingCreditos">
+              {{ saldos.delivery_ate500_30d }}
+            </KpiCard>
+            <KpiCard label="Delivery acima de 500" unit="até 5.000 pedidos" icon="fa-solid fa-motorcycle" color="orange" :loading="loadingCreditos">
+              {{ saldos.delivery_acima500_30d }}
             </KpiCard>
           </div>
         </section>
@@ -273,8 +299,97 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
         </section>
       </div>
 
+      <!-- Delivery: tabela larga demais para a coluna de 420 px, então ocupa a
+           linha toda. Abaixo de 2xl continua antes do extrato. -->
+      <section v-if="linhasDelivery.length" class="order-2 2xl:order-3 2xl:col-span-2 min-w-0 space-y-4">
+        <div class="p-4 sm:p-5 space-y-3.5 rounded-md bg-white dark:bg-white/[0.04] border border-orange-300 dark:border-orange-500/30 shadow-sm dark:shadow-none">
+          <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1.5">
+            <div class="min-w-0 flex-1 basis-80">
+              <p class="text-sm font-semibold text-slate-900 dark:text-white">Licença de Delivery</p>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                Renova por 30 dias empresas com o módulo Delivery. O crédito usado define a cota de pedidos do cliente,
+                e a contagem volta a zero a cada renovação. A sobra da cota não acumula
+              </p>
+            </div>
+            <p class="flex items-baseline gap-x-1.5">
+              <span class="text-[11px] text-slate-400">a partir de</span>
+              <span class="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{{ fmtBRL(melhorPrecoDelivery) }}</span>
+              <span class="text-xs text-slate-400">/licença</span>
+            </p>
+          </div>
+
+          <div class="overflow-x-auto rounded-md border border-slate-100 dark:border-white/5">
+            <table class="w-full min-w-[640px] text-sm">
+              <thead>
+                <tr class="bg-slate-50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/5">
+                  <th class="text-left px-3.5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Cota do cliente</th>
+                  <th
+                    v-for="(_, i) in linhasDelivery[0]?.faixas"
+                    :key="i"
+                    class="text-right px-3.5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap"
+                  >{{ faixaLabel(linhasDelivery[0]?.faixas ?? [], i) }}</th>
+                  <th class="text-right px-3.5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Revenda sugerida</th>
+                  <th class="text-right px-3.5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Quanto você ganha</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 dark:divide-white/5">
+                <tr v-for="l in linhasDelivery" :key="l.tipo">
+                  <td class="px-3.5 py-2.5 font-medium text-slate-800 dark:text-white">{{ l.titulo }}</td>
+                  <td
+                    v-for="p in l.faixas"
+                    :key="p.quantidade_min"
+                    class="px-3.5 py-2.5 text-right font-medium text-slate-800 dark:text-white tabular-nums whitespace-nowrap"
+                  >{{ fmtBRL(p.preco_unitario) }}</td>
+                  <td class="px-3.5 py-2.5 text-right font-medium text-slate-800 dark:text-white tabular-nums whitespace-nowrap">{{ fmtBRL(l.revenda) }}</td>
+                  <td class="px-3.5 py-2.5 text-right font-medium text-emerald-700 dark:text-emerald-400 tabular-nums whitespace-nowrap">
+                    {{ fmtBRL(l.ganhoMenor) }}<template v-if="l.ganhoMaior !== l.ganhoMenor"> a {{ fmtBRL(l.ganhoMaior) }}</template>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="px-3 py-2.5 rounded-md bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/20 flex items-start gap-2 text-xs leading-relaxed text-orange-800 dark:text-orange-300">
+            <i class="fa-solid fa-circle-info text-[11px] mt-0.5 shrink-0" aria-hidden="true" />
+            <span>
+              Só renova empresas que vendem pelo módulo Delivery. O crédito até 500 deixa a cota em 500 e não renova quem passou de 500 pedidos no ciclo.
+              O crédito acima de 500 renova qualquer cliente com Delivery e sobe a cota para 5.000.
+              Cliente sem pedidos gera aviso no 1º mês e tem o crédito de Delivery bloqueado no 2º.
+            </span>
+          </div>
+        </div>
+
+        <!-- Só um aviso: o token é colocado na conta do cliente, nunca por aqui. -->
+        <div class="p-4 sm:px-5 rounded-md bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-500/20 flex items-start gap-3 text-sky-900 dark:text-sky-200">
+          <i class="fa-solid fa-key text-sm mt-0.5 shrink-0 text-sky-600 dark:text-sky-400" aria-hidden="true" />
+          <div class="min-w-0 flex-1 space-y-2.5">
+            <div>
+              <p class="text-sm font-semibold">Aviso: a IA do Delivery precisa de um token da OpenAI</p>
+              <p class="text-xs leading-relaxed mt-0.5">Você decide como trabalhar com cada cliente:</p>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div class="px-3 py-2.5 rounded-md bg-white dark:bg-white/[0.04] border border-sky-100 dark:border-white/10">
+                <p class="text-xs font-semibold">Oferecer o seu próprio token</p>
+                <p class="text-xs leading-relaxed mt-0.5 text-slate-600 dark:text-slate-400">
+                  No Delivery, o custo de crédito da OpenAI é irrisório. Compensa vender o plano já com a OpenAI inclusa, pelo valor de revenda sugerido.
+                </p>
+              </div>
+              <div class="px-3 py-2.5 rounded-md bg-white dark:bg-white/[0.04] border border-sky-100 dark:border-white/10">
+                <p class="text-xs font-semibold">Cliente usa o token dele</p>
+                <p class="text-xs leading-relaxed mt-0.5 text-slate-600 dark:text-slate-400">
+                  O próprio cliente cola o token dele no painel e paga a OpenAI direto.
+                </p>
+              </div>
+            </div>
+            <p class="text-xs leading-relaxed">
+              Nos dois casos, o token é colocado em <strong class="font-semibold">Configurações › Integrações</strong>, na conta do cliente. Isso não é feito pelo painel do parceiro.
+            </p>
+          </div>
+        </div>
+      </section>
+
       <!-- Extrato -->
-      <section class="min-w-0">
+      <section class="order-3 2xl:order-2 min-w-0">
         <div class="flex flex-col sm:flex-row sm:items-center gap-3 mb-3">
           <div class="flex items-center gap-2">
             <span class="w-6 h-6 rounded-md flex items-center justify-center bg-purple-500/15 shrink-0">

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { fmtPedidos, rotuloDelivery } from '~/composables/useParceiroLicencas'
 import type { ClienteCarteira, SaldosCredito, SituacaoAcesso } from '~/composables/useParceiroLicencas'
 import type { TipoSolicitacao } from './ParceiroSolicitarModal.vue'
 import type { AbaDetalhesCliente } from './ParceiroClienteDetalhesModal.vue'
@@ -64,6 +65,23 @@ const abaDetalhes = ref<AbaDetalhesCliente>('dados')
 const showValor = ref(false)
 const showSolicitar = ref(false)
 const tipoSolicitacao = ref<TipoSolicitacao>('creditos')
+const showDelivery = ref(false)
+const acaoDelivery = ref<'liberar' | 'remover'>('liberar')
+
+function abrirDelivery(c: ClienteCarteira) {
+  selecionado.value = c
+  acaoDelivery.value = c.delivery_ativo ? 'remover' : 'liberar'
+  showDelivery.value = true
+}
+
+/** Cliente cobrado ou bloqueado pela Agzap: o Delivery dele é decisão da Agzap. */
+function podeMexerNoDelivery(c: ClienteCarteira) {
+  return !c.cobranca_agzap && c.situacao !== 'bloqueado_admin'
+}
+
+function limiteAtingido(c: ClienteCarteira) {
+  return c.limite_pedidos > 0 && (c.pedidos_ciclo ?? 0) >= c.limite_pedidos
+}
 
 function abrirRenovar(c: ClienteCarteira) {
   selecionado.value = c
@@ -130,13 +148,19 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
               <th class="hidden md:table-cell text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Vencimento</th>
               <th class="hidden sm:table-cell text-center px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Restam</th>
               <th class="hidden sm:table-cell text-center px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Situação</th>
+              <th v-if="!compacto" class="hidden md:table-cell text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Pedidos no ciclo</th>
               <th v-if="!compacto" class="hidden md:table-cell text-right px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Valor cobrado</th>
               <th v-if="!compacto" class="hidden md:table-cell text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Indicado por</th>
               <th v-if="!compacto" class="hidden md:table-cell text-right px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap" title="Desconto de indicação liberado: você aplica na cobrança dele">Saldo de indicação</th>
               <th v-if="!compacto" class="hidden lg:table-cell text-center px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Instâncias</th>
               <th v-if="!compacto" class="hidden lg:table-cell text-center px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Assistentes</th>
               <th v-if="!compacto" class="hidden xl:table-cell text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Últ. renovação</th>
-              <th class="text-right px-3 sm:px-5 py-3 text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">Ações</th>
+              <!-- A tabela completa passa da largura em notebook: Ações fica presa à
+                   direita para Renovar nunca sair da tela. -->
+              <th
+                class="text-right px-3 sm:px-5 py-3 text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider"
+                :class="compacto ? '' : 'lg:sticky lg:right-0 lg:bg-slate-50 lg:dark:bg-slate-900'"
+              >Ações</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100 dark:divide-white/5">
@@ -152,7 +176,16 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
                     <span class="text-purple-700 dark:text-purple-400 text-xs font-semibold">{{ c.empresa_nome.charAt(0).toUpperCase() }}</span>
                   </div>
                   <div class="min-w-0">
-                    <p class="text-sm font-medium text-slate-800 dark:text-white truncate">{{ c.empresa_nome }}</p>
+                    <p class="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
+                      <span class="text-sm font-medium text-slate-800 dark:text-white truncate">{{ c.empresa_nome }}</span>
+                      <span
+                        v-if="c.delivery_ativo"
+                        class="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[11px] font-semibold whitespace-nowrap bg-orange-100 dark:bg-orange-500/15 text-orange-700 dark:text-orange-400"
+                      >
+                        <i class="fa-solid fa-motorcycle text-[9px]" aria-hidden="true" />
+                        {{ rotuloDelivery(c.cota_pedidos) }}
+                      </span>
+                    </p>
                     <div class="mt-0.5 space-y-0.5">
                       <p v-if="c.responsavel" class="text-xs text-slate-500 truncate max-w-[220px]">{{ c.responsavel }}</p>
                       <div v-if="c.telefone" class="flex items-center gap-1.5">
@@ -176,6 +209,13 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
                         {{ SITUACOES[c.situacao].label }}
                       </span>
                       <span class="text-[10px]" :class="corDias(c)">{{ fmtData(c.vencimento) }} · {{ textoDias(c) }}</span>
+                      <button
+                        v-if="!compacto && podeMexerNoDelivery(c)"
+                        type="button"
+                        @click="abrirDelivery(c)"
+                        class="basis-full text-left text-[11px] font-semibold underline underline-offset-2"
+                        :class="c.delivery_ativo ? 'text-slate-500 dark:text-slate-400' : 'text-orange-700 dark:text-orange-400'"
+                      >{{ c.delivery_ativo ? 'Remover Delivery' : 'Liberar Delivery' }}</button>
                     </div>
                   </div>
                 </div>
@@ -194,6 +234,16 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
                   <span class="w-1.5 h-1.5 rounded-full bg-current" aria-hidden="true" />
                   {{ SITUACOES[c.situacao].label }}
                 </span>
+              </td>
+
+              <td v-if="!compacto" class="hidden md:table-cell px-5 py-3 text-xs whitespace-nowrap tabular-nums">
+                <template v-if="c.delivery_ativo && c.pedidos_ciclo !== null">
+                  <span :class="limiteAtingido(c) ? 'font-semibold text-red-700 dark:text-red-400' : 'text-slate-600 dark:text-slate-400'">
+                    {{ fmtPedidos(c.pedidos_ciclo) }}<template v-if="c.limite_pedidos > 0"> de {{ fmtPedidos(c.limite_pedidos) }}</template>
+                  </span>
+                  <span v-if="limiteAtingido(c)" class="block text-[11px] font-semibold text-red-700 dark:text-red-400">Limite atingido</span>
+                </template>
+                <span v-else class="text-slate-400">—</span>
               </td>
 
               <!-- Valor da revenda: clicar edita. É o que o cliente vê na tela
@@ -251,7 +301,7 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
               </td>
 
               <!-- Ações -->
-              <td class="px-3 sm:px-5 py-3">
+              <td class="px-3 sm:px-5 py-3" :class="compacto ? '' : 'lg:sticky lg:right-0 lg:bg-white lg:dark:bg-slate-900'">
                 <div class="flex items-center justify-end gap-1.5">
                   <span
                     v-if="c.cobranca_agzap"
@@ -260,7 +310,21 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
                   >Cobrança Agzap</span>
 
                   <button
-                    v-else
+                    v-if="!compacto && podeMexerNoDelivery(c)"
+                    type="button"
+                    @click="abrirDelivery(c)"
+                    class="hidden sm:inline-block px-2.5 py-1 rounded border text-xs font-semibold whitespace-nowrap transition-colors"
+                    :class="c.delivery_ativo
+                      ? 'border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                      : 'border-orange-300 dark:border-orange-500/40 bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-400 hover:bg-orange-100 dark:hover:bg-orange-500/20'"
+                    :title="c.delivery_ativo ? 'Tirar o módulo Delivery deste cliente' : 'Ligar o módulo Delivery para este cliente, sem gastar crédito'"
+                    :aria-label="`${c.delivery_ativo ? 'Remover' : 'Liberar'} Delivery de ${c.empresa_nome}`"
+                  >
+                    {{ c.delivery_ativo ? 'Remover Delivery' : 'Liberar Delivery' }}
+                  </button>
+
+                  <button
+                    v-if="!c.cobranca_agzap"
                     type="button"
                     @click="abrirRenovar(c)"
                     class="px-2.5 py-1.5 rounded text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white transition-colors whitespace-nowrap"
@@ -313,6 +377,13 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
       :cliente="selecionado"
       :saldos="saldos"
       @close="showRenovar = false"
+      @confirmed="emit('changed')"
+    />
+    <ParceiroDeliveryModuloModal
+      :show="showDelivery"
+      :cliente="selecionado"
+      :acao="acaoDelivery"
+      @close="showDelivery = false"
       @confirmed="emit('changed')"
     />
     <ParceiroBloquearModal

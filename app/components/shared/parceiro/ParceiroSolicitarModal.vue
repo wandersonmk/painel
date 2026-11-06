@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import type { ClienteCarteira, PrecoLicenca } from '~/composables/useParceiroLicencas'
+import { LABEL_CREDITO, WHATSAPP_AGZAP, saldosVazios } from '~/composables/useParceiroLicencas'
+import type { ClienteCarteira, PrecoLicenca, TipoCredito } from '~/composables/useParceiroLicencas'
 
 export type TipoSolicitacao = 'creditos' | 'exclusao' | 'instancia' | 'numero' | 'assistente'
 
@@ -14,8 +15,6 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{ close: [] }>()
-
-const WHATSAPP_AGZAP = '5511914600243'
 
 const CONFIG: Record<TipoSolicitacao, { titulo: string; icone: string; descricao: string; assunto: string }> = {
   creditos: {
@@ -63,8 +62,7 @@ const observacao = ref('')
 // passar por prop e evitar a requisição.
 const { precos: precosCarregados, loadCreditos } = useParceiroLicencas()
 const precos = computed(() => props.precos?.length ? props.precos : precosCarregados.value)
-const qtdMensal = ref(0)
-const qtdAnual = ref(0)
+const quantidades = ref<Record<TipoCredito, number>>(saldosVazios())
 
 onMounted(() => {
   if (props.tipo === 'creditos' && !props.precos?.length) loadCreditos()
@@ -73,25 +71,22 @@ onMounted(() => {
 watch(() => props.show, (aberto) => {
   if (!aberto) return
   observacao.value = ''
-  qtdMensal.value = 0
-  qtdAnual.value = 0
+  quantidades.value = saldosVazios()
 })
 
 const fmtBRL = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 
-function definirQtd(tipo: 'mensal' | 'anual', valor: number) {
-  const limitado = Math.min(999, Math.max(0, Math.trunc(Number(valor) || 0)))
-  if (tipo === 'mensal') qtdMensal.value = limitado
-  else qtdAnual.value = limitado
+function definirQtd(tipo: TipoCredito, valor: number) {
+  quantidades.value[tipo] = Math.min(999, Math.max(0, Math.trunc(Number(valor) || 0)))
 }
 
-function ajustar(tipo: 'mensal' | 'anual', delta: number) {
-  definirQtd(tipo, (tipo === 'mensal' ? qtdMensal.value : qtdAnual.value) + delta)
+function ajustar(tipo: TipoCredito, delta: number) {
+  definirQtd(tipo, quantidades.value[tipo] + delta)
 }
 
 /** Faixa aplicada: a de maior quantidade_min que cabe na quantidade pedida. */
-function faixaAplicada(tipoCredito: 'mensal_30d' | 'anual_12m', qtd: number) {
+function faixaAplicada(tipoCredito: TipoCredito, qtd: number) {
   const faixas = precos.value
     .filter(p => p.tipo_credito === tipoCredito)
     .sort((a, b) => a.quantidade_min - b.quantidade_min)
@@ -101,29 +96,49 @@ function faixaAplicada(tipoCredito: 'mensal_30d' | 'anual_12m', qtd: number) {
   return escolhida
 }
 
-function linhaDe(tipoCredito: 'mensal_30d' | 'anual_12m', qtd: number) {
+function linhaDe(tipoCredito: TipoCredito, qtd: number) {
   const faixa = faixaAplicada(tipoCredito, qtd)
   const unitario = faixa ? Number(faixa.preco_unitario) : 0
   return { qtd, unitario, total: unitario * qtd }
 }
 
-const linhaMensal = computed(() => linhaDe('mensal_30d', Number(qtdMensal.value) || 0))
-const linhaAnual = computed(() => linhaDe('anual_12m', Number(qtdAnual.value) || 0))
-const totalPedido = computed(() => linhaMensal.value.total + linhaAnual.value.total)
-const totalCreditos = computed(() => linhaMensal.value.qtd + linhaAnual.value.qtd)
-/** Sem tabela carregada, some com o dinheiro em vez de exibir R$ 0,00. */
-const temPrecos = computed(() => precos.value.length > 0)
-
 /** "Peça mais 2 e o preço cai": só quando a próxima faixa existe e compensa. */
-const proximaFaixaMensal = computed(() => {
-  const qtd = linhaMensal.value.qtd
+function proximaFaixa(tipoCredito: TipoCredito, qtd: number, unitario: number) {
   if (qtd < 1) return null
   const proxima = precos.value
-    .filter(p => p.tipo_credito === 'mensal_30d' && p.quantidade_min > qtd)
+    .filter(p => p.tipo_credito === tipoCredito && p.quantidade_min > qtd)
     .sort((a, b) => a.quantidade_min - b.quantidade_min)[0]
-  if (!proxima || Number(proxima.preco_unitario) >= linhaMensal.value.unitario) return null
+  if (!proxima || Number(proxima.preco_unitario) >= unitario) return null
   return { faltam: proxima.quantidade_min - qtd, preco: Number(proxima.preco_unitario) }
-})
+}
+
+const TIPOS_PEDIDO: { id: TipoCredito; titulo: string; sub: string; icone: string; corIcone: string }[] = [
+  {
+    id: 'mensal_30d', titulo: 'Créditos de 30 dias', sub: 'Renova um cliente por 30 dias', icone: 'fa-calendar-day',
+    corIcone: 'bg-purple-100 dark:bg-purple-500/15 text-purple-600 dark:text-purple-400',
+  },
+  {
+    id: 'anual_12m', titulo: 'Créditos de 12 meses', sub: 'Renova um cliente por um ano', icone: 'fa-calendar-days',
+    corIcone: 'bg-indigo-100 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400',
+  },
+  {
+    id: 'delivery_ate500_30d', titulo: 'Delivery até 500', sub: 'Deixa o cliente com 500 pedidos por mês', icone: 'fa-motorcycle',
+    corIcone: 'bg-orange-100 dark:bg-orange-500/15 text-orange-600 dark:text-orange-400',
+  },
+  {
+    id: 'delivery_acima500_30d', titulo: 'Delivery acima de 500', sub: 'Deixa o cliente com até 5.000 pedidos por mês', icone: 'fa-motorcycle',
+    corIcone: 'bg-orange-100 dark:bg-orange-500/15 text-orange-600 dark:text-orange-400',
+  },
+]
+
+const linhasPedido = computed(() => TIPOS_PEDIDO.map((tipo) => {
+  const dados = linhaDe(tipo.id, Number(quantidades.value[tipo.id]) || 0)
+  return { ...tipo, dados, proxima: proximaFaixa(tipo.id, dados.qtd, dados.unitario) }
+}))
+const totalPedido = computed(() => linhasPedido.value.reduce((acc, l) => acc + l.dados.total, 0))
+const totalCreditos = computed(() => linhasPedido.value.reduce((acc, l) => acc + l.dados.qtd, 0))
+/** Sem tabela carregada, some com o dinheiro em vez de exibir R$ 0,00. */
+const temPrecos = computed(() => precos.value.length > 0)
 
 const podeEnviar = computed(() => props.tipo !== 'creditos' || totalCreditos.value > 0)
 
@@ -140,11 +155,10 @@ const linkWhatsApp = computed(() => {
       temPrecos.value
         ? `• ${qtd} crédito(s) de ${rotulo} — ${fmtBRL(unitario)} cada = ${fmtBRL(total)}`
         : `• ${qtd} crédito(s) de ${rotulo}`
-    if (linhaMensal.value.qtd > 0) {
-      linhas.push(detalhe(linhaMensal.value.qtd, '30 dias', linhaMensal.value.unitario, linhaMensal.value.total))
-    }
-    if (linhaAnual.value.qtd > 0) {
-      linhas.push(detalhe(linhaAnual.value.qtd, '12 meses', linhaAnual.value.unitario, linhaAnual.value.total))
+    for (const linha of linhasPedido.value) {
+      if (linha.dados.qtd > 0) {
+        linhas.push(detalhe(linha.dados.qtd, LABEL_CREDITO[linha.id], linha.dados.unitario, linha.dados.total))
+      }
     }
     if (temPrecos.value) linhas.push('', `*Total: ${fmtBRL(totalPedido.value)}*`)
   }
@@ -173,7 +187,7 @@ function abrir() {
 </script>
 
 <template>
-  <BaseModal :show="show" :title="config.titulo" :max-width="tipo === 'creditos' ? 'max-w-md' : 'max-w-sm'" @close="emit('close')">
+  <BaseModal :show="show" :title="config.titulo" :max-width="tipo === 'creditos' ? 'max-w-2xl' : 'max-w-sm'" @close="emit('close')">
     <div class="space-y-4">
       <div class="text-center py-1">
         <div
@@ -191,10 +205,7 @@ function abrir() {
            livre e a Agzap voltava perguntando valor. -->
       <div v-if="tipo === 'creditos'" class="space-y-2">
         <div
-          v-for="linha in [
-            { id: 'mensal' as const, titulo: 'Créditos de 30 dias', sub: 'Renova um cliente por 30 dias', icone: 'fa-calendar-day', cor: 'purple', dados: linhaMensal },
-            { id: 'anual' as const, titulo: 'Créditos de 12 meses', sub: 'Renova um cliente por um ano', icone: 'fa-calendar-days', cor: 'indigo', dados: linhaAnual },
-          ]"
+          v-for="linha in linhasPedido"
           :key="linha.id"
           class="rounded-lg border p-3 transition-colors"
           :class="linha.dados.qtd > 0
@@ -204,9 +215,7 @@ function abrir() {
           <div class="flex items-center gap-3">
             <span
               class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-              :class="linha.cor === 'purple'
-                ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-600 dark:text-purple-400'
-                : 'bg-indigo-100 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400'"
+              :class="linha.corIcone"
             >
               <i class="fa-solid text-xs" :class="linha.icone" aria-hidden="true" />
             </span>
@@ -252,11 +261,11 @@ function abrir() {
             <span class="font-bold text-slate-900 dark:text-white tabular-nums">{{ fmtBRL(linha.dados.total) }}</span>
           </div>
           <p
-            v-if="linha.id === 'mensal' && proximaFaixaMensal"
+            v-if="linha.proxima"
             class="mt-1.5 text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5"
           >
             <i class="fa-solid fa-arrow-trend-down text-[9px]" aria-hidden="true" />
-            Peça mais {{ proximaFaixaMensal.faltam }} e cada um sai por {{ fmtBRL(proximaFaixaMensal.preco) }}
+            Peça mais {{ linha.proxima.faltam }} e o preço cai para {{ fmtBRL(linha.proxima.preco) }}
           </p>
         </div>
 

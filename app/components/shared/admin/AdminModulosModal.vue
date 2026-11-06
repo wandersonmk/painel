@@ -57,7 +57,9 @@ type Aba = 'modulos' | 'addons' | 'limites'
 const aba = ref<Aba>('modulos')
 const emit = defineEmits<{
   close: []
-  confirm: [modulos: ModulosEmpresa]
+  // Só o que mudou desde que o modal abriu: pode vir vazio. A venda de pedidos
+  // extras vai à parte: não é configuração, é uma venda registrada.
+  confirm: [modulos: Partial<ModulosEmpresa>, extras: { quantidade: number; valor: number } | null]
 }>()
 
 // Roteamento virou add-on pago em 28/09/2026: nasce desligado (aba Add-ons).
@@ -78,6 +80,10 @@ const maxMacros = ref(5)
 const maxAcoesMacro = ref(5)
 // 0 = sem limite de pedidos/mês. Mesma faixa usual de maxEnviosMes.
 const maxPedidosMes = ref(0)
+// Pedidos extras: o saldo passa de um ciclo para o outro; só a Agzap vende.
+const extrasSaldo = ref<number | null>(null)
+const extrasAdicionar = ref<number | null>(null)
+const extrasValor = ref<number | null>(null)
 // Produtos da Vitrine ("Produtos" no menu do app). 0 = sem limite.
 const maxProdutosVitrine = ref(0)
 // Gate da Vitrine (28/09/2026): comum, nasce ligado — igual Webhooks.
@@ -110,6 +116,9 @@ watch(() => props.show, async (open) => {
     clientesEmUso.value = null
     produtosVitrineEmUso.value = null
     imoveisEmUso.value = null
+    extrasSaldo.value = null
+    extrasAdicionar.value = null
+    extrasValor.value = null
     return
   }
   roteamento.value = props.roteamentoAtual
@@ -131,10 +140,11 @@ watch(() => props.show, async (open) => {
   imoveis.value = props.imoveisAtual ?? false
   maxImoveis.value = props.maxImoveisAtual ?? 100
   aba.value = 'modulos'
+  valoresAoAbrir = valoresDoFormulario()
 
   if (!props.clienteId) return
   try {
-    const resp = await $fetch<{ success: boolean; data?: { profissionais: number; clientes: number; produtosVitrine?: number; imoveis?: number } }>('/api/admin/empresa-uso', {
+    const resp = await $fetch<{ success: boolean; data?: { profissionais: number; clientes: number; produtosVitrine?: number; imoveis?: number; pedidosExtras?: number } }>('/api/admin/empresa-uso', {
       query: { empresaId: props.clienteId },
       headers: await useAdminAuthHeaders(),
     })
@@ -142,6 +152,7 @@ watch(() => props.show, async (open) => {
     clientesEmUso.value = resp.success && resp.data ? (resp.data.clientes ?? null) : null
     produtosVitrineEmUso.value = resp.success && resp.data ? (resp.data.produtosVitrine ?? null) : null
     imoveisEmUso.value = resp.success && resp.data ? (resp.data.imoveis ?? null) : null
+    extrasSaldo.value = resp.success && resp.data ? (resp.data.pedidosExtras ?? 0) : null
   } catch {
     profissionaisEmUso.value = null
     clientesEmUso.value = null
@@ -332,7 +343,24 @@ function submeter() {
     aba.value = 'limites'
     return
   }
-  emit('confirm', {
+  const atuais = valoresDoFormulario()
+  const campos = Object.keys(atuais) as (keyof ModulosEmpresa)[]
+  const quantidade = Math.trunc(Number(extrasAdicionar.value) || 0)
+  const extras = delivery.value && quantidade > 0
+    ? { quantidade, valor: Number(extrasValor.value) || 0 }
+    : null
+  emit('confirm', Object.fromEntries(
+    campos.filter(c => atuais[c] !== valoresAoAbrir?.[c]).map(c => [c, atuais[c]]),
+  ) as Partial<ModulosEmpresa>, extras)
+}
+
+// Foto do formulário ao abrir. Salvar manda só a diferença: a lista do admin pode
+// estar velha, e regravar tudo devolvia, por exemplo, a cota que o parceiro acabou
+// de mudar numa renovação.
+let valoresAoAbrir: ModulosEmpresa | null = null
+
+function valoresDoFormulario(): ModulosEmpresa {
+  return {
     enviosHabilitado: envios.value,
     maxEnviosMes: envios.value ? tetoEnviosValido() : 0,
     roteamentoHabilitado: roteamento.value,
@@ -351,7 +379,7 @@ function submeter() {
     vitrineHabilitada: vitrine.value,
     imoveisModuloAtivo: imoveis.value,
     maxImoveis: imoveisValido(),
-  })
+  }
 }
 
 // Campo livre (0 = sem limite): fora da faixa cai em 0, nunca manda lixo.
@@ -600,7 +628,7 @@ function pedidosMesValido() {
                     Pedidos por mês
                   </label>
                   <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
-                    Teto de pedidos (WhatsApp + site somados) por mês. 0 = sem limite.
+                    Teto de pedidos por ciclo. A renovação com crédito de Delivery define este valor. 0 = sem limite.
                   </p>
                 </div>
                 <div class="shrink-0 text-center">
@@ -615,6 +643,47 @@ function pedidosMesValido() {
                   />
                   <span class="block text-[9px] uppercase tracking-wide text-slate-400 dark:text-slate-600 mt-0.5">pedidos/mês</span>
                 </div>
+              </div>
+
+              <!-- Venda de pedidos extras: só a Agzap faz, e fica registrada. -->
+              <div class="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <p class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <i class="fa-solid fa-plus text-orange-500 text-[10px]" aria-hidden="true" />
+                  Pedidos extras
+                </p>
+                <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
+                  Comprados à parte. O saldo não usado passa para o próximo ciclo.
+                </p>
+                <div class="mt-2 grid grid-cols-3 gap-2">
+                  <div>
+                    <span class="block text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-600 mb-1">Saldo</span>
+                    <span class="block py-1.5 text-[13px] font-semibold text-slate-900 dark:text-white tabular-nums">{{ extrasSaldo === null ? '—' : fmtMil.format(extrasSaldo) }}</span>
+                  </div>
+                  <div>
+                    <label for="extras-adicionar" class="block text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-600 mb-1">Adicionar</label>
+                    <input
+                      id="extras-adicionar"
+                      v-model.number="extrasAdicionar"
+                      type="number"
+                      min="0"
+                      max="200000"
+                      class="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-[13px] text-slate-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label for="extras-valor" class="block text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-600 mb-1">Valor cobrado</label>
+                    <AppCurrencyInput
+                      id="extras-valor"
+                      v-model="extrasValor"
+                      placeholder="R$ 0,00"
+                      class="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-[13px] text-slate-900 dark:text-white tabular-nums focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                </div>
+                <p class="mt-2 text-[11px] leading-snug text-slate-400 dark:text-slate-600">
+                  Exemplo: cota de 500 mais 100 extras dá 600 no ciclo. A loja faz 520 pedidos e sobram 80 extras.
+                  No reset, a contagem volta a zero e o ciclo novo fica com 500 + 80 = 580.
+                </p>
               </div>
             </div>
           </div>

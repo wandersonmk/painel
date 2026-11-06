@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { formatPhoneSemDdiBrasil, whatsappLink } from '~/utils/phone'
+import { LABEL_CREDITO, ehCreditoDelivery, fmtPedidos, rotuloDelivery } from '~/composables/useParceiroLicencas'
+import type { SaldosCredito, TipoCredito } from '~/composables/useParceiroLicencas'
 import AdminCobrancaAgzapModal from './AdminCobrancaAgzapModal.vue'
 import AdminRenovarCortesiaModal from './AdminRenovarCortesiaModal.vue'
 
@@ -12,6 +14,10 @@ interface ClienteVinculado {
   vencimento: string | null
   situacao: 'ativo' | 'vencido' | 'bloqueado_parceiro' | 'bloqueado_admin'
   cobranca_agzap: boolean
+  delivery_ativo: boolean
+  cota_pedidos: number
+  /** Só quando foi o parceiro que ligou o módulo. */
+  delivery_liberado_em: string | null
 }
 
 interface ParceiroLicencas {
@@ -23,7 +29,7 @@ interface ParceiroLicencas {
   // Parceria removida (09/10/2026): ≠ suspenso. Fica escondida e fora dos totais.
   removido_em?: string | null
   migrado_em: string | null
-  saldos: { mensal_30d: number; anual_12m: number }
+  saldos: SaldosCredito
   clientes_total: number
   clientes_ativos: number
   clientes_vencidos: number
@@ -35,7 +41,7 @@ interface ParceiroLicencas {
 interface Movimentacao {
   id: string
   parceiro_id: string
-  tipo_credito: 'mensal_30d' | 'anual_12m'
+  tipo_credito: TipoCredito
   quantidade: number
   operacao: string
   empresa_nome: string | null
@@ -57,9 +63,18 @@ interface Renovacao {
   executado_em: string
 }
 
+/** Crédito de Delivery recusado por a empresa não ter o módulo. Nada foi consumido. */
+interface TentativaDelivery {
+  id: string
+  parceiro_id: string
+  empresa_nome: string | null
+  tipo_credito: string | null
+  executado_em: string
+}
+
 interface Preco {
   id: string
-  tipo_credito: 'mensal_30d' | 'anual_12m'
+  tipo_credito: TipoCredito
   quantidade_min: number
   preco_unitario: number
 }
@@ -77,6 +92,7 @@ let toast: Awaited<ReturnType<typeof useToastSafe>> | null = null
 const parceiros = ref<ParceiroLicencas[]>([])
 const movimentacoes = ref<Movimentacao[]>([])
 const renovacoes = ref<Renovacao[]>([])
+const tentativasDelivery = ref<TentativaDelivery[]>([])
 const precos = ref<Preco[]>([])
 const loading = ref(true)
 // Linhas abertas (cada parceiro começa recolhido).
@@ -94,6 +110,7 @@ async function carregar() {
     parceiros.value = resp.data.parceiros
     movimentacoes.value = resp.data.movimentacoes
     renovacoes.value = resp.data.renovacoes
+    tentativasDelivery.value = resp.data.tentativasDelivery ?? []
     precos.value = resp.data.precos
   } catch {
     toast?.error('Erro ao carregar as licenças')
@@ -132,13 +149,15 @@ const qtdRemovidos = computed(() => parceiros.value.length - naoRemovidos.value.
 const visiveis = computed(() => mostrarRemovidos.value ? parceiros.value : naoRemovidos.value)
 
 const totais = computed(() => {
-  const t = { parceiros: 0, ativos: 0, suspensos: 0, mensal: 0, anual: 0, clientes: 0, clientesAtivos: 0, vencidos: 0, bloqueados: 0 }
+  const t = { parceiros: 0, ativos: 0, suspensos: 0, mensal: 0, anual: 0, deliveryAte500: 0, deliveryAcima500: 0, clientes: 0, clientesAtivos: 0, vencidos: 0, bloqueados: 0 }
   for (const p of naoRemovidos.value) {
     t.parceiros += 1
     if (p.ativo) t.ativos += 1
     else t.suspensos += 1
     t.mensal += Number(p.saldos?.mensal_30d ?? 0)
     t.anual += Number(p.saldos?.anual_12m ?? 0)
+    t.deliveryAte500 += Number(p.saldos?.delivery_ate500_30d ?? 0)
+    t.deliveryAcima500 += Number(p.saldos?.delivery_acima500_30d ?? 0)
     t.clientes += p.clientes_total
     t.clientesAtivos += p.clientes_ativos
     t.vencidos += p.clientes_vencidos
@@ -199,7 +218,7 @@ async function aposRemocao() {
 // ───────── Conceder créditos ─────────
 const showCreditos = ref(false)
 const alvoCredito = ref<ParceiroLicencas | null>(null)
-const formTipo = ref<'mensal_30d' | 'anual_12m'>('mensal_30d')
+const formTipo = ref<TipoCredito>('mensal_30d')
 const formOperacao = ref<'concessao_admin' | 'compra' | 'correcao'>('compra')
 const formQuantidade = ref<number | null>(null)
 const formReferencia = ref('')
@@ -415,14 +434,20 @@ const OPERACOES: Record<string, string> = {
   migracao: 'Migração',
 }
 
-const LABEL_TIPO: Record<string, string> = { mensal_30d: '30 dias', anual_12m: '12 meses' }
+const LABEL_TIPO: Record<string, string> = LABEL_CREDITO
+const TIPOS_CREDITO = Object.keys(LABEL_CREDITO) as TipoCredito[]
 
 // As listas rolam por dentro, então cabe mais histórico sem esticar a página.
 const LIMITE_LISTA = 50
 const movsDoParceiro = (id: string) => movimentacoes.value.filter(m => m.parceiro_id === id).slice(0, LIMITE_LISTA)
 const totalMovs = (id: string) => movimentacoes.value.filter(m => m.parceiro_id === id).length
-const renovsDoParceiro = (id: string) => renovacoes.value.filter(r => r.parceiro_id === id).slice(0, LIMITE_LISTA)
-const totalRenovs = (id: string) => renovacoes.value.filter(r => r.parceiro_id === id).length
+// Renovações e tentativas barradas na mesma lista, da mais nova para a mais velha.
+const historicoRenovacoes = (id: string) => [
+  ...renovacoes.value.filter(r => r.parceiro_id === id).map(r => ({ ...r, bloqueada: false as const })),
+  ...tentativasDelivery.value.filter(t => t.parceiro_id === id).map(t => ({ ...t, bloqueada: true as const })),
+].sort((a, b) => new Date(b.executado_em).getTime() - new Date(a.executado_em).getTime())
+const renovsDoParceiro = (id: string) => historicoRenovacoes(id).slice(0, LIMITE_LISTA)
+const totalRenovs = (id: string) => historicoRenovacoes(id).length
 
 const kpis = computed(() => {
   const t = totais.value
@@ -449,6 +474,13 @@ const kpis = computed(() => {
       cor: 'bg-indigo-100 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400',
     },
     {
+      titulo: 'Créditos de Delivery',
+      valor: String(t.deliveryAte500 + t.deliveryAcima500),
+      sub: `${t.deliveryAte500} até 500 · ${t.deliveryAcima500} acima de 500`,
+      icone: 'fa-motorcycle',
+      cor: 'bg-orange-100 dark:bg-orange-500/15 text-orange-600 dark:text-orange-400',
+    },
+    {
       titulo: 'Clientes ativos',
       valor: String(t.clientesAtivos),
       sub: `${t.clientes} vinculados`,
@@ -472,6 +504,7 @@ const colHead = 'text-[11px] font-medium text-slate-500 dark:text-slate-400 uppe
 const itemMenu = 'w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors'
 const pill30 = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] whitespace-nowrap border bg-purple-50 dark:bg-purple-500/10 border-purple-200 dark:border-purple-500/20 text-purple-700 dark:text-purple-300'
 const pill12 = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] whitespace-nowrap border bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/20 text-indigo-700 dark:text-indigo-300'
+const pillDelivery = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] whitespace-nowrap border bg-orange-50 dark:bg-orange-500/10 border-orange-200 dark:border-orange-500/20 text-orange-700 dark:text-orange-300'
 </script>
 
 <template>
@@ -512,6 +545,10 @@ const pill12 = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11
             <span class="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
             <span class="whitespace-nowrap tabular-nums">{{ totais.anual }} de 12 meses</span>
             <span class="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
+            <span class="whitespace-nowrap tabular-nums">{{ totais.deliveryAte500 }} de Delivery até 500</span>
+            <span class="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
+            <span class="whitespace-nowrap tabular-nums">{{ totais.deliveryAcima500 }} de Delivery acima de 500</span>
+            <span class="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
             <span class="whitespace-nowrap tabular-nums">{{ plural(totais.clientesAtivos, 'cliente ativo', 'clientes ativos') }}</span>
             <template v-if="totais.vencidos">
               <span class="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
@@ -526,7 +563,7 @@ const pill12 = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11
         </button>
 
         <div v-if="resumoAberto" id="parceiros-resumo" class="border-t border-slate-200 dark:border-slate-800 p-3">
-          <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
+          <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
             <div
               v-for="k in kpis"
               :key="k.titulo"
@@ -582,12 +619,12 @@ const pill12 = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11
         </div>
 
         <template v-else>
-          <!-- Cabeçalho das colunas (telas largas) -->
-          <div class="hidden lg:flex items-center gap-3 px-4 py-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-white/[0.02]">
+          <!-- Cabeçalho das colunas (telas largas). Saldo com 27rem: os 4 selos cabem em uma linha, mesmo com 3 dígitos -->
+          <div class="hidden min-[1200px]:flex items-center gap-3 px-4 py-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-white/[0.02]">
             <span :class="[colHead, 'flex-1 min-w-0 pl-12']">Parceiro</span>
-            <span :class="[colHead, 'w-44 shrink-0']">Saldo de créditos</span>
-            <span :class="[colHead, 'hidden xl:block w-32 shrink-0']">Clientes</span>
-            <span :class="[colHead, 'hidden xl:block w-28 shrink-0']">Último consumo</span>
+            <span :class="[colHead, 'w-[27rem] shrink-0']">Saldo de créditos</span>
+            <span :class="[colHead, 'hidden min-[1440px]:block w-28 shrink-0']">Clientes</span>
+            <span :class="[colHead, 'hidden min-[1440px]:block w-28 shrink-0']">Último consumo</span>
             <span class="w-[12rem] shrink-0" aria-hidden="true" />
           </div>
 
@@ -618,10 +655,12 @@ const pill12 = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11
                   </div>
                   <p class="text-xs text-slate-500 dark:text-slate-400 truncate">{{ p.email || '—' }}</p>
                   <!-- O que não cabe nas colunas desta largura -->
-                  <div class="xl:hidden mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
-                    <span class="lg:hidden inline-flex items-center gap-1.5">
+                  <div class="min-[1440px]:hidden mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+                    <span class="min-[1200px]:hidden inline-flex flex-wrap items-center gap-1.5">
                       <span :class="pill30"><span class="opacity-75">30 dias</span><span class="tabular-nums font-medium">{{ p.saldos.mensal_30d }}</span></span>
                       <span :class="pill12"><span class="opacity-75">12 meses</span><span class="tabular-nums font-medium">{{ p.saldos.anual_12m }}</span></span>
+                      <span :class="pillDelivery"><span class="opacity-75">Delivery até 500</span><span class="tabular-nums font-medium">{{ p.saldos.delivery_ate500_30d }}</span></span>
+                      <span :class="pillDelivery"><span class="opacity-75">Delivery acima de 500</span><span class="tabular-nums font-medium">{{ p.saldos.delivery_acima500_30d }}</span></span>
                     </span>
                     <span class="tabular-nums whitespace-nowrap">
                       <span class="text-emerald-600 dark:text-emerald-400">{{ p.clientes_ativos }}</span> ativos
@@ -632,13 +671,15 @@ const pill12 = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11
                   </div>
                 </div>
 
-                <div class="hidden lg:flex w-44 shrink-0 items-center gap-1.5">
+                <div class="hidden min-[1200px]:flex flex-wrap w-[27rem] shrink-0 items-center gap-1.5">
                   <span :class="pill30" title="Créditos de 30 dias"><span class="opacity-75">30 dias</span><span class="tabular-nums font-medium">{{ p.saldos.mensal_30d }}</span></span>
                   <span :class="pill12" title="Créditos de 12 meses"><span class="opacity-75">12 meses</span><span class="tabular-nums font-medium">{{ p.saldos.anual_12m }}</span></span>
+                  <span :class="pillDelivery" title="Créditos de Delivery até 500"><span class="opacity-75">Delivery até 500</span><span class="tabular-nums font-medium">{{ p.saldos.delivery_ate500_30d }}</span></span>
+                  <span :class="pillDelivery" title="Créditos de Delivery acima de 500"><span class="opacity-75">Delivery acima de 500</span><span class="tabular-nums font-medium">{{ p.saldos.delivery_acima500_30d }}</span></span>
                 </div>
 
                 <div
-                  class="hidden xl:block w-32 shrink-0 text-xs tabular-nums"
+                  class="hidden min-[1440px]:block w-28 shrink-0 text-xs tabular-nums"
                   :title="`${p.clientes_total} clientes: ${p.clientes_ativos} ativos, ${p.clientes_vencidos} vencidos, ${p.clientes_bloqueados} bloqueados`"
                 >
                   <p class="text-slate-700 dark:text-slate-200">
@@ -651,7 +692,7 @@ const pill12 = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11
                   </p>
                 </div>
 
-                <div class="hidden xl:block w-28 shrink-0 text-xs tabular-nums text-slate-600 dark:text-slate-400">
+                <div class="hidden min-[1440px]:block w-28 shrink-0 text-xs tabular-nums text-slate-600 dark:text-slate-400">
                   {{ p.ultimo_consumo_em ? fmtDataHora(p.ultimo_consumo_em) : '—' }}
                 </div>
 
@@ -727,12 +768,12 @@ const pill12 = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11
               <div v-if="abertos.has(p.id)" class="border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 px-3 sm:px-4 py-4 space-y-4">
 
                 <!-- Contato e saldo -->
-                <dl class="grid grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-3">
-                  <div class="min-w-0">
+                <dl class="flex flex-wrap gap-x-6 gap-y-3">
+                  <div class="min-w-0 flex-[1_1_10rem]">
                     <dt class="text-[11px] text-slate-500 dark:text-slate-400">E-mail</dt>
                     <dd class="text-sm text-slate-800 dark:text-slate-200 truncate">{{ p.email || '—' }}</dd>
                   </div>
-                  <div class="min-w-0">
+                  <div class="min-w-0 flex-auto">
                     <dt class="text-[11px] text-slate-500 dark:text-slate-400">Telefone</dt>
                     <dd class="text-sm tabular-nums min-w-0">
                       <a
@@ -748,11 +789,11 @@ const pill12 = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11
                       <span v-else class="text-slate-800 dark:text-slate-200">{{ p.telefone || '—' }}</span>
                     </dd>
                   </div>
-                  <div class="min-w-0">
+                  <div class="min-w-0 flex-auto">
                     <dt class="text-[11px] text-slate-500 dark:text-slate-400">Saldo de créditos</dt>
-                    <dd class="text-sm tabular-nums text-slate-800 dark:text-slate-200">{{ p.saldos.mensal_30d }} × 30 dias · {{ p.saldos.anual_12m }} × 12 meses</dd>
+                    <dd class="text-sm tabular-nums text-slate-800 dark:text-slate-200">{{ TIPOS_CREDITO.map(t => `${p.saldos[t]} × ${LABEL_TIPO[t]}`).join(' · ') }}</dd>
                   </div>
-                  <div class="min-w-0">
+                  <div class="min-w-0 flex-auto">
                     <dt class="text-[11px] text-slate-500 dark:text-slate-400">Último consumo</dt>
                     <dd class="text-sm tabular-nums text-slate-800 dark:text-slate-200">{{ p.ultimo_consumo_em ? fmtDataHora(p.ultimo_consumo_em) : '—' }}</dd>
                   </div>
@@ -773,9 +814,21 @@ const pill12 = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11
                       class="px-4 py-2 flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-1.5"
                     >
                       <div class="min-w-0 flex-1 basis-full sm:basis-auto">
-                        <p class="text-sm text-slate-900 dark:text-white truncate">{{ c.empresa_nome }}</p>
+                        <p class="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
+                          <span class="text-sm text-slate-900 dark:text-white truncate">{{ c.empresa_nome }}</span>
+                          <span
+                            v-if="c.delivery_ativo"
+                            class="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[10px] whitespace-nowrap bg-orange-100 dark:bg-orange-500/15 text-orange-700 dark:text-orange-400"
+                          >
+                            <i class="fa-solid fa-motorcycle text-[8px]" aria-hidden="true" />
+                            {{ rotuloDelivery(c.cota_pedidos) }}
+                          </span>
+                        </p>
                         <p class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
-                          Vinculado em {{ fmtData(c.vinculado_em) }} · vence <span class="font-medium text-slate-900 dark:text-white">{{ fmtData(c.vencimento) }}</span>
+                          Vinculado em {{ fmtData(c.vinculado_em) }}
+                          <template v-if="c.delivery_ativo && c.delivery_liberado_em"> · Delivery liberado pelo parceiro em {{ fmtData(c.delivery_liberado_em) }}</template>
+                          <template v-if="c.delivery_ativo"> · {{ c.cota_pedidos > 0 ? `cota de ${fmtPedidos(c.cota_pedidos)} pedidos por mês` : 'sem limite de pedidos' }}</template>
+                          · vence <span class="font-medium text-slate-900 dark:text-white">{{ fmtData(c.vencimento) }}</span>
                         </p>
                       </div>
                       <span class="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap" :class="SITUACOES[c.situacao]?.cls">
@@ -874,15 +927,24 @@ const pill12 = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11
                         :key="r.id"
                         class="px-4 py-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
                       >
-                        <span
-                          class="px-1.5 py-0.5 rounded text-[9px] font-medium uppercase shrink-0"
-                          :class="r.origem === 'admin'
-                            ? 'bg-slate-200 dark:bg-slate-600/40 text-slate-600 dark:text-slate-300'
-                            : 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-400'"
-                        >{{ r.origem === 'admin' ? 'Agzap' : 'Parceiro' }}</span>
-                        <span class="text-slate-700 dark:text-slate-300 truncate min-w-0 flex-1">{{ r.empresa_nome ?? '—' }}</span>
-                        <span v-if="!r.consumiu_credito" class="text-slate-400 shrink-0">sem crédito</span>
-                        <span class="text-slate-400 tabular-nums shrink-0">até {{ fmtData(r.vencimento_novo) }}</span>
+                        <template v-if="r.bloqueada">
+                          <span class="px-1.5 py-0.5 rounded text-[9px] font-medium uppercase shrink-0 bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-400">Bloqueada</span>
+                          <span class="text-slate-700 dark:text-slate-300 truncate min-w-0 flex-1">{{ r.empresa_nome ?? '—' }}</span>
+                          <span class="text-red-600 dark:text-red-400 shrink-0">tentou usar crédito de Delivery</span>
+                          <span class="text-slate-400 tabular-nums shrink-0">{{ fmtData(r.executado_em) }}</span>
+                        </template>
+                        <template v-else>
+                          <span
+                            class="px-1.5 py-0.5 rounded text-[9px] font-medium uppercase shrink-0"
+                            :class="r.origem === 'admin'
+                              ? 'bg-slate-200 dark:bg-slate-600/40 text-slate-600 dark:text-slate-300'
+                              : 'bg-purple-100 dark:bg-purple-500/15 text-purple-700 dark:text-purple-400'"
+                          >{{ r.origem === 'admin' ? 'Agzap' : 'Parceiro' }}</span>
+                          <span class="text-slate-700 dark:text-slate-300 truncate min-w-0 flex-1">{{ r.empresa_nome ?? '—' }}</span>
+                          <span v-if="!r.consumiu_credito" class="text-slate-400 shrink-0">sem crédito</span>
+                          <span v-else-if="r.tipo_credito" class="text-slate-400 shrink-0">{{ LABEL_TIPO[r.tipo_credito] }}</span>
+                          <span class="text-slate-400 tabular-nums shrink-0">até {{ fmtData(r.vencimento_novo) }}</span>
+                        </template>
                       </li>
                     </ul>
                   </div>
@@ -936,50 +998,43 @@ const pill12 = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11
             <span class="text-white font-medium text-sm">{{ alvoCredito.nome.charAt(0).toUpperCase() }}</span>
           </div>
           <p class="flex-1 min-w-[8rem] text-sm font-medium text-slate-900 dark:text-white truncate">{{ alvoCredito.nome }}</p>
-          <div class="flex items-center gap-1.5 text-xs tabular-nums">
+          <div class="flex flex-wrap items-center gap-1.5 text-xs tabular-nums">
             <span class="text-slate-500 dark:text-slate-400">Saldo</span>
             <span
-              class="px-2 py-0.5 rounded-full transition-colors"
-              :class="formTipo === 'mensal_30d'
-                ? 'bg-purple-50 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300'
-                : 'bg-slate-100 text-slate-600 dark:bg-white/[0.06] dark:text-slate-300'"
-            >30 dias: {{ alvoCredito.saldos.mensal_30d }}</span>
-            <span
-              class="px-2 py-0.5 rounded-full transition-colors"
-              :class="formTipo === 'anual_12m'
-                ? 'bg-purple-50 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300'
-                : 'bg-slate-100 text-slate-600 dark:bg-white/[0.06] dark:text-slate-300'"
-            >12 meses: {{ alvoCredito.saldos.anual_12m }}</span>
+              v-for="t in TIPOS_CREDITO"
+              :key="t"
+              class="px-2 py-0.5 rounded-full transition-colors whitespace-nowrap"
+              :class="formTipo !== t
+                ? 'bg-slate-100 text-slate-600 dark:bg-white/[0.06] dark:text-slate-300'
+                : ehCreditoDelivery(t)
+                  ? 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300'
+                  : 'bg-purple-50 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300'"
+            >{{ LABEL_TIPO[t] }}: {{ alvoCredito.saldos[t] }}</span>
           </div>
         </div>
 
-        <!-- Linha 1: tipo · operação · quantidade -->
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
-          <div>
-            <span id="lc-tipo-rotulo" class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Tipo</span>
-            <div role="radiogroup" aria-labelledby="lc-tipo-rotulo" class="grid grid-cols-2 gap-1 h-10 p-1 rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/10">
-              <button
-                type="button"
-                role="radio"
-                :aria-checked="formTipo === 'mensal_30d'"
-                @click="formTipo = 'mensal_30d'"
-                class="rounded-lg text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
-                :class="formTipo === 'mensal_30d'
-                  ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white font-medium shadow-sm'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
-              >30 dias</button>
-              <button
-                type="button"
-                role="radio"
-                :aria-checked="formTipo === 'anual_12m'"
-                @click="formTipo = 'anual_12m'"
-                class="rounded-lg text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
-                :class="formTipo === 'anual_12m'
-                  ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white font-medium shadow-sm'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
-              >12 meses</button>
-            </div>
+        <!-- Linha 1: tipo. Linha 2: operação · quantidade -->
+        <div>
+          <span id="lc-tipo-rotulo" class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Tipo</span>
+          <div role="radiogroup" aria-labelledby="lc-tipo-rotulo" class="grid grid-cols-2 sm:grid-cols-[0.8fr_0.8fr_1.2fr_1.4fr] gap-1 sm:h-10 p-1 rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/10">
+            <button
+              v-for="t in TIPOS_CREDITO"
+              :key="t"
+              type="button"
+              role="radio"
+              :aria-checked="formTipo === t"
+              @click="formTipo = t"
+              class="h-8 sm:h-auto rounded-lg text-sm whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
+              :class="formTipo !== t
+                ? 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                : ehCreditoDelivery(t)
+                  ? 'bg-white dark:bg-white/10 text-orange-700 dark:text-orange-300 font-medium shadow-sm'
+                  : 'bg-white dark:bg-white/10 text-slate-900 dark:text-white font-medium shadow-sm'"
+            >{{ LABEL_TIPO[t] }}</button>
           </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
           <div>
             <label for="lc-operacao" class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Operação</label>
             <div class="relative">
@@ -1041,7 +1096,7 @@ const pill12 = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11
                Editar desconto ou valor pago reescreve o outro. -->
           <div v-if="precoSugerido" class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-white/[0.03] text-xs tabular-nums">
             <span class="text-slate-500 dark:text-slate-400">
-              Tabela: {{ fmtBRL(precoSugerido.unitario) }} por licença ·
+              Tabela de {{ LABEL_TIPO[formTipo] }}: {{ fmtBRL(precoSugerido.unitario) }} por licença ·
               <strong class="font-medium text-slate-700 dark:text-slate-200">{{ fmtBRL(precoSugerido.total) }}</strong> no total
             </span>
             <span v-if="totalTabela > 0" class="flex flex-wrap items-center gap-x-1.5">
@@ -1058,6 +1113,14 @@ const pill12 = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11
             </span>
           </div>
         </div>
+
+        <p v-if="ehCreditoDelivery(formTipo)" class="flex items-start gap-2 px-3 py-2 rounded-xl bg-orange-50 dark:bg-orange-500/10 text-xs leading-snug text-orange-800 dark:text-orange-300">
+          <i class="fa-solid fa-circle-info mt-px" aria-hidden="true" />
+          <span>
+            Este crédito renova por 30 dias, só funciona em empresas com o módulo Delivery ativo e deixa a cota do cliente em
+            {{ formTipo === 'delivery_ate500_30d' ? '500' : 'até 5.000' }} pedidos por mês.
+          </span>
+        </p>
 
         <!-- Retirada e estorno são decisões diferentes: remover saldo não pode
              virar devolução de dinheiro por acidente. -->
@@ -1115,7 +1178,7 @@ const pill12 = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11
             <p class="min-w-0 text-sm tabular-nums text-slate-500 dark:text-slate-400" aria-live="polite">
               <template v-if="formQuantidade">
                 <span class="text-slate-900 dark:text-white">{{ formQuantidade > 0 ? '+' : '−' }}{{ plural(Math.abs(formQuantidade), 'crédito', 'créditos') }}</span>
-                de {{ formTipo === 'anual_12m' ? '12 meses' : '30 dias' }}
+                de {{ LABEL_TIPO[formTipo] }}
                 <template v-if="formOperacao === 'compra'"> · {{ fmtBRL(formValorPago ?? 0) }}</template>
                 <template v-else-if="formOperacao === 'concessao_admin'"> · cortesia</template>
                 <template v-else-if="formQuantidade < 0"> · {{ formHouveReembolso ? `${fmtBRL(formValorPago ?? 0)} devolvido` : 'sem devolução' }}</template>

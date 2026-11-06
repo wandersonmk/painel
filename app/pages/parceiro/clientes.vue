@@ -91,7 +91,14 @@ const CLASSES_ABA: Record<string, string> = {
   orange: 'border-orange-400 bg-orange-50 dark:bg-orange-500/15 text-orange-700 dark:text-orange-400',
 }
 
-const semSaldo = computed(() => saldos.value.mensal_30d < 1 && saldos.value.anual_12m < 1)
+const semSaldo = computed(() => Object.values(saldos.value).every(s => s < 1))
+
+const COLUNAS_SALDO = [
+  { tipo: 'mensal_30d', rotulo: 'de 30 dias', cor: 'text-purple-600 dark:text-purple-400' },
+  { tipo: 'anual_12m', rotulo: 'de 12 meses', cor: 'text-indigo-600 dark:text-indigo-400' },
+  { tipo: 'delivery_ate500_30d', rotulo: 'Delivery até 500', cor: 'text-orange-700 dark:text-orange-400' },
+  { tipo: 'delivery_acima500_30d', rotulo: 'Delivery acima de 500', cor: 'text-orange-800 dark:text-orange-300' },
+] as const
 
 const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none'
 const campoFiltro = 'bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 rounded-full text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500'
@@ -109,26 +116,20 @@ const campoFiltro = 'bg-white dark:bg-white/[0.04] border border-slate-200 dark:
           Renove, bloqueie e acompanhe os clientes vinculados a você
         </p>
       </div>
-      <div class="flex items-center gap-2 w-full sm:w-auto">
+      <div class="flex flex-wrap items-stretch justify-end gap-2 w-full sm:w-auto">
         <!-- Saldo sempre à vista: é o que limita as ações desta página.
              Número em cima, o que ele compra embaixo — "3 × 30d" numa linha só
              obrigava a decifrar a abreviação. Zerado fica apagado. -->
-        <div class="flex items-stretch rounded-md bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 divide-x divide-slate-200 dark:divide-white/10 overflow-hidden">
+        <div class="grid grid-cols-2 sm:flex items-stretch w-full sm:w-auto rounded-md bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 sm:divide-x divide-slate-200 dark:divide-white/10 overflow-hidden">
           <div class="hidden sm:flex items-center gap-2 px-3">
             <i class="fa-solid fa-coins text-purple-500 text-xs" aria-hidden="true" />
             <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 leading-tight">Créditos<br>disponíveis</span>
           </div>
-          <div class="px-3.5 py-1.5 text-center min-w-[78px]">
-            <p class="text-xl font-bold leading-none tabular-nums" :class="saldos.mensal_30d > 0 ? 'text-slate-900 dark:text-white' : 'text-slate-300 dark:text-slate-600'">
-              {{ saldos.mensal_30d }}
+          <div v-for="c in COLUNAS_SALDO" :key="c.tipo" class="px-3.5 py-1.5 text-center min-w-[78px]">
+            <p class="text-xl font-bold leading-none tabular-nums" :class="saldos[c.tipo] > 0 ? 'text-slate-900 dark:text-white' : 'text-slate-300 dark:text-slate-600'">
+              {{ saldos[c.tipo] }}
             </p>
-            <p class="text-[10px] font-semibold uppercase tracking-wide text-purple-600 dark:text-purple-400 mt-0.5">de 30 dias</p>
-          </div>
-          <div class="px-3.5 py-1.5 text-center min-w-[78px]">
-            <p class="text-xl font-bold leading-none tabular-nums" :class="saldos.anual_12m > 0 ? 'text-slate-900 dark:text-white' : 'text-slate-300 dark:text-slate-600'">
-              {{ saldos.anual_12m }}
-            </p>
-            <p class="text-[10px] font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-400 mt-0.5">de 12 meses</p>
+            <p class="text-[10px] font-semibold uppercase tracking-wide mt-0.5 whitespace-nowrap" :class="c.cor">{{ c.rotulo }}</p>
           </div>
         </div>
         <button

@@ -1,7 +1,20 @@
 import { ref } from 'vue'
 
-export type TipoCredito = 'mensal_30d' | 'anual_12m'
+export type TipoCredito = 'mensal_30d' | 'anual_12m' | 'delivery_ate500_30d' | 'delivery_acima500_30d'
 export type SituacaoAcesso = 'ativo' | 'vencido' | 'bloqueado_parceiro' | 'bloqueado_admin'
+
+/** Regra de uso do crédito de Delivery. Quem decide é a função do banco. */
+export interface UsoDelivery {
+  situacao: 'livre' | 'ok' | 'aviso' | 'bloqueado'
+  movimento_30d: boolean
+  renovacoes_delivery: number
+  primeira_renovacao: string | null
+  pedidos_30d: number
+  clientes_30d: number
+  pedidos_30_60d: number
+  clientes_30_60d: number
+  ultimo_pedido: string | null
+}
 
 export interface ClienteCarteira {
   vinculo_id: string
@@ -27,6 +40,18 @@ export interface ClienteCarteira {
   max_instancias: number
   assistentes: number
   max_assistentes: number
+  delivery_ativo: boolean
+  /** Teto de pedidos. 0 = sem limite. */
+  cota_pedidos: number
+  /** Pedidos que contam na cota. Nulo sem Delivery ou quando a consulta falha. */
+  pedidos_ciclo: number | null
+  /** Cota mais os pedidos extras comprados. 0 = sem limite. */
+  limite_pedidos: number
+  /** Pedidos extras que ainda sobram: passam para o próximo ciclo. */
+  extras_pedidos: number
+  /** Extras disponíveis no ciclo, antes de descontar o que foi usado. */
+  extras_total: number
+  uso_delivery: UsoDelivery | null
   ultima_renovacao: { em: string; tipo_credito: TipoCredito | null; origem: string } | null
   /** Quem indicou este cliente (nome da empresa), mesmo que não seja da sua carteira. */
   indicado_por_nome?: string | null
@@ -161,7 +186,30 @@ export function rotuloPlanoCliente(plano: string | null, periodo: string | null,
   return [p, d].filter(Boolean).join(' · ') || '—'
 }
 
-export interface SaldosCredito { mensal_30d: number; anual_12m: number }
+export type SaldosCredito = Record<TipoCredito, number>
+
+export function saldosVazios(): SaldosCredito {
+  return { mensal_30d: 0, anual_12m: 0, delivery_ate500_30d: 0, delivery_acima500_30d: 0 }
+}
+
+export function ehCreditoDelivery(tipo: TipoCredito) {
+  return tipo === 'delivery_ate500_30d' || tipo === 'delivery_acima500_30d'
+}
+
+/** Faixa do cliente pela cota: 0 = sem limite, definido só pela Agzap. */
+export function rotuloDelivery(cota: number) {
+  if (cota > 500) return 'Delivery acima de 500'
+  return cota > 0 ? 'Delivery até 500' : 'Delivery'
+}
+
+export const WHATSAPP_AGZAP = '5511914600243'
+
+export function linkSuporteAgzap(texto: string) {
+  return `https://wa.me/${WHATSAPP_AGZAP}?text=${encodeURIComponent(texto)}`
+}
+
+const fmtQuantidade = new Intl.NumberFormat('pt-BR')
+export const fmtPedidos = (n: number) => fmtQuantidade.format(n)
 
 export interface IndicadoresCarteira {
   total: number
@@ -196,6 +244,8 @@ export interface PrecoLicenca {
 export const LABEL_CREDITO: Record<TipoCredito, string> = {
   mensal_30d: '30 dias',
   anual_12m: '12 meses',
+  delivery_ate500_30d: 'Delivery até 500',
+  delivery_acima500_30d: 'Delivery acima de 500',
 }
 
 /** Chave única por tentativa: evita que um duplo clique consuma dois créditos. */
@@ -208,7 +258,7 @@ function novaIdempotencyKey() {
 
 export const useParceiroLicencas = () => {
   const clientes = ref<ClienteCarteira[]>([])
-  const saldos = ref<SaldosCredito>({ mensal_30d: 0, anual_12m: 0 })
+  const saldos = ref<SaldosCredito>(saldosVazios())
   const indicadores = ref<IndicadoresCarteira | null>(null)
   const movimentacoes = ref<MovimentacaoCredito[]>([])
   const precos = ref<PrecoLicenca[]>([])
@@ -257,7 +307,7 @@ export const useParceiroLicencas = () => {
    * Consome 1 crédito e renova o cliente. A chave de idempotência é gerada
    * uma vez por tentativa — reenviar a MESMA chave nunca cobra duas vezes.
    */
-  const renovar = async (empresaId: string, tipoCredito: TipoCredito, idempotencyKey: string) => {
+  const renovar = async (empresaId: string, tipoCredito: TipoCredito, idempotencyKey: string, confirmouAvisoUso = false) => {
     const resp = await $fetch<{
       success: boolean
       codigo?: string | null
@@ -265,7 +315,7 @@ export const useParceiroLicencas = () => {
       data?: { vencimento_novo: string; saldo_restante: number; repetida?: boolean }
     }>('/api/parceiro/renovar', {
       method: 'POST',
-      body: { empresaId, tipoCredito, idempotencyKey },
+      body: { empresaId, tipoCredito, idempotencyKey, confirmouAvisoUso },
       headers: await useAdminAuthHeaders(),
     })
     if (!resp.success) throw new Error(resp.error || 'Não foi possível renovar')
@@ -279,6 +329,28 @@ export const useParceiroLicencas = () => {
       headers: await useAdminAuthHeaders(),
     })
     if (!resp.success) throw new Error(resp.error || 'Não foi possível concluir a operação')
+  }
+
+  const alterarDelivery = async (empresaId: string, acao: 'liberar' | 'remover', confirmado: boolean) => {
+    const resp = await $fetch<{ success: boolean; error?: string }>('/api/parceiro/delivery-modulo', {
+      method: 'POST',
+      body: { empresaId, acao, confirmado },
+      headers: await useAdminAuthHeaders(),
+    })
+    if (!resp.success) throw new Error(resp.error || 'Não foi possível concluir a operação')
+  }
+
+  /** Só registro para a Agzap: nunca atrapalha quem está na tela. */
+  const registrarTentativaDelivery = async (empresaId: string, tipoCredito: TipoCredito) => {
+    try {
+      await $fetch('/api/parceiro/delivery-tentativa', {
+        method: 'POST',
+        body: { empresaId, tipoCredito },
+        headers: await useAdminAuthHeaders(),
+      })
+    } catch (erro) {
+      console.warn('[parceiro:delivery-tentativa]', erro)
+    }
   }
 
   /**
@@ -380,7 +452,8 @@ export const useParceiroLicencas = () => {
   return {
     clientes, saldos, indicadores, movimentacoes, precos,
     loading, loadingCreditos, error,
-    loadCarteira, loadCreditos, renovar, bloquear, salvarValorAssinatura, novaIdempotencyKey,
+    loadCarteira, loadCreditos, renovar, bloquear, alterarDelivery, registrarTentativaDelivery,
+    salvarValorAssinatura, novaIdempotencyKey,
     loadRede, loadDescontos, loadClienteDetalhe, acaoDesconto, usarSaldoDesconto,
   }
 }

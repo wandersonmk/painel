@@ -2,8 +2,14 @@ import type { H3Event } from 'h3'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { failPublic } from './apiError'
 
-export const TIPOS_CREDITO = ['mensal_30d', 'anual_12m'] as const
+export const TIPOS_CREDITO = ['mensal_30d', 'anual_12m', 'delivery_ate500_30d', 'delivery_acima500_30d'] as const
 export type TipoCredito = (typeof TIPOS_CREDITO)[number]
+
+/** Só renovam empresa com o módulo Delivery e definem a cota de pedidos dela. */
+export const TIPOS_CREDITO_DELIVERY: readonly TipoCredito[] = ['delivery_ate500_30d', 'delivery_acima500_30d']
+
+/** Cota com que o cliente fica ao liberar o módulo. Nunca 0: 0 é "sem limite". */
+export const COTA_INICIAL_DELIVERY = 500
 
 export function isTipoCredito(valor: unknown): valor is TipoCredito {
   return typeof valor === 'string' && (TIPOS_CREDITO as readonly string[]).includes(valor)
@@ -12,6 +18,12 @@ export function isTipoCredito(valor: unknown): valor is TipoCredito {
 export const LABEL_CREDITO: Record<TipoCredito, string> = {
   mensal_30d: '30 dias',
   anual_12m: '12 meses',
+  delivery_ate500_30d: 'Delivery até 500',
+  delivery_acima500_30d: 'Delivery acima de 500',
+}
+
+export function saldosZerados(): Record<TipoCredito, number> {
+  return { mensal_30d: 0, anual_12m: 0, delivery_ate500_30d: 0, delivery_acima500_30d: 0 }
 }
 
 /**
@@ -26,6 +38,9 @@ const MENSAGENS: Record<string, string> = {
   CUSTOMER_NOT_RENEWABLE: 'Este cliente não pode ser renovado.',
   CUSTOMER_BILLED_BY_AGZAP: 'Este cliente é cobrado diretamente pela Agzap e não consome crédito.',
   INSUFFICIENT_CREDITS: 'Você não tem crédito suficiente para esta renovação.',
+  DELIVERY_MODULE_REQUIRED: 'Esta empresa não tem o módulo Delivery. Para renovar, escolha um crédito de 30 dias ou de 12 meses.',
+  DELIVERY_ABOVE_500: 'Este cliente passou de 500 pedidos neste ciclo. Para renovar, escolha o crédito Delivery acima de 500, de 30 dias ou de 12 meses.',
+  DELIVERY_NO_USAGE: 'O crédito de Delivery está bloqueado para este cliente, por falta de pedidos. Para renovar, escolha um crédito de 30 dias ou de 12 meses.',
   INVALID_CREDIT_TYPE: 'Tipo de crédito inválido.',
   INVALID_QUANTITY: 'Quantidade inválida.',
   RENEWAL_ALREADY_PROCESSED: 'Esta renovação já foi processada.',
@@ -99,6 +114,100 @@ export async function registrarAuditoria(
   catch (erro) {
     console.error('[parceiroLicencas:auditoria]', erro)
   }
+}
+
+// ───────── Delivery ─────────
+
+/** Ações da auditoria que a Agzap acompanha em Parceiros e no Financeiro. */
+export const ACAO_TENTATIVA_DELIVERY = 'renovacao_delivery_bloqueada'
+export const ACAO_DELIVERY_LIBERADO = 'delivery_liberado'
+export const ACAO_DELIVERY_REMOVIDO = 'delivery_removido'
+export const ACAO_DELIVERY_DESLIGADO_AGZAP = 'delivery_desligado_agzap'
+export const ACAO_RENOVACAO_COM_AVISO = 'renovacao_delivery_com_aviso'
+export const ACAO_ALERTA_ENVIADO = 'alerta_enviado'
+export const ACAO_ALERTA_LIDO = 'alerta_lido'
+
+/**
+ * Crédito de Delivery em empresa sem o módulo: é o sinal de quem tenta pagar
+ * menos numa empresa que não vende por ele. Fica um registro por cliente, tipo
+ * e dia, senão cada clique repetido viraria uma tentativa nova no painel.
+ */
+export async function registrarTentativaDelivery(
+  supabase: SupabaseClient,
+  event: H3Event,
+  entrada: { parceiroId: string; empresaId: string; userId: string; tipoCredito: string },
+) {
+  try {
+    const dia = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' })
+    const chave = `tentativa:${entrada.parceiroId}:${entrada.empresaId}:${entrada.tipoCredito}:${dia}`
+    const { data: repetida } = await supabase
+      .from('parceiro_auditoria')
+      .select('id')
+      .eq('parceiro_id', entrada.parceiroId)
+      .eq('idempotency_key', chave)
+      .limit(1)
+    if (repetida?.length) return
+
+    const { data: empresa } = await supabase
+      .from('empresas').select('nome').eq('id', entrada.empresaId).maybeSingle()
+    await registrarAuditoria(supabase, event, {
+      parceiro_id: entrada.parceiroId,
+      empresa_id: entrada.empresaId,
+      ator_user_id: entrada.userId,
+      ator_papel: 'parceiro',
+      acao: ACAO_TENTATIVA_DELIVERY,
+      estado_novo: { tipo_credito: entrada.tipoCredito, empresa_nome: empresa?.nome ?? null },
+      idempotency_key: chave,
+      origem: 'painel_parceiro',
+    })
+  }
+  catch (erro) {
+    console.error('[parceiroLicencas:tentativaDelivery]', erro)
+  }
+}
+
+export interface UsoDelivery {
+  situacao: 'livre' | 'ok' | 'aviso' | 'bloqueado'
+  movimento_30d: boolean
+  renovacoes_delivery: number
+  primeira_renovacao: string | null
+  pedidos_30d: number
+  clientes_30d: number
+  pedidos_30_60d: number
+  clientes_30_60d: number
+  ultimo_pedido: string | null
+}
+
+/**
+ * Pedidos que contam na cota e situação da regra de uso, por empresa. Falha em
+ * uma empresa deixa só ela sem número: a tela mostra traço e a função do banco
+ * confere de novo ao renovar.
+ */
+export async function dadosDelivery(supabase: SupabaseClient, empresaIds: string[]) {
+  const pedidos = new Map<string, { usados: number; limite: number; extras: number; extrasTotal: number }>()
+  const uso = new Map<string, UsoDelivery>()
+  const TAMANHO_LOTE = 10
+  for (let i = 0; i < empresaIds.length; i += TAMANHO_LOTE) {
+    await Promise.all(empresaIds.slice(i, i + TAMANHO_LOTE).map(async (id) => {
+      const [cota, regra] = await Promise.all([
+        supabase.rpc('delivery_pedidos_mes_uso', { p_empresa_id: id }),
+        supabase.rpc('parceiro_delivery_uso', { p_empresa_id: id }),
+      ])
+      if (cota.error) console.error('[parceiroLicencas:dadosDelivery] cota', cota.error)
+      else {
+        const c = cota.data as { usados?: number; max?: number; extras?: number; extras_total?: number } | null
+        pedidos.set(id, {
+          usados: Number(c?.usados ?? 0) || 0,
+          limite: Number(c?.max ?? 0) || 0,
+          extras: Number(c?.extras ?? 0) || 0,
+          extrasTotal: Number(c?.extras_total ?? 0) || 0,
+        })
+      }
+      if (regra.error) console.error('[parceiroLicencas:dadosDelivery] uso', regra.error)
+      else uso.set(id, regra.data as UsoDelivery)
+    }))
+  }
+  return { pedidos, uso }
 }
 
 // ───────── Rede do parceiro e desconto de indicação ─────────

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { LABEL_CREDITO } from '~/composables/useParceiroLicencas'
 
 /**
  * Relatório de lucro do parceiro: quanto ele fatura com os clientes, quanto
@@ -110,7 +111,7 @@ const fmtData = (s: string | null) =>
 const fmtDataHora = (s: string | null) =>
   s ? new Date(s).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'
 
-const LABEL_TIPO: Record<string, string> = { mensal_30d: '30 dias', anual_12m: '12 meses' }
+const LABEL_TIPO: Record<string, string> = LABEL_CREDITO
 
 const rotuloPeriodo = computed(() => {
   const { de, ate } = intervalo()

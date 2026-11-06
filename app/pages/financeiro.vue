@@ -19,6 +19,7 @@ definePageMeta({
   <div class="p-3 sm:p-5 md:p-6">
     <div class="max-w-[1400px] mx-auto">
       <FinanceiroCreditosParceiros />
+      <FinanceiroVendasExtras />
     </div>
   </div>
 </template>

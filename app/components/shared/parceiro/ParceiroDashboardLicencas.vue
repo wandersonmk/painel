@@ -49,12 +49,14 @@ const avisoResumo = computed(() => (error.value ? 'Não foi possível carregar' 
 const nf = new Intl.NumberFormat('pt-BR')
 const fmt = (n: number | null | undefined) => nf.format(n ?? 0)
 
-const totalCreditos = computed(() => saldos.value.mensal_30d + saldos.value.anual_12m)
-const semSaldo = computed(() => saldos.value.mensal_30d < 1 && saldos.value.anual_12m < 1)
+const totalCreditos = computed(() => Object.values(saldos.value).reduce((acc, s) => acc + s, 0))
+const semSaldo = computed(() => totalCreditos.value < 1)
 
 const tilesCreditos = computed(() => [
   { label: '30 dias', icon: 'fa-calendar-day', iconCls: 'text-purple-500', valor: fmt(saldos.value.mensal_30d), detalhe: 'disponíveis' },
   { label: '12 meses', icon: 'fa-calendar-days', iconCls: 'text-indigo-500', valor: fmt(saldos.value.anual_12m), detalhe: 'disponíveis' },
+  { label: 'Delivery até 500', icon: 'fa-motorcycle', iconCls: 'text-orange-500', valor: fmt(saldos.value.delivery_ate500_30d), detalhe: 'disponíveis' },
+  { label: 'Delivery acima de 500', icon: 'fa-motorcycle', iconCls: 'text-orange-600', valor: fmt(saldos.value.delivery_acima500_30d), detalhe: 'disponíveis' },
 ])
 
 const renovacoesMes = computed(() => indicadores.value?.renovacoes_mes ?? 0)

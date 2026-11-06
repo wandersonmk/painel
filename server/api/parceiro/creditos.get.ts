@@ -1,6 +1,7 @@
 import { requireParceiroPrepago } from '~~/server/utils/requireParceiro'
 import { getServiceClient } from '~~/server/utils/requireSuperAdmin'
 import { failPublic } from '~~/server/utils/apiError'
+import { saldosZerados } from '~~/server/utils/parceiroLicencas'
 
 /** Saldo + extrato de créditos do parceiro logado. Somente leitura. */
 export default defineEventHandler(async (event) => {
@@ -39,7 +40,7 @@ export default defineEventHandler(async (event) => {
     )
   }
 
-  const saldos = { mensal_30d: 0, anual_12m: 0 }
+  const saldos = saldosZerados()
   for (const s of (saldosRes.data ?? []) as any[]) {
     if (s.tipo_credito in saldos) saldos[s.tipo_credito as keyof typeof saldos] = Number(s.saldo) || 0
   }

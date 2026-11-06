@@ -1,5 +1,6 @@
 import { requireSuperAdmin, getServiceClient } from '~~/server/utils/requireSuperAdmin'
 import { failPublic } from '~~/server/utils/apiError'
+import { ACAO_DELIVERY_LIBERADO, ACAO_TENTATIVA_DELIVERY, saldosZerados } from '~~/server/utils/parceiroLicencas'
 
 /**
  * Visão administrativa do modelo de licenças: saldo por parceiro, carteira,
@@ -9,7 +10,7 @@ export default defineEventHandler(async (event) => {
   await requireSuperAdmin(event)
   const supabase = getServiceClient()
 
-  const [parceirosRes, saldosRes, vinculosRes, ledgerRes, renovacoesRes, precosRes] = await Promise.all([
+  const [parceirosRes, saldosRes, vinculosRes, ledgerRes, renovacoesRes, precosRes, auditoriaRes] = await Promise.all([
     supabase.from('parceiros')
       // removido_em: parceria removida (some da lista por padrão, fora dos totais).
       .select('id, nome, email, telefone, ativo, removido_em, modelo_negocio, migrado_em')
@@ -18,7 +19,8 @@ export default defineEventHandler(async (event) => {
     supabase.from('parceiro_empresas')
       .select(`
         id, parceiro_id, empresa_id, ativo, cobranca_agzap, bloqueio_origem, created_at,
-        empresas ( id, nome, ativo, subscription_status, subscription_renews_at, trial_ends_at )
+        empresas ( id, nome, ativo, subscription_status, subscription_renews_at, trial_ends_at,
+                   delivery_modulo_ativo, max_pedidos_mes )
       `)
       .eq('ativo', true),
     supabase.from('parceiro_creditos_ledger')
@@ -33,6 +35,11 @@ export default defineEventHandler(async (event) => {
       .select('id, tipo_credito, quantidade_min, preco_unitario, preco_sugerido_revenda')
       .eq('ativo', true)
       .order('tipo_credito').order('quantidade_min'),
+    supabase.from('parceiro_auditoria')
+      .select('id, parceiro_id, empresa_id, acao, estado_novo, created_at')
+      .in('acao', [ACAO_DELIVERY_LIBERADO, ACAO_TENTATIVA_DELIVERY])
+      .order('created_at', { ascending: false })
+      .limit(300),
   ])
   if (parceirosRes.error) return failPublic(parceirosRes.error, 'admin/parceiros/licencas', 'Não foi possível carregar os parceiros.')
 
@@ -40,11 +47,22 @@ export default defineEventHandler(async (event) => {
   const ledger = (ledgerRes.data ?? []) as any[]
   const vinculos = ((vinculosRes.data ?? []) as any[]).filter(v => v.empresas)
 
-  const saldoPorParceiro = new Map<string, { mensal_30d: number; anual_12m: number }>()
+  const saldoPorParceiro = new Map<string, ReturnType<typeof saldosZerados>>()
   for (const s of (saldosRes.data ?? []) as any[]) {
-    const atual = saldoPorParceiro.get(s.parceiro_id) ?? { mensal_30d: 0, anual_12m: 0 }
-    if (s.tipo_credito in atual) atual[s.tipo_credito as 'mensal_30d' | 'anual_12m'] = Number(s.saldo) || 0
+    const atual = saldoPorParceiro.get(s.parceiro_id) ?? saldosZerados()
+    if (s.tipo_credito in atual) atual[s.tipo_credito as keyof typeof atual] = Number(s.saldo) || 0
     saldoPorParceiro.set(s.parceiro_id, atual)
+  }
+
+  // A lista vem do mais novo para o mais velho: vale a liberação mais recente.
+  // Só a auditoria sabe que foi o parceiro; o módulo ligado pela Agzap não aparece aqui.
+  const auditoria = (auditoriaRes.data ?? []) as any[]
+  if (auditoriaRes.error) console.error('[api:admin/parceiros/licencas] auditoria', auditoriaRes.error)
+  const liberadoPeloParceiroEm = new Map<string, string>()
+  for (const a of auditoria) {
+    if (a.acao === ACAO_DELIVERY_LIBERADO && a.empresa_id && !liberadoPeloParceiroEm.has(a.empresa_id)) {
+      liberadoPeloParceiroEm.set(a.empresa_id, a.created_at)
+    }
   }
 
   const parceiros = ((parceirosRes.data ?? []) as any[]).map(p => {
@@ -68,7 +86,7 @@ export default defineEventHandler(async (event) => {
       removido_em: p.removido_em ?? null,
       modelo_negocio: p.modelo_negocio,
       migrado_em: p.migrado_em,
-      saldos: saldoPorParceiro.get(p.id) ?? { mensal_30d: 0, anual_12m: 0 },
+      saldos: saldoPorParceiro.get(p.id) ?? saldosZerados(),
       clientes_total: carteira.length,
       clientes_ativos: carteira.filter(v => situacao(v) === 'ativo').length,
       clientes_vencidos: carteira.filter(v => situacao(v) === 'vencido').length,
@@ -82,6 +100,9 @@ export default defineEventHandler(async (event) => {
         vencimento: v.empresas.subscription_renews_at ?? v.empresas.trial_ends_at ?? null,
         situacao: situacao(v),
         cobranca_agzap: v.cobranca_agzap === true,
+        delivery_ativo: v.empresas.delivery_modulo_ativo === true,
+        cota_pedidos: v.empresas.max_pedidos_mes ?? 0,
+        delivery_liberado_em: liberadoPeloParceiroEm.get(v.empresa_id) ?? null,
       })),
     }
   })
@@ -93,6 +114,15 @@ export default defineEventHandler(async (event) => {
       movimentacoes: ledger,
       renovacoes: renovacoesRes.data ?? [],
       precos: precosRes.data ?? [],
+      tentativasDelivery: auditoria
+        .filter(a => a.acao === ACAO_TENTATIVA_DELIVERY)
+        .map(a => ({
+          id: a.id,
+          parceiro_id: a.parceiro_id,
+          empresa_nome: a.estado_novo?.empresa_nome ?? null,
+          tipo_credito: a.estado_novo?.tipo_credito ?? null,
+          executado_em: a.created_at,
+        })),
     },
   }
 })

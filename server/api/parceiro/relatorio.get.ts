@@ -123,8 +123,6 @@ export default defineEventHandler(async (event) => {
     const faixa = precos.filter(p => p.tipo_credito === tipo)[0]
     return faixa ? Number(faixa.preco_unitario) : 0
   }
-  const custoMensal = custoPorTipo('mensal_30d')
-  const custoAnual = custoPorTipo('anual_12m')
 
   interface LoteCredito { qtd: number; unitario: number; origem: 'pago' | 'cortesia' }
   const lotesPorTipo = new Map<string, LoteCredito[]>()
@@ -172,7 +170,7 @@ export default defineEventHandler(async (event) => {
       const saida = consumir(fila, -qtd, preferencia)
       fila = saida.fila
       if (movimento.operacao === 'consumo' && movimento.renovacao_id) {
-        const fallback = tipo === 'anual_12m' ? custoAnual : custoMensal
+        const fallback = custoPorTipo(tipo)
         custoPorRenovacao.set(movimento.renovacao_id, {
           // Saldo sem origem é legado inconsistente; estimar é mais honesto do
           // que declarar custo zero e inflar o lucro.
@@ -184,7 +182,7 @@ export default defineEventHandler(async (event) => {
     lotesPorTipo.set(tipo, fila)
   }
 
-  const MESES: Record<string, number> = { mensal_30d: 1, anual_12m: 12 }
+  const MESES: Record<string, number> = { mensal_30d: 1, anual_12m: 12, delivery_ate500_30d: 1, delivery_acima500_30d: 1 }
 
   const linhas = renovacoes.map((r) => {
     const consumiu = r.consumiu_credito === true
@@ -196,7 +194,7 @@ export default defineEventHandler(async (event) => {
     const custoRegistrado = custoPorRenovacao.get(r.id)
     const custo = !consumiu
       ? 0
-      : (custoRegistrado?.custo ?? (r.tipo_credito === 'anual_12m' ? custoAnual : custoMensal))
+      : (custoRegistrado?.custo ?? custoPorTipo(r.tipo_credito ?? 'mensal_30d'))
     const anual = r.tipo_credito === 'anual_12m' ? receitaAnual(r.empresa_id, preco) : null
     const receita = !consumiu ? 0 : (anual ? anual.valor : preco * meses)
     return {
@@ -295,8 +293,8 @@ export default defineEventHandler(async (event) => {
         renovacoes_agzap: linhas.filter(l => !l.consumiu_credito).length,
         meses_vendidos: soma(l => l.meses),
         clientes_atendidos: porCliente.filter(c => c.receita > 0).length,
-        custo_medio_mensal: custoMensal,
-        custo_medio_anual: custoAnual,
+        custo_medio_mensal: custoPorTipo('mensal_30d'),
+        custo_medio_anual: custoPorTipo('anual_12m'),
         // Quantas renovações anuais ainda usam o preço sugerido da tabela em
         // vez do que o parceiro combinou com aquele cliente.
         anuais_sem_preco_proprio: linhas.filter(l => l.preco_anual_origem && l.preco_anual_origem !== 'cliente').length,

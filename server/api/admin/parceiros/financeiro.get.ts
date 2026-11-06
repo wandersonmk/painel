@@ -1,5 +1,9 @@
 import { requireSuperAdmin, getServiceClient } from '~~/server/utils/requireSuperAdmin'
 import { failPublic } from '~~/server/utils/apiError'
+import {
+  ACAO_DELIVERY_LIBERADO, ACAO_TENTATIVA_DELIVERY, LABEL_CREDITO, TIPOS_CREDITO, saldosZerados,
+  type TipoCredito,
+} from '~~/server/utils/parceiroLicencas'
 
 /**
  * Visão financeira do programa de parceiros para a página /financeiro.
@@ -14,7 +18,7 @@ import { failPublic } from '~~/server/utils/apiError'
 
 const DIA_MS = 86_400_000
 
-type Tipo = 'mensal_30d' | 'anual_12m'
+type Tipo = TipoCredito
 
 export default defineEventHandler(async (event) => {
   await requireSuperAdmin(event)
@@ -56,7 +60,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const [parceirosRes, ledgerRes, saldosRes, renovacoesRes, vinculosRes, precosRes] = await Promise.all([
+  const [parceirosRes, ledgerRes, saldosRes, renovacoesRes, vinculosRes, precosRes, auditoriaRes] = await Promise.all([
     supabase.from('parceiros').select('id, nome, email, ativo, modelo_negocio'),
     carregarTodasAsPaginas(
       'parceiro_creditos_ledger',
@@ -76,6 +80,12 @@ export default defineEventHandler(async (event) => {
       .select('tipo_credito, quantidade_min, preco_unitario, preco_sugerido_revenda')
       .eq('ativo', true)
       .order('tipo_credito').order('quantidade_min'),
+    supabase.from('parceiro_auditoria')
+      .select('acao')
+      .in('acao', [ACAO_DELIVERY_LIBERADO, ACAO_TENTATIVA_DELIVERY])
+      .gte('created_at', de.toISOString())
+      .lte('created_at', ate.toISOString())
+      .limit(1000),
   ])
 
   const erroConsulta = parceirosRes.error || ledgerRes.error || saldosRes.error
@@ -87,6 +97,9 @@ export default defineEventHandler(async (event) => {
   const renovacoes = (renovacoesRes.data ?? []) as any[]
   const vinculos = ((vinculosRes.data ?? []) as any[]).filter(v => v.empresas)
   const precos = (precosRes.data ?? []) as any[]
+  // Falha aqui só deixa os avisos de Delivery zerados; o financeiro segue carregando.
+  if (auditoriaRes.error) console.error('[api:admin/parceiros/financeiro] auditoria', auditoriaRes.error)
+  const acoesAuditoria = (auditoriaRes.data ?? []) as { acao: string }[]
 
   const nomePorParceiro = new Map<string, string>(parceiros.map(p => [p.id, p.nome]))
 
@@ -255,7 +268,7 @@ export default defineEventHandler(async (event) => {
     const concessoesP = doP(concessoes)
     const consumosP = doP(consumos)
 
-    const saldo = { mensal_30d: 0, anual_12m: 0 }
+    const saldo = saldosZerados()
     for (const s of (saldosRes.data ?? []) as any[]) {
       if (s.parceiro_id === p.id && s.tipo_credito in saldo) {
         saldo[s.tipo_credito as Tipo] = Number(s.saldo) || 0
@@ -266,10 +279,9 @@ export default defineEventHandler(async (event) => {
     const vencimentoDe = (v: any) => v.empresas.subscription_renews_at ?? v.empresas.trial_ends_at ?? null
     const diasAte = (iso: string | null) => iso === null ? null : Math.ceil((new Date(iso).getTime() - agora) / DIA_MS)
 
-    const rateioMensal = ratearSaldo(p.id, 'mensal_30d', saldo.mensal_30d)
-    const rateioAnual = ratearSaldo(p.id, 'anual_12m', saldo.anual_12m)
-    const passivoPago = rateioMensal.valorPago + rateioAnual.valorPago
-    const passivoCortesia = rateioMensal.valorCortesia + rateioAnual.valorCortesia
+    const rateios = TIPOS_CREDITO.map(tipo => ({ tipo, ...ratearSaldo(p.id, tipo, saldo[tipo]) }))
+    const passivoPago = soma(rateios, r => r.valorPago)
+    const passivoCortesia = soma(rateios, r => r.valorCortesia)
 
     return {
       id: p.id,
@@ -287,8 +299,10 @@ export default defineEventHandler(async (event) => {
       passivo_pago: passivoPago,
       passivo_cortesia: passivoCortesia,
       passivo_estimado: passivoPago + passivoCortesia,
-      saldo_pago: rateioMensal.qtdPago + rateioAnual.qtdPago,
-      saldo_cortesia: rateioMensal.qtdCortesia + rateioAnual.qtdCortesia,
+      saldo_pago: soma(rateios, r => r.qtdPago),
+      saldo_cortesia: soma(rateios, r => r.qtdCortesia),
+      // Só para o quadro por tipo de crédito: não vai para a tela do parceiro.
+      rateios,
       // Créditos
       creditos_comprados_periodo: soma(vendasP, l => l.quantidade),
       creditos_concedidos_periodo: soma(concessoesP, l => l.quantidade),
@@ -297,7 +311,7 @@ export default defineEventHandler(async (event) => {
       creditos_ajustados_periodo: soma(ajustesP, l => l.quantidade),
       creditos_consumidos_periodo: abs(soma(consumosP, l => l.quantidade)),
       saldo,
-      saldo_total: saldo.mensal_30d + saldo.anual_12m,
+      saldo_total: Object.values(saldo).reduce((acc, s) => acc + s, 0),
       // Carteira
       clientes_total: carteira.length,
       clientes_vencendo_7d: carteira.filter((v) => {
@@ -371,14 +385,35 @@ export default defineEventHandler(async (event) => {
     // Sinal de alerta operacional, não acusação: renovação sem consumo de
     // crédito é sempre a Agzap pagando a conta no lugar do parceiro.
     renovacoes_sem_credito_periodo: renovacoes.filter(r => !r.consumiu_credito && noPeriodo(r.executado_em)).length,
+    // Crédito de Delivery em empresa sem o módulo, barrado antes de consumir.
+    tentativas_delivery_periodo: acoesAuditoria.filter(a => a.acao === ACAO_TENTATIVA_DELIVERY).length,
+    modulos_delivery_liberados_periodo: acoesAuditoria.filter(a => a.acao === ACAO_DELIVERY_LIBERADO).length,
   }
+
+  // ───────── Por tipo de crédito: movimentos do período e posição atual ─────────
+  const porTipo = TIPOS_CREDITO.map((tipo) => {
+    const doTipo = (ls: any[]) => ls.filter(l => l.tipo_credito === tipo)
+    const rateiosDoTipo = porParceiro.flatMap(p => p.rateios).filter(r => r.tipo === tipo)
+    return {
+      tipo_credito: tipo,
+      rotulo: LABEL_CREDITO[tipo],
+      vendidos: soma(doTipo(vendas), l => l.quantidade),
+      valor_vendido: soma(doTipo(vendas), valor),
+      consumidos: abs(soma(doTipo(consumos), l => l.quantidade)),
+      saldo: porParceiro.reduce((acc, p) => acc + p.saldo[tipo], 0),
+      pago_nao_usado: soma(rateiosDoTipo, r => r.valorPago),
+    }
+  })
 
   return {
     success: true,
     data: {
       periodo: { de: de.toISOString(), ate: ate.toISOString() },
       resumo,
-      porParceiro: porParceiro.sort((a, b) => b.liquido_periodo - a.liquido_periodo),
+      porTipo,
+      porParceiro: porParceiro
+        .map(({ rateios: _rateios, ...p }) => p)
+        .sort((a, b) => b.liquido_periodo - a.liquido_periodo),
       vendas,
       // Mantém o nome do contrato da API; a lista contém retiradas com e sem
       // reembolso, enquanto as métricas financeiras usam apenas reembolsos.

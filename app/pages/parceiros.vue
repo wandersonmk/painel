@@ -21,8 +21,8 @@ export interface ParceiroAdmin {
 
 let toast: Awaited<ReturnType<typeof useToastSafe>> | null = null
 
-type Aba = 'licencas' | 'indicacoes' | 'materiais'
-const ABAS: Aba[] = ['licencas', 'indicacoes', 'materiais']
+type Aba = 'licencas' | 'uso-delivery' | 'indicacoes' | 'materiais'
+const ABAS: Aba[] = ['licencas', 'uso-delivery', 'indicacoes', 'materiais']
 
 // A aba fica na URL (?aba=indicacoes) para dar para abrir a consulta direto.
 const route = useRoute()
@@ -35,10 +35,12 @@ watch(abaAtiva, (aba) => {
 
 const materiaisCount = ref(0)
 const indicacoesCount = ref(0)
+const usoDeliveryCount = ref(0)
 const isRefreshing = ref(false)
 
 const licencasRef = ref<{ carregar: () => Promise<void> } | null>(null)
 const indicacoesRef = ref<{ carregar: () => Promise<void> } | null>(null)
+const usoDeliveryRef = ref<{ carregar: () => Promise<void> } | null>(null)
 
 async function recarregarLicencas() {
   await licencasRef.value?.carregar()
@@ -48,7 +50,7 @@ async function refreshAll() {
   if (isRefreshing.value) return
   isRefreshing.value = true
   try {
-    await Promise.all([recarregarLicencas(), indicacoesRef.value?.carregar()])
+    await Promise.all([recarregarLicencas(), indicacoesRef.value?.carregar(), usoDeliveryRef.value?.carregar()])
   } finally {
     isRefreshing.value = false
   }
@@ -56,6 +58,7 @@ async function refreshAll() {
 
 const abas = computed<Array<{ valor: Aba; rotulo: string; icone: string; contagem: number | null }>>(() => [
   { valor: 'licencas', rotulo: 'Licenças', icone: 'fa-id-card text-purple-500', contagem: null },
+  { valor: 'uso-delivery', rotulo: 'Uso do Delivery', icone: 'fa-motorcycle text-orange-500', contagem: usoDeliveryCount.value },
   { valor: 'indicacoes', rotulo: 'Indicações', icone: 'fa-address-card text-pink-500', contagem: indicacoesCount.value },
   { valor: 'materiais', rotulo: 'Materiais', icone: 'fa-box-open text-emerald-500', contagem: materiaisCount.value },
 ])
@@ -213,7 +216,7 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
 
 <template>
   <div class="p-4 sm:p-6">
-    <div class="max-w-[1400px] mx-auto space-y-4">
+    <div class="max-w-[1800px] mx-auto space-y-4">
 
       <!-- Barra de cima: abas + novo parceiro + atualizar -->
       <div class="flex flex-col lg:flex-row lg:items-center gap-3">
@@ -272,6 +275,10 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
       </div>
 
       <!-- ══════════════ ABA INDICAÇÕES ══════════════ -->
+      <div v-show="abaAtiva === 'uso-delivery'">
+        <AdminUsoDelivery ref="usoDeliveryRef" @count-change="usoDeliveryCount = $event" />
+      </div>
+
       <div v-show="abaAtiva === 'indicacoes'">
         <AdminIndicacoesManager ref="indicacoesRef" @count-change="indicacoesCount = $event" />
       </div>

@@ -1,7 +1,7 @@
 import { requireParceiroPrepago } from '~~/server/utils/requireParceiro'
 import { getServiceClient } from '~~/server/utils/requireSuperAdmin'
 import { failPublic } from '~~/server/utils/apiError'
-import { buscarEmLotes, centavos } from '~~/server/utils/parceiroLicencas'
+import { buscarEmLotes, centavos, dadosDelivery, saldosZerados } from '~~/server/utils/parceiroLicencas'
 
 export type SituacaoAcesso = 'ativo' | 'vencido' | 'bloqueado_parceiro' | 'bloqueado_admin'
 
@@ -20,7 +20,8 @@ export default defineEventHandler(async (event) => {
       empresas ( id, nome, nome_cliente, email, whatsapp, ativo, created_at,
                  subscription_status, subscription_plan, subscription_price, subscription_price_anual,
                  subscription_renews_at, trial_ends_at,
-                 max_instancias, max_agentes, indicado_por_empresa_id )
+                 max_instancias, max_agentes, indicado_por_empresa_id,
+                 delivery_modulo_ativo, max_pedidos_mes )
     `)
     .eq('parceiro_id', parceiro.id)
     .eq('ativo', true)
@@ -40,7 +41,11 @@ export default defineEventHandler(async (event) => {
       .filter((id): id is string => !!id && !nomePorId.has(id)),
   )]
 
-  const [saldosRes, uazRes, metaRes, agentesRes, renovacoesRes, nomesForaRes, liberadoRes] = await Promise.all([
+  const comDelivery = (linhas as any[])
+    .filter(v => v.empresas.delivery_modulo_ativo === true)
+    .map(v => v.empresa_id as string)
+
+  const [saldosRes, uazRes, metaRes, agentesRes, renovacoesRes, nomesForaRes, liberadoRes, delivery] = await Promise.all([
     supabase.from('parceiro_creditos_saldo')
       .select('tipo_credito, saldo').eq('parceiro_id', parceiro.id),
     empresaIds.length
@@ -71,6 +76,7 @@ export default defineEventHandler(async (event) => {
         .order('id')
         .range(de, ate),
     ),
+    dadosDelivery(supabase, comDelivery),
   ])
 
   if (nomesForaRes.error) console.error('[api:parceiro/carteira] nomes de quem indicou', nomesForaRes.error)
@@ -146,6 +152,14 @@ export default defineEventHandler(async (event) => {
       max_instancias: e.max_instancias ?? 0,
       assistentes: porAgente.get(v.empresa_id) ?? 0,
       max_assistentes: e.max_agentes ?? 0,
+      delivery_ativo: e.delivery_modulo_ativo === true,
+      cota_pedidos: e.max_pedidos_mes ?? 0,
+      pedidos_ciclo: delivery.pedidos.get(v.empresa_id)?.usados ?? null,
+      // Cota mais os pedidos extras comprados: é o limite que vale neste ciclo.
+      limite_pedidos: delivery.pedidos.get(v.empresa_id)?.limite ?? e.max_pedidos_mes ?? 0,
+      extras_pedidos: delivery.pedidos.get(v.empresa_id)?.extras ?? 0,
+      extras_total: delivery.pedidos.get(v.empresa_id)?.extrasTotal ?? 0,
+      uso_delivery: delivery.uso.get(v.empresa_id) ?? null,
       ultima_renovacao: ultima
         ? { em: ultima.executado_em, tipo_credito: ultima.tipo_credito, origem: ultima.origem }
         : null,
@@ -163,7 +177,7 @@ export default defineEventHandler(async (event) => {
     return new Date(a.vencimento).getTime() - new Date(b.vencimento).getTime()
   })
 
-  const saldos = { mensal_30d: 0, anual_12m: 0 }
+  const saldos = saldosZerados()
   for (const s of (saldosRes.data ?? []) as any[]) {
     if (s.tipo_credito in saldos) saldos[s.tipo_credito as keyof typeof saldos] = Number(s.saldo) || 0
   }

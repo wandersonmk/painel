@@ -623,61 +623,75 @@ function handleModulos(id: string) {
     showModulosModal.value = true
   }
 }
+// Campo do modal -> coluna da lista. O modal manda só o que mudou, então a lista
+// só atualiza o que veio: um campo ausente não pode virar undefined nela.
+const COLUNA_MODULO = {
+  roteamentoHabilitado: 'roteamento_habilitado',
+  agendamentosHabilitado: 'agendamentos_habilitado',
+  paginaAgendamentoHabilitada: 'pagina_agendamento_habilitada',
+  apiAssistenteHabilitada: 'api_assistente_habilitada',
+  webhooksHabilitado: 'webhooks_habilitado',
+  documentacaoHabilitada: 'documentacao_habilitada',
+  enviosHabilitado: 'envios_habilitado',
+  maxEnviosMes: 'max_envios_mes',
+  maxProfissionais: 'max_profissionais',
+  maxClientes: 'max_clientes',
+  deliveryModuloAtivo: 'delivery_modulo_ativo',
+  maxMacros: 'max_macros',
+  maxAcoesMacro: 'max_acoes_macro',
+  maxPedidosMes: 'max_pedidos_mes',
+  maxProdutosVitrine: 'max_produtos_vitrine',
+  vitrineHabilitada: 'vitrine_habilitada',
+  imoveisModuloAtivo: 'imoveis_modulo_ativo',
+  maxImoveis: 'max_imoveis',
+} as const
+
 // Espelha ModulosEmpresa do AdminModulosModal (tipo declarado aqui em vez de
 // importado do .vue: import de tipo entre SFCs quebra fácil no vue-tsc).
-async function confirmModulos(modulos: {
-  roteamentoHabilitado: boolean
-  agendamentosHabilitado: boolean
-  paginaAgendamentoHabilitada: boolean
-  apiAssistenteHabilitada: boolean
-  webhooksHabilitado: boolean
-  documentacaoHabilitada: boolean
-  enviosHabilitado: boolean
-  maxEnviosMes: number
-  maxProfissionais: number
-  maxClientes: number
-  deliveryModuloAtivo: boolean
-  maxMacros: number
-  maxAcoesMacro: number
-  maxPedidosMes: number
-  maxProdutosVitrine: number
-  vitrineHabilitada: boolean
-  imoveisModuloAtivo: boolean
-  maxImoveis: number
-}) {
+type CamposModulo = Partial<Record<keyof typeof COLUNA_MODULO, boolean | number>>
+
+async function confirmModulos(modulos: CamposModulo, extras: { quantidade: number; valor: number } | null = null) {
   if (!clienteModulos.value) return
+  const clienteId = clienteModulos.value.id
+  // Nada mudou: não há o que gravar, e a rota recusaria o pedido vazio.
+  if (Object.keys(modulos).length) await salvarModulos(clienteId, modulos)
+  // Depois dos módulos: ligar o Delivery e vender extras pode vir no mesmo Salvar.
+  if (extras) await venderPedidosExtras(clienteId, extras)
+  showModulosModal.value = false
+  clienteModulos.value = null
+}
+
+async function venderPedidosExtras(clienteId: string, extras: { quantidade: number; valor: number }) {
   try {
-    const resp = await $fetch<{ success: boolean; error?: string }>('/api/admin/modulos', {
+    const resp = await $fetch<{ success: boolean; error?: string }>('/api/admin/pedidos-extras', {
       method: 'POST',
-      body: { clienteId: clienteModulos.value.id, ...modulos },
+      body: { clienteId, ...extras },
       headers: await useAdminAuthHeaders(),
     })
     if (!resp.success) throw new Error(resp.error)
-    const c = clientes.value.find(x => x.id === clienteModulos.value!.id)
+    toast?.success(`${extras.quantidade} pedidos extras adicionados`)
+  } catch (e: any) {
+    toast?.error(e?.data?.statusMessage || e?.message || 'Erro ao adicionar pedidos extras')
+  }
+}
+
+async function salvarModulos(clienteId: string, modulos: CamposModulo) {
+  try {
+    const resp = await $fetch<{ success: boolean; error?: string }>('/api/admin/modulos', {
+      method: 'POST',
+      body: { clienteId, ...modulos },
+      headers: await useAdminAuthHeaders(),
+    })
+    if (!resp.success) throw new Error(resp.error)
+    const c = clientes.value.find(x => x.id === clienteId)
     if (c) {
-      c.roteamento_habilitado = modulos.roteamentoHabilitado
-      c.agendamentos_habilitado = modulos.agendamentosHabilitado
-      c.pagina_agendamento_habilitada = modulos.paginaAgendamentoHabilitada
-      c.api_assistente_habilitada = modulos.apiAssistenteHabilitada
-      c.webhooks_habilitado = modulos.webhooksHabilitado
-      c.documentacao_habilitada = modulos.documentacaoHabilitada
-      c.envios_habilitado = modulos.enviosHabilitado
-      c.max_envios_mes = modulos.maxEnviosMes
-      c.max_profissionais = modulos.maxProfissionais
-      c.max_clientes = modulos.maxClientes
-      c.delivery_modulo_ativo = modulos.deliveryModuloAtivo
-      c.max_macros = modulos.maxMacros
-      c.max_acoes_macro = modulos.maxAcoesMacro
-      c.max_pedidos_mes = modulos.maxPedidosMes
-      c.max_produtos_vitrine = modulos.maxProdutosVitrine
-      c.vitrine_habilitada = modulos.vitrineHabilitada
-      c.imoveis_modulo_ativo = modulos.imoveisModuloAtivo
-      c.max_imoveis = modulos.maxImoveis
+      for (const [campo, coluna] of Object.entries(COLUNA_MODULO)) {
+        const valor = modulos[campo as keyof typeof COLUNA_MODULO]
+        if (valor !== undefined) (c as Record<string, unknown>)[coluna] = valor
+      }
     }
     toast?.success('Módulos atualizados')
   } catch { toast?.error('Erro ao atualizar módulos') }
-  showModulosModal.value = false
-  clienteModulos.value = null
 }
 
 function handleVerUso(id: string) {
@@ -701,7 +715,7 @@ function abrirModulosDeUso(id: string) {
        invisível fora do space-y (antes ele somava margem antes das abas). -->
   <div class="px-4 pt-3 pb-6 sm:px-6 md:px-10 md:pt-4 md:pb-8">
     <h1 class="sr-only">Clientes</h1>
-    <div class="max-w-[1400px] mx-auto space-y-4">
+    <div class="space-y-4">
       <!-- Abas da página (pedido do dono, 28/09/2026). Sem título "Clientes"
            em cima: as abas já dizem onde se está, e o conteúdo sobe. O
            atualizar virou ícone na ponta da linha das abas. -->

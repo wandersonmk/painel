@@ -146,5 +146,8 @@ async function handleLogout() {
 
     <!-- Termo de aceite obrigatório no primeiro acesso -->
     <ParceiroTermosModal />
+
+    <!-- Alerta da Agzap: só sai com a confirmação de leitura -->
+    <ParceiroAlertaModal />
   </div>
 </template>

@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
 
   const [
     agentesResp, webhooksResp, webhooksSaidaResp, profissionaisResp, clientesResp,
-    instanciasResp, macrosResp, enviosResp, pedidosResp, produtosVitrineResp,
+    instanciasResp, macrosResp, enviosResp, cotaResp, produtosVitrineResp,
     imoveisResp,
   ] = await Promise.all([
     supabase.from('agente_configuracoes').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId),
@@ -35,11 +35,9 @@ export default defineEventHandler(async (event) => {
       .eq('empresa_id', empresaId)
       .in('status', ['enviado', 'entregue', 'lido', 'respondido', 'falha'])
       .gte('enviado_em', de).lt('enviado_em', ate),
-    // Pedidos de Delivery no mês (WhatsApp + site) — mesma janela que
-    // delivery_criar_pedido usa pra checar empresas.max_pedidos_mes.
-    supabase.from('delivery_pedidos').select('id', { count: 'exact', head: true })
-      .eq('empresa_id', empresaId)
-      .gte('created_at', de).lt('created_at', ate),
+    // Pedidos do Delivery: a mesma função que o app usa, para bater com a cota
+    // que bloqueia de verdade (ciclo, canais e pedidos extras).
+    supabase.rpc('delivery_pedidos_mes_uso', { p_empresa_id: empresaId }),
     // Produtos da Vitrine (ativos e inativos) — o mesmo que o app conta pra
     // empresas.max_produtos_vitrine (POST /api/vitrine/produtos no app).
     supabase.from('vitrine_produtos').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId),
@@ -62,7 +60,8 @@ export default defineEventHandler(async (event) => {
       instancias: instanciasResp.count ?? 0,
       macros: macrosResp.count ?? 0,
       enviosMes: enviosResp.count ?? 0,
-      pedidosMes: pedidosResp.count ?? 0,
+      pedidosMes: Number((cotaResp.data as { usados?: number } | null)?.usados ?? 0) || 0,
+      pedidosExtras: Number((cotaResp.data as { extras?: number } | null)?.extras ?? 0) || 0,
       produtosVitrine: produtosVitrineResp.count ?? 0,
       imoveis: imoveisResp.count ?? 0,
     },

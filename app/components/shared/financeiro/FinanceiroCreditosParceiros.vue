@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { LABEL_CREDITO } from '~/composables/useParceiroLicencas'
+import type { SaldosCredito, TipoCredito } from '~/composables/useParceiroLicencas'
 
 /**
  * Bloco de controle do programa de parceiros dentro do /financeiro.
@@ -14,7 +16,7 @@ interface Movimentacao {
   data: string
   parceiro_id: string
   parceiro_nome: string
-  tipo_credito: 'mensal_30d' | 'anual_12m'
+  tipo_credito: TipoCredito
   quantidade: number
   operacao: string
   empresa_id: string | null
@@ -45,12 +47,22 @@ interface LinhaParceiro {
   creditos_estornados_periodo: number
   creditos_retirados_periodo: number
   creditos_consumidos_periodo: number
-  saldo: { mensal_30d: number; anual_12m: number }
+  saldo: SaldosCredito
   saldo_total: number
   clientes_total: number
   clientes_vencendo_7d: number
   clientes_vencidos: number
   ultimo_consumo_periodo_em: string | null
+}
+
+interface LinhaTipoCredito {
+  tipo_credito: TipoCredito
+  rotulo: string
+  vendidos: number
+  valor_vendido: number
+  consumidos: number
+  saldo: number
+  pago_nao_usado: number
 }
 
 interface ClienteVencendo {
@@ -67,6 +79,7 @@ const loading = ref(true)
 const erro = ref<string | null>(null)
 const resumo = ref<any>(null)
 const porParceiro = ref<LinhaParceiro[]>([])
+const porTipo = ref<LinhaTipoCredito[]>([])
 const vendas = ref<Movimentacao[]>([])
 const estornos = ref<Movimentacao[]>([])
 const ajustesPositivos = ref<Movimentacao[]>([])
@@ -119,6 +132,7 @@ async function carregar() {
     if (!resp.success || !resp.data) throw new Error(resp.error || 'Erro')
     resumo.value = resp.data.resumo
     porParceiro.value = resp.data.porParceiro
+    porTipo.value = resp.data.porTipo ?? []
     vendas.value = resp.data.vendas
     estornos.value = resp.data.estornos
     ajustesPositivos.value = resp.data.ajustesPositivos
@@ -178,7 +192,9 @@ const rotuloPeriodo = computed(() => {
   return `${de.toLocaleDateString('pt-BR')} a ${ate.toLocaleDateString('pt-BR')}`
 })
 
-const LABEL_TIPO: Record<string, string> = { mensal_30d: '30 dias', anual_12m: '12 meses' }
+const LABEL_TIPO: Record<string, string> = LABEL_CREDITO
+const detalheSaldo = (saldo: SaldosCredito) =>
+  (Object.keys(LABEL_CREDITO) as TipoCredito[]).map(t => `${saldo[t]} de ${LABEL_CREDITO[t]}`).join(' · ')
 
 const parceirosDisponiveis = computed(() => porParceiro.value.map(p => ({ id: p.id, nome: p.nome })))
 const filtrar = (ls: Movimentacao[]) =>
@@ -411,7 +427,7 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
       <!-- Avisos de controle -->
       <div class="mx-3 sm:mx-5 mb-4 space-y-2">
       <div
-        v-if="resumo.creditos_concedidos_periodo > 0 || resumo.renovacoes_sem_credito_periodo > 0"
+        v-if="resumo.creditos_concedidos_periodo > 0 || resumo.renovacoes_sem_credito_periodo > 0 || resumo.tentativas_delivery_periodo > 0 || resumo.modulos_delivery_liberados_periodo > 0"
         class="flex flex-wrap gap-2 text-[11px]"
       >
         <span
@@ -430,6 +446,21 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
           <i class="fa-solid fa-circle-info" aria-hidden="true" />
           {{ resumo.renovacoes_sem_credito_periodo }} renovações da Agzap sem consumo de crédito no período
         </span>
+        <span
+          v-if="resumo.tentativas_delivery_periodo > 0"
+          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-400 font-semibold"
+          title="O parceiro escolheu crédito de Delivery para uma empresa sem o módulo. Nada foi consumido."
+        >
+          <i class="fa-solid fa-ban" aria-hidden="true" />
+          {{ resumo.tentativas_delivery_periodo }} tentativa{{ resumo.tentativas_delivery_periodo === 1 ? '' : 's' }} bloqueada{{ resumo.tentativas_delivery_periodo === 1 ? '' : 's' }}: crédito de Delivery em empresa sem o módulo
+        </span>
+        <span
+          v-if="resumo.modulos_delivery_liberados_periodo > 0"
+          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-400 font-semibold"
+        >
+          <i class="fa-solid fa-motorcycle" aria-hidden="true" />
+          {{ resumo.modulos_delivery_liberados_periodo }} módulo{{ resumo.modulos_delivery_liberados_periodo === 1 ? '' : 's' }} Delivery liberado{{ resumo.modulos_delivery_liberados_periodo === 1 ? '' : 's' }} por parceiros
+        </span>
       </div>
       <p class="text-[11px] text-slate-400 dark:text-slate-500 flex items-start gap-1.5">
         <i class="fa-solid fa-circle-info text-[10px] mt-0.5 shrink-0" aria-hidden="true" />
@@ -441,6 +472,35 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
           Esses saldos e a aba <strong>Vencendo</strong> são a posição atual; os demais números obedecem ao período selecionado.
         </span>
       </p>
+      </div>
+
+      <!-- Por tipo de crédito -->
+      <div v-if="porTipo.length" class="px-3 sm:px-5 pb-5">
+        <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Por tipo de crédito · movimentos do período</p>
+        <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
+          <table class="w-full text-xs whitespace-nowrap">
+            <thead>
+              <tr class="bg-slate-50 dark:bg-white/[0.02] border-b border-slate-200 dark:border-slate-800">
+                <th :class="th">Crédito</th>
+                <th :class="[th, 'text-right']">Vendidos</th>
+                <th :class="[th, 'text-right']">Valor vendido</th>
+                <th :class="[th, 'text-right']">Consumidos</th>
+                <th :class="[th, 'text-right']">Saldo atual</th>
+                <th :class="[th, 'text-right']">Pago não usado</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+              <tr v-for="t in porTipo" :key="t.tipo_credito">
+                <td :class="[td, 'font-medium text-slate-900 dark:text-white']">{{ t.rotulo }}</td>
+                <td :class="[td, 'text-right tabular-nums']">{{ t.vendidos }}</td>
+                <td :class="[td, 'text-right tabular-nums']">{{ fmtBRL(t.valor_vendido) }}</td>
+                <td :class="[td, 'text-right tabular-nums']">{{ t.consumidos }}</td>
+                <td :class="[td, 'text-right tabular-nums']">{{ t.saldo }}</td>
+                <td :class="[td, 'text-right tabular-nums']">{{ fmtBRL(t.pago_nao_usado) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <!-- Consolidado por parceiro -->
@@ -484,7 +544,7 @@ const td = 'py-2 px-3 text-slate-700 dark:text-slate-300'
                   </span>
                 </td>
                 <td :class="[td, 'text-right tabular-nums']">{{ p.creditos_consumidos_periodo }}</td>
-                <td :class="[td, 'text-right tabular-nums']" :title="`${p.saldo.mensal_30d} de 30 dias · ${p.saldo.anual_12m} de 12 meses`">
+                <td :class="[td, 'text-right tabular-nums']" :title="detalheSaldo(p.saldo)">
                   <span class="font-semibold text-purple-600 dark:text-purple-400">{{ p.saldo_total }}</span>
                 </td>
                 <td :class="[td, 'text-right tabular-nums']" :title="`${p.saldo_pago} créditos comprados ainda não usados`">

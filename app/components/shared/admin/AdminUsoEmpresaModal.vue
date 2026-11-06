@@ -159,7 +159,7 @@ const metricas = computed<Metrica[]>(() => {
     lista.push({ key: 'envios', label: 'Disparos (mês)', icon: 'fa-paper-plane', iconCls: 'text-fuchsia-500', usado: u.enviosMes, max: c.max_envios_mes ?? 0, semLimiteQuando0: true })
   }
   if (c.delivery_modulo_ativo) {
-    lista.push({ key: 'pedidos', label: 'Pedidos Delivery (mês)', icon: 'fa-motorcycle', iconCls: 'text-orange-500', usado: u.pedidosMes, max: c.max_pedidos_mes ?? 0, semLimiteQuando0: true })
+    lista.push({ key: 'pedidos', label: 'Pedidos Delivery (ciclo)', icon: 'fa-motorcycle', iconCls: 'text-orange-500', usado: u.pedidosMes, max: c.max_pedidos_mes ?? 0, semLimiteQuando0: true })
   }
   // Imóveis: add-on pago (01/10/2026), mesmo critério — só com o módulo ligado.
   // Padrão 100, 0 = sem limite.

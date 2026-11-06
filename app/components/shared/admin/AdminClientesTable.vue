@@ -385,12 +385,14 @@ function valorInfo(c: AdminCliente) {
       <div class="hidden xl:block overflow-x-auto border-t border-slate-100 dark:border-slate-800">
         <!-- Abaixo de 2xl: os dias restantes vão embaixo da data e a coluna
              "Ativo" sai (a conta inativa aparece no Status). A coluna de ações
-             fica presa à direita para o ⋮ nunca sumir se a tabela rolar. -->
+             fica presa à direita para o ⋮ nunca sumir se a tabela rolar.
+             Cliente e Categoria repartem o espaço que sobra: com w-0 min-w-full o
+             texto não alarga a coluna, então nome ou selo longo não empurra as ações. -->
         <table class="w-full min-w-[860px] text-sm">
           <thead>
             <tr class="border-b border-slate-100 dark:border-slate-800">
-              <th scope="col" class="pl-5 pr-3 py-3 text-left text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">Cliente</th>
-              <th scope="col" class="px-3 py-3 text-left text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">Categoria</th>
+              <th scope="col" class="w-[25%] pl-5 pr-3 py-3 text-left text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">Cliente</th>
+              <th scope="col" class="w-[40%] px-3 py-3 text-left text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">Categoria</th>
               <th scope="col" class="px-3 py-3 text-left text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">Status</th>
               <th scope="col" class="px-3 py-3 text-left text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">Plano</th>
               <th scope="col" class="px-3 py-3 text-right text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">Mensalidade</th>
@@ -412,7 +414,7 @@ function valorInfo(c: AdminCliente) {
             >
               <!-- Cliente -->
               <td class="pl-4 pr-3 py-4 border-l-[3px] align-middle" :class="rowAccent(c)">
-                <div class="flex items-center gap-3 min-w-0">
+                <div class="flex items-center gap-3 w-0 min-w-full">
                   <div
                     class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs font-semibold text-white"
                     :class="c.ativo ? 'bg-purple-600' : 'bg-slate-400 dark:bg-slate-600'"
@@ -420,7 +422,7 @@ function valorInfo(c: AdminCliente) {
                   >
                     {{ c.nome.charAt(0).toUpperCase() }}
                   </div>
-                  <div class="min-w-0 max-w-[210px] 2xl:max-w-[300px]">
+                  <div class="min-w-0 flex-1">
                     <p class="font-medium text-slate-900 dark:text-white leading-tight truncate" :title="c.nome">{{ c.nome }}</p>
                     <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate" :title="[c.nome_cliente, c.email].filter(Boolean).join(' · ')">
                       <template v-if="c.nome_cliente"><span class="text-slate-600 dark:text-slate-300">{{ c.nome_cliente }}</span><template v-if="c.email"> · </template></template>{{ c.email }}
@@ -443,7 +445,7 @@ function valorInfo(c: AdminCliente) {
 
               <!-- Categoria -->
               <td class="px-3 py-4 align-middle">
-                <div class="flex flex-wrap items-center gap-1 max-w-[170px] 2xl:max-w-[240px]">
+                <div class="flex flex-wrap items-center gap-1 w-0 min-w-full">
                   <span
                     v-for="s in categorias(c)"
                     :key="s.key"

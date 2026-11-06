@@ -21,8 +21,8 @@ export interface ParceiroAdmin {
 
 let toast: Awaited<ReturnType<typeof useToastSafe>> | null = null
 
-type Aba = 'licencas' | 'uso-delivery' | 'indicacoes' | 'materiais'
-const ABAS: Aba[] = ['licencas', 'uso-delivery', 'indicacoes', 'materiais']
+type Aba = 'licencas' | 'uso-delivery' | 'precos' | 'indicacoes' | 'materiais'
+const ABAS: Aba[] = ['licencas', 'uso-delivery', 'precos', 'indicacoes', 'materiais']
 
 // A aba fica na URL (?aba=indicacoes) para dar para abrir a consulta direto.
 const route = useRoute()
@@ -41,6 +41,7 @@ const isRefreshing = ref(false)
 const licencasRef = ref<{ carregar: () => Promise<void> } | null>(null)
 const indicacoesRef = ref<{ carregar: () => Promise<void> } | null>(null)
 const usoDeliveryRef = ref<{ carregar: () => Promise<void> } | null>(null)
+const precosRef = ref<{ carregar: () => Promise<void> } | null>(null)
 
 async function recarregarLicencas() {
   await licencasRef.value?.carregar()
@@ -50,7 +51,7 @@ async function refreshAll() {
   if (isRefreshing.value) return
   isRefreshing.value = true
   try {
-    await Promise.all([recarregarLicencas(), indicacoesRef.value?.carregar(), usoDeliveryRef.value?.carregar()])
+    await Promise.all([recarregarLicencas(), indicacoesRef.value?.carregar(), usoDeliveryRef.value?.carregar(), precosRef.value?.carregar()])
   } finally {
     isRefreshing.value = false
   }
@@ -59,6 +60,7 @@ async function refreshAll() {
 const abas = computed<Array<{ valor: Aba; rotulo: string; icone: string; contagem: number | null }>>(() => [
   { valor: 'licencas', rotulo: 'Licenças', icone: 'fa-id-card text-purple-500', contagem: null },
   { valor: 'uso-delivery', rotulo: 'Uso do Delivery', icone: 'fa-motorcycle text-orange-500', contagem: usoDeliveryCount.value },
+  { valor: 'precos', rotulo: 'Preços', icone: 'fa-tags text-sky-500', contagem: null },
   { valor: 'indicacoes', rotulo: 'Indicações', icone: 'fa-address-card text-pink-500', contagem: indicacoesCount.value },
   { valor: 'materiais', rotulo: 'Materiais', icone: 'fa-box-open text-emerald-500', contagem: materiaisCount.value },
 ])
@@ -220,21 +222,21 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
 
       <!-- Barra de cima: abas + novo parceiro + atualizar -->
       <div class="flex flex-col lg:flex-row lg:items-center gap-3">
-        <div class="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800/60 rounded-lg w-full lg:w-auto shrink-0" role="tablist" aria-label="Seções do programa de parceria">
+        <div class="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800/60 rounded-lg w-full lg:w-auto shrink-0 overflow-x-auto [scrollbar-width:none]" role="tablist" aria-label="Seções do programa de parceria">
           <button
             v-for="a in abas"
             :key="a.valor"
             type="button"
             role="tab"
             :aria-selected="abaAtiva === a.valor"
-            class="flex-1 lg:flex-initial px-2.5 sm:px-4 py-2 rounded-md text-sm font-normal transition-colors flex items-center justify-center gap-2 min-w-0"
+            class="flex-1 lg:flex-initial px-2.5 sm:px-4 py-2 rounded-md text-sm font-normal transition-colors flex items-center justify-center gap-2"
             :class="abaAtiva === a.valor
               ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
             @click="abaAtiva = a.valor"
           >
             <i :class="['fa-solid hidden sm:inline', a.icone]" aria-hidden="true" />
-            <span class="truncate">{{ a.rotulo }}</span>
+            <span class="whitespace-nowrap">{{ a.rotulo }}</span>
             <span
               v-if="a.contagem !== null"
               class="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-medium tabular-nums bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 shrink-0"
@@ -277,6 +279,10 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
       <!-- ══════════════ ABA INDICAÇÕES ══════════════ -->
       <div v-show="abaAtiva === 'uso-delivery'">
         <AdminUsoDelivery ref="usoDeliveryRef" @count-change="usoDeliveryCount = $event" />
+      </div>
+
+      <div v-show="abaAtiva === 'precos'">
+        <AdminPrecos ref="precosRef" @alterado="recarregarLicencas" />
       </div>
 
       <div v-show="abaAtiva === 'indicacoes'">

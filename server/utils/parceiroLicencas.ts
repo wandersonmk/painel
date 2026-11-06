@@ -46,6 +46,10 @@ const MENSAGENS: Record<string, string> = {
   RENEWAL_ALREADY_PROCESSED: 'Esta renovação já foi processada.',
   FORBIDDEN_ACTION: 'Você não tem permissão para esta ação.',
   CONCURRENT_OPERATION: 'Outra operação está em andamento. Tente novamente em instantes.',
+  INVALID_PRICE: 'Preencha todos os valores.',
+  INVALID_PRICE_ORDER: 'A faixa com mais licenças não pode custar mais que a faixa com menos.',
+  INVALID_RESALE: 'A revenda sugerida não pode ser menor que o preço pago à Agzap.',
+  INVALID_BANDS: 'As faixas deste crédito mudaram. Atualize a página e tente de novo.',
 }
 
 export function mensagemErro(codigo?: string | null) {
@@ -126,6 +130,7 @@ export const ACAO_DELIVERY_DESLIGADO_AGZAP = 'delivery_desligado_agzap'
 export const ACAO_RENOVACAO_COM_AVISO = 'renovacao_delivery_com_aviso'
 export const ACAO_ALERTA_ENVIADO = 'alerta_enviado'
 export const ACAO_ALERTA_LIDO = 'alerta_lido'
+export const ACAO_PRECO_ALTERADO = 'preco_alterado'
 
 /**
  * Crédito de Delivery em empresa sem o módulo: é o sinal de quem tenta pagar

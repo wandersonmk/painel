@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import type { RecursosPlano } from '~/utils/planosItens'
 
 // mensal_30d é o Start e anual_12m é o PRO: os nomes vêm de quando só existiam
 // esses dois, e o saldo antigo continua valendo.
@@ -332,6 +333,8 @@ export const useParceiroLicencas = () => {
   const indicadores = ref<IndicadoresCarteira | null>(null)
   const movimentacoes = ref<MovimentacaoCredito[]>([])
   const precos = ref<PrecoLicenca[]>([])
+  // O que vem em cada plano (tela Preços), da tabela planos_assinatura.
+  const planos = ref<RecursosPlano[]>([])
   const loading = ref(false)
   const loadingCreditos = ref(false)
   const error = ref<string | null>(null)
@@ -366,6 +369,7 @@ export const useParceiroLicencas = () => {
       saldos.value = resp.data.saldos
       movimentacoes.value = resp.data.movimentacoes
       precos.value = resp.data.precos
+      planos.value = resp.data.planos ?? []
     } catch (err: any) {
       error.value = String(err?.data?.statusMessage || err?.message || err)
     } finally {
@@ -526,7 +530,7 @@ export const useParceiroLicencas = () => {
   }
 
   return {
-    clientes, saldos, indicadores, movimentacoes, precos,
+    clientes, saldos, indicadores, movimentacoes, precos, planos,
     loading, loadingCreditos, error,
     loadCarteira, loadCreditos, renovar, bloquear, alterarDelivery, registrarTentativaDelivery,
     salvarValorAssinatura, novaIdempotencyKey,

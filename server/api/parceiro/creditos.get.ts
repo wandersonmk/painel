@@ -1,7 +1,7 @@
 import { requireParceiroPrepago } from '~~/server/utils/requireParceiro'
 import { getServiceClient } from '~~/server/utils/requireSuperAdmin'
 import { failPublic } from '~~/server/utils/apiError'
-import { saldosZerados } from '~~/server/utils/parceiroLicencas'
+import { lerRecursosPlanos, saldosZerados } from '~~/server/utils/parceiroLicencas'
 
 /** Saldo + extrato de créditos do parceiro logado. Somente leitura. */
 export default defineEventHandler(async (event) => {
@@ -25,6 +25,14 @@ export default defineEventHandler(async (event) => {
   ])
   if (saldosRes.error) return failPublic(saldosRes.error, 'parceiro/creditos', 'Não foi possível carregar seus créditos.')
   if (ledgerRes.error) return failPublic(ledgerRes.error, 'parceiro/creditos', 'Não foi possível carregar seus créditos.')
+
+  // O que vem em cada plano (tela Preços). Sem isso a tela ainda mostra os preços.
+  let planos: Awaited<ReturnType<typeof lerRecursosPlanos>> = []
+  try {
+    planos = await lerRecursosPlanos(supabase, { comPreco: false })
+  } catch (e) {
+    console.error('[api:parceiro/creditos] planos', e)
+  }
 
   const renovacaoIds = ((ledgerRes.data ?? []) as any[])
     .map(l => l.renovacao_id).filter(Boolean)
@@ -67,6 +75,7 @@ export default defineEventHandler(async (event) => {
       saldos,
       movimentacoes,
       precos: precosRes.data ?? [],
+      planos,
     },
   }
 })

@@ -541,3 +541,42 @@ export async function removerParceriaDoParceiro(
 
   return { success: true, data: { nome: parceiro.nome, clientes: lista.length, creditos } }
 }
+
+/**
+ * Planos ativos com o que cada um grava na conta (a mesma linha que
+ * `aplicar_plano_assinatura` usa). A tela monta a lista em app/utils/planosItens.ts.
+ * Preço só vai para o admin: o parceiro vê os preços dele, não os da Agzap.
+ */
+export async function lerRecursosPlanos(supabase: SupabaseClient, opcoes: { comPreco: boolean }) {
+  const { data, error } = await supabase
+    .from('planos_assinatura')
+    .select('codigo, nome, preco_mensal, preco_anual, max_whatsapp, max_instagram, max_webchat, max_funis, max_profissionais, max_agentes, max_clientes, max_macros, max_pedidos_mes, max_envios_mes, api_webhooks, documentacao, produtos, delivery, imoveis, disparos, grupos, formularios, link_agenda, dominio_agenda')
+    .eq('ativo', true)
+    .order('ordem')
+  if (error) throw error
+  return ((data ?? []) as any[]).map(p => ({
+    codigo: p.codigo as string,
+    nome: p.nome as string,
+    ...(opcoes.comPreco ? { precoMensal: Number(p.preco_mensal), precoAnual: Number(p.preco_anual) } : {}),
+    maxWhatsapp: Number(p.max_whatsapp) || 0,
+    maxInstagram: Number(p.max_instagram) || 0,
+    maxWebchat: Number(p.max_webchat) || 0,
+    maxFunis: p.max_funis === null ? null : Number(p.max_funis),
+    maxProfissionais: Number(p.max_profissionais) || 0,
+    maxAgentes: Number(p.max_agentes) || 0,
+    maxClientes: p.max_clientes === null ? null : Number(p.max_clientes),
+    maxMacros: Number(p.max_macros) || 0,
+    maxPedidosMes: Number(p.max_pedidos_mes) || 0,
+    maxEnviosMes: Number(p.max_envios_mes) || 0,
+    apiWebhooks: !!p.api_webhooks,
+    documentacao: !!p.documentacao,
+    produtos: !!p.produtos,
+    delivery: !!p.delivery,
+    imoveis: !!p.imoveis,
+    disparos: !!p.disparos,
+    grupos: !!p.grupos,
+    formularios: !!p.formularios,
+    linkAgenda: !!p.link_agenda,
+    dominioAgenda: !!p.dominio_agenda,
+  }))
+}

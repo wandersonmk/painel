@@ -9,6 +9,7 @@ const navItems = [
   { label: 'Descontos de indicação', icon: 'fa-gift', to: '/parceiro/descontos' },
   { label: 'Indicados', icon: 'fa-address-card', to: '/parceiro/indicados' },
   { label: 'Créditos', icon: 'fa-coins', to: '/parceiro/creditos' },
+  { label: 'Preços e planos', icon: 'fa-tags', to: '/parceiro/precos' },
   { label: 'Relatório', icon: 'fa-chart-line', to: '/parceiro/relatorio' },
   { label: 'Materiais', icon: 'fa-box-open', to: '/parceiro/materiais' },
   // Comunidade no Discord (ícone de marca: família fa-brands, não fa-solid)

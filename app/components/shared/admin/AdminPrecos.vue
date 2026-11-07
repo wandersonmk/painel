@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { LABEL_CREDITO, type TipoCredito } from '~/composables/useParceiroLicencas'
+import { CREDITOS, LABEL_CREDITO, PLANOS_PARCEIRO, type TipoCredito } from '~/composables/useParceiroLicencas'
+import type { RecursosPlano } from '~/utils/planosItens'
 
 /**
  * Preços que o parceiro paga à Agzap e revenda sugerida, com o histórico de quem
@@ -29,19 +30,27 @@ let toast: Awaited<ReturnType<typeof useToastSafe>> | null = null
 
 const creditos = ref<CreditoPreco[]>([])
 const alteracoes = ref<Alteracao[]>([])
+// O que cada plano grava na conta (planos_assinatura), para "o que vem no plano".
+const planos = ref<RecursosPlano[]>([])
 const loading = ref(true)
 const erro = ref<string | null>(null)
 
 async function carregar() {
   erro.value = null
   try {
-    const resp = await $fetch<{ success: boolean; data?: { creditos: CreditoPreco[]; alteracoes: Alteracao[] }; error?: string }>(
-      '/api/admin/parceiros/precos',
-      { headers: await useAdminAuthHeaders() },
-    )
+    const headers = await useAdminAuthHeaders()
+    const [resp, respPlanos] = await Promise.all([
+      $fetch<{ success: boolean; data?: { creditos: CreditoPreco[]; alteracoes: Alteracao[] }; error?: string }>(
+        '/api/admin/parceiros/precos',
+        { headers },
+      ),
+      // Sem os planos a tabela de preços ainda funciona; só a janela fica sem lista.
+      $fetch<{ planos: RecursosPlano[] }>('/api/admin/planos-assinatura', { headers }).catch(() => null),
+    ])
     if (!resp.success || !resp.data) throw new Error(resp.error || 'Erro')
     creditos.value = resp.data.creditos
     alteracoes.value = resp.data.alteracoes
+    if (respPlanos) planos.value = respPlanos.planos
   } catch (e: any) {
     erro.value = e?.data?.statusMessage || e?.message || 'Erro ao carregar os preços'
   } finally {
@@ -78,6 +87,34 @@ function textoGanho(precos: number[], revenda: number) {
   return menor === maior ? fmtBRL(menor) : `${fmtBRL(menor)} a ${fmtBRL(maior)}`
 }
 const ganhoDe = (c: CreditoPreco) => textoGanho(c.faixas.map(f => f.preco_unitario), c.revenda)
+
+// ───────── O que vem no plano ─────────
+const detalhe = ref<CreditoPreco | null>(null)
+const planoDoDetalhe = computed(() => {
+  const c = detalhe.value
+  return c ? planos.value.find(p => p.codigo === CREDITOS[c.tipo_credito].plano) ?? null : null
+})
+const subtituloDetalhe = computed(() => {
+  const c = detalhe.value
+  if (!c) return ''
+  const credito = CREDITOS[c.tipo_credito]
+  const alcance = PLANOS_PARCEIRO.find(p => p.codigo === credito.plano)?.alcance ?? ''
+  return `Vale ${credito.meses === 12 ? '12 meses' : '30 dias'}. ${alcance}.`
+})
+const resumoDetalhe = computed(() => {
+  const c = detalhe.value
+  if (!c) return []
+  const faixas = c.faixas.length > 1
+    ? c.faixas.map((f, i) => ({ rotulo: i === 0 ? '1 a 5 licenças' : '6 ou mais', valor: fmtBRL(f.preco_unitario) }))
+    : [{ rotulo: 'Preço único', valor: fmtBRL(c.faixas[0]!.preco_unitario) }]
+  return [
+    ...faixas,
+    { rotulo: 'Revenda sugerida', valor: fmtBRL(c.revenda) },
+    { rotulo: 'Parceiro ganha', valor: ganhoDe(c), destaque: true },
+  ]
+})
+const NOTA_DETALHE = 'É o que a conta recebe quando o parceiro renova com este crédito ou quando a renovação do painel escolhe este plano. '
+  + 'Depois dá para ajustar item por item em Módulos e em Limites: renovar de novo com o mesmo plano mantém o ajuste, e trocar de plano grava os valores do plano novo.'
 
 // ───────── Editar ─────────
 const alvo = ref<CreditoPreco | null>(null)
@@ -165,7 +202,7 @@ const campoAlterado = 'border-purple-400 dark:border-purple-500/60'
     <section :class="cartao">
       <div :class="cabecalho">
         <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Preços dos créditos</h2>
-        <p class="text-xs text-slate-500 dark:text-slate-400">O que o parceiro paga à Agzap por licença e a revenda sugerida</p>
+        <p class="text-xs text-slate-500 dark:text-slate-400">O que o parceiro paga à Agzap por licença e a revenda sugerida. Clique no crédito para ver o que vem no plano.</p>
       </div>
 
       <div v-if="loading" class="p-5 space-y-3">
@@ -187,7 +224,17 @@ const campoAlterado = 'border-purple-400 dark:border-purple-500/60'
           </thead>
           <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
             <tr v-for="c in creditos" :key="c.tipo_credito">
-              <td :class="[td, 'pl-5 font-medium text-slate-900 dark:text-white']">{{ LABEL_CREDITO[c.tipo_credito] }}</td>
+              <td :class="[td, 'pl-5']">
+                <button
+                  type="button"
+                  class="group inline-flex items-center gap-1.5 rounded text-left font-medium text-slate-900 hover:text-purple-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/60 dark:text-white dark:hover:text-purple-300"
+                  :aria-label="`Ver o que vem no ${LABEL_CREDITO[c.tipo_credito]}`"
+                  @click="detalhe = c"
+                >
+                  {{ LABEL_CREDITO[c.tipo_credito] }}
+                  <i class="fa-solid fa-circle-info text-[11px] text-slate-400 group-hover:text-purple-500" aria-hidden="true" />
+                </button>
+              </td>
               <template v-if="c.faixas.length > 1">
                 <td :class="[td, 'text-right tabular-nums']">{{ fmtBRL(c.faixas[0]!.preco_unitario) }}</td>
                 <td :class="[td, 'text-right tabular-nums']">{{ fmtBRL(c.faixas[1]!.preco_unitario) }}</td>
@@ -253,6 +300,16 @@ const campoAlterado = 'border-purple-400 dark:border-purple-500/60'
         </table>
       </div>
     </section>
+
+    <PlanoDetalhesModal
+      :show="!!detalhe"
+      :plano="planoDoDetalhe"
+      :titulo="detalhe ? `O que vem no ${LABEL_CREDITO[detalhe.tipo_credito]}` : ''"
+      :subtitulo="subtituloDetalhe"
+      :resumo="resumoDetalhe"
+      :nota="NOTA_DETALHE"
+      @close="detalhe = null"
+    />
 
     <BaseModal
       :show="!!alvo"

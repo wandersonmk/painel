@@ -47,8 +47,10 @@ export default defineEventHandler(async (event) => {
     // null e cai em 0; o catch cobre falha de rede pra não derrubar o resto.
     supabase.from('imoveis').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId)
       .then(r => r, () => ({ count: null })),
-    // Funis de CRM: todos, o Geral junto, como conta o trigger trg_limite_funis.
+    // Funis de CRM sem o quadro Geral: o Geral não conta no limite (dono,
+    // 07/11/2026), igual ao trigger trg_limite_funis.
     supabase.from('crm_boards').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId)
+      .not('is_geral', 'is', true)
       .then(r => r, () => ({ count: null })),
     // Chats do site: o mesmo que POST /api/webchat/canais do app conta.
     supabase.from('instancias_webchat').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId)

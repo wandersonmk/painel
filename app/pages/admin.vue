@@ -86,10 +86,15 @@ const clienteLimiteInstancias = ref<{
   max_agentes: number
   max_webhooks_entrada: number
   max_webhooks_saida: number
-  // Conta com plano: limite por tipo de canal. Nulo = conta antiga.
+  // Limite por tipo de canal. Nulo = conta antiga, sem limite por tipo.
   max_canais_whatsapp: number | null
   max_canais_instagram: number | null
   max_canais_webchat: number | null
+  max_profissionais: number
+  max_clientes: number
+  max_macros: number
+  // Nulo = sem limite de funis.
+  max_funis: number | null
 } | null>(null)
 const showModulosModal = ref(false)
 const clienteModulos = ref<{
@@ -104,10 +109,7 @@ const clienteModulos = ref<{
   dominio_agenda_habilitado: boolean
   envios_habilitado: boolean
   max_envios_mes: number
-  max_profissionais: number
-  max_clientes: number
   delivery_modulo_ativo: boolean
-  max_macros: number
   max_acoes_macro: number
   max_pedidos_mes: number
   max_produtos_vitrine: number
@@ -116,8 +118,6 @@ const clienteModulos = ref<{
   max_imoveis: number
   grupos_habilitado: boolean
   formularios_habilitado: boolean
-  // Nulo = conta antiga, sem limite de funis.
-  max_funis: number | null
 } | null>(null)
 
 const searchQuery = ref('')
@@ -592,58 +592,52 @@ function handleLimiteInstancias(id: string) {
       max_canais_whatsapp: c.max_canais_whatsapp ?? null,
       max_canais_instagram: c.max_canais_instagram ?? null,
       max_canais_webchat: c.max_canais_webchat ?? null,
+      max_profissionais: c.max_profissionais ?? 20,
+      max_clientes: c.max_clientes ?? 100000,
+      max_macros: c.max_macros ?? 5,
+      max_funis: c.max_funis ?? null,
     }
     showLimiteInstanciasModal.value = true
   }
 }
-// Conta com plano manda os 3 tipos de canal no lugar de maxInstancias.
-async function confirmLimiteInstancias(limites: {
-  maxInstancias?: number
-  maxAgentes: number
-  maxWebhooksEntrada: number
-  maxWebhooksSaida: number
-  maxCanaisWhatsapp?: number
-  maxCanaisInstagram?: number
-  maxCanaisWebchat?: number
-}) {
+// Campo do modal Limites e canais -> coluna da lista. O modal manda só o que
+// mudou; canal mudou = vêm os três, e max_instancias vira a soma (como no servidor).
+const COLUNA_LIMITE = {
+  maxCanaisWhatsapp: 'max_canais_whatsapp',
+  maxCanaisInstagram: 'max_canais_instagram',
+  maxCanaisWebchat: 'max_canais_webchat',
+  maxAgentes: 'max_agentes',
+  maxProfissionais: 'max_profissionais',
+  maxClientes: 'max_clientes',
+  maxFunis: 'max_funis',
+  maxMacros: 'max_macros',
+  maxWebhooksEntrada: 'max_webhooks_entrada',
+  maxWebhooksSaida: 'max_webhooks_saida',
+} as const
+type CamposLimite = Partial<Record<keyof typeof COLUNA_LIMITE, number>>
+
+async function confirmLimiteInstancias(limites: CamposLimite) {
   if (!clienteLimiteInstancias.value) return
+  const clienteId = clienteLimiteInstancias.value.id
   try {
     const resp = await $fetch<{ success: boolean; error?: string }>('/api/admin/limite-instancias', {
       method: 'POST',
-      body: {
-        clienteId: clienteLimiteInstancias.value.id,
-        maxInstancias: limites.maxInstancias,
-        maxAgentes: limites.maxAgentes,
-        maxWebhooksEntrada: limites.maxWebhooksEntrada,
-        maxWebhooksSaida: limites.maxWebhooksSaida,
-        maxCanaisWhatsapp: limites.maxCanaisWhatsapp,
-        maxCanaisInstagram: limites.maxCanaisInstagram,
-        maxCanaisWebchat: limites.maxCanaisWebchat,
-      },
+      body: { clienteId, ...limites },
       headers: await useAdminAuthHeaders(),
     })
     if (!resp.success) throw new Error(resp.error || 'Erro')
-    const c = clientes.value.find(x => x.id === clienteLimiteInstancias.value!.id)
+    const c = clientes.value.find(x => x.id === clienteId)
     if (c) {
-      if (limites.maxCanaisWhatsapp !== undefined) {
-        // Mesma conta do servidor: max_instancias é a soma dos 3 tipos.
-        c.max_canais_whatsapp = limites.maxCanaisWhatsapp
-        c.max_canais_instagram = limites.maxCanaisInstagram ?? c.max_canais_instagram ?? 0
-        c.max_canais_webchat = limites.maxCanaisWebchat ?? c.max_canais_webchat ?? 0
-        c.max_instancias = Math.max(1, c.max_canais_whatsapp + (c.max_canais_instagram ?? 0) + (c.max_canais_webchat ?? 0))
-      } else if (limites.maxInstancias !== undefined) {
-        // O servidor também move o limite de WhatsApp da conta com plano pela diferença.
-        if (c.max_canais_whatsapp != null) {
-          c.max_canais_whatsapp = Math.max(0, c.max_canais_whatsapp + limites.maxInstancias - (c.max_instancias ?? 1))
-        }
-        c.max_instancias = limites.maxInstancias
+      for (const [campo, coluna] of Object.entries(COLUNA_LIMITE)) {
+        const valor = limites[campo as keyof typeof COLUNA_LIMITE]
+        if (valor !== undefined) (c as Record<string, unknown>)[coluna] = valor
       }
-      c.max_agentes = limites.maxAgentes
-      c.max_webhooks_entrada = limites.maxWebhooksEntrada
-      c.max_webhooks_saida = limites.maxWebhooksSaida
+      if (limites.maxCanaisWhatsapp !== undefined) {
+        c.max_instancias = Math.max(1, (c.max_canais_whatsapp ?? 0) + (c.max_canais_instagram ?? 0) + (c.max_canais_webchat ?? 0))
+      }
     }
     toast?.success('Limites atualizados')
-  } catch (e: any) { toast?.error(e?.data?.statusMessage || 'Erro ao atualizar limites') }
+  } catch (e: any) { toast?.error(e?.data?.statusMessage || e?.message || 'Erro ao atualizar limites') }
   showLimiteInstanciasModal.value = false
   clienteLimiteInstancias.value = null
 }
@@ -665,10 +659,7 @@ function handleModulos(id: string) {
       // Add-on pago: ausente = bloqueado (os outros gates são permissivos).
       envios_habilitado: c.envios_habilitado ?? false,
       max_envios_mes: c.max_envios_mes ?? 0,
-      max_profissionais: c.max_profissionais ?? 20,
-      max_clientes: c.max_clientes ?? 100000,
       delivery_modulo_ativo: c.delivery_modulo_ativo ?? false,
-      max_macros: c.max_macros ?? 5,
       max_acoes_macro: c.max_acoes_macro ?? 5,
       max_pedidos_mes: c.max_pedidos_mes ?? 0,
       max_produtos_vitrine: c.max_produtos_vitrine ?? 0,
@@ -679,7 +670,6 @@ function handleModulos(id: string) {
       // Add-ons que nascem desligados: ausente = bloqueado.
       grupos_habilitado: c.grupos_habilitado === true,
       formularios_habilitado: c.formularios_habilitado === true,
-      max_funis: c.max_funis ?? null,
     }
     showModulosModal.value = true
   }
@@ -696,10 +686,7 @@ const COLUNA_MODULO = {
   dominioAgendaHabilitado: 'dominio_agenda_habilitado',
   enviosHabilitado: 'envios_habilitado',
   maxEnviosMes: 'max_envios_mes',
-  maxProfissionais: 'max_profissionais',
-  maxClientes: 'max_clientes',
   deliveryModuloAtivo: 'delivery_modulo_ativo',
-  maxMacros: 'max_macros',
   maxAcoesMacro: 'max_acoes_macro',
   maxPedidosMes: 'max_pedidos_mes',
   maxProdutosVitrine: 'max_produtos_vitrine',
@@ -708,7 +695,6 @@ const COLUNA_MODULO = {
   maxImoveis: 'max_imoveis',
   gruposHabilitado: 'grupos_habilitado',
   formulariosHabilitado: 'formularios_habilitado',
-  maxFunis: 'max_funis',
 } as const
 
 // Espelha ModulosEmpresa do AdminModulosModal (tipo declarado aqui em vez de
@@ -772,6 +758,12 @@ function abrirModulosDeUso(id: string) {
   showUsoModal.value = false
   clienteUso.value = null
   handleModulos(id)
+}
+// Botão "Renovar plano" dos Detalhes da empresa: o mesmo modal dos três pontinhos.
+function abrirRenovarDeUso(id: string) {
+  showUsoModal.value = false
+  clienteUso.value = null
+  handleRenovar(id)
 }
 </script>
 
@@ -1153,6 +1145,10 @@ function abrirModulosDeUso(id: string) {
         :canais-whatsapp-atual="clienteLimiteInstancias?.max_canais_whatsapp ?? null"
         :canais-instagram-atual="clienteLimiteInstancias?.max_canais_instagram ?? null"
         :canais-webchat-atual="clienteLimiteInstancias?.max_canais_webchat ?? null"
+        :profissionais-atual="clienteLimiteInstancias?.max_profissionais ?? 20"
+        :clientes-atual="clienteLimiteInstancias?.max_clientes ?? 100000"
+        :macros-atual="clienteLimiteInstancias?.max_macros ?? 5"
+        :funis-atual="clienteLimiteInstancias?.max_funis ?? null"
         @close="showLimiteInstanciasModal = false; clienteLimiteInstancias = null"
         @confirm="confirmLimiteInstancias"
       />
@@ -1170,10 +1166,7 @@ function abrirModulosDeUso(id: string) {
         :dominio-agenda-atual="clienteModulos?.dominio_agenda_habilitado ?? true"
         :envios-atual="clienteModulos?.envios_habilitado ?? false"
         :max-envios-mes-atual="clienteModulos?.max_envios_mes ?? 0"
-        :max-profissionais-atual="clienteModulos?.max_profissionais ?? 20"
-        :max-clientes-atual="clienteModulos?.max_clientes ?? 100000"
         :delivery-atual="clienteModulos?.delivery_modulo_ativo ?? false"
-        :max-macros-atual="clienteModulos?.max_macros ?? 5"
         :max-acoes-macro-atual="clienteModulos?.max_acoes_macro ?? 5"
         :max-pedidos-mes-atual="clienteModulos?.max_pedidos_mes ?? 0"
         :max-produtos-vitrine-atual="clienteModulos?.max_produtos_vitrine ?? 0"
@@ -1182,7 +1175,6 @@ function abrirModulosDeUso(id: string) {
         :max-imoveis-atual="clienteModulos?.max_imoveis ?? 100"
         :grupos-atual="clienteModulos?.grupos_habilitado ?? false"
         :formularios-atual="clienteModulos?.formularios_habilitado ?? false"
-        :max-funis-atual="clienteModulos?.max_funis ?? null"
         @close="showModulosModal = false; clienteModulos = null"
         @confirm="confirmModulos"
       />
@@ -1201,6 +1193,7 @@ function abrirModulosDeUso(id: string) {
         @close="showUsoModal = false; clienteUso = null"
         @editar-modulos="abrirModulosDeUso"
         @ver-indicacao="handleVerIndicacao"
+        @renovar="abrirRenovarDeUso"
       />
 
       <AdminIndicacaoVinculoModal

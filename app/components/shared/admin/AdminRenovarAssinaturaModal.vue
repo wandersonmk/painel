@@ -15,7 +15,7 @@ const props = defineProps<{
   // na mesma regra da coluna "Vencimento" (getDataVencimento).
   // cobranca_stripe = tem assinatura viva no Stripe (`sub_…`).
   // parceiro_nome: cliente de parceiro mantém o valor que o parceiro definiu.
-  assinatura?: { subscription_status?: string | null; subscription_plan?: string | null; plano_codigo?: string | null; subscription_renews_at?: string | null; trial_ends_at?: string | null; cobranca_stripe?: boolean | null; parceiro_nome?: string | null } | null
+  assinatura?: { subscription_status?: string | null; subscription_plan?: string | null; plano_codigo?: string | null; subscription_renews_at?: string | null; trial_ends_at?: string | null; cobranca_stripe?: boolean | null; parceiro_nome?: string | null; created_at?: string | null } | null
 }>()
 const emit = defineEmits<{
   close: []
@@ -50,23 +50,30 @@ const MESES: Record<string, number> = { '1month': 1, '6months': 6, '12months': 1
 const selected = ref<string>('1month')
 
 // Plano de assinatura aplicado junto da renovação (limites e módulos dele).
-// Conta antiga pode ficar no Básico antigo (planoConta null): renova 1 mês e
-// continua com os módulos e limites que já tem. Pro 6 meses e Enterprise 12
-// meses antigos saíram (dono, 07/11/2026): o anual agora é por um plano novo.
+// Básico (planoConta null) renova sem plano: a conta continua com os módulos e
+// limites que já tem, no mensal ou no anual. Vale para conta antiga e para conta
+// em teste criada antes do lançamento dos planos (dono, 07/11/2026); conta criada
+// depois sai do teste com um plano. Pro 6 meses saiu da tela.
 type PlanoConta = RecursosPlano & { precoMensal: number; precoAnual: number }
 const planosConta = ref<PlanoConta[]>([])
 const planoConta = ref<string | null>(null)
 const planoDaConta = computed(() => planosConta.value.find(p => p.codigo === planoConta.value) ?? null)
 const contaAntiga = computed(() => !props.assinatura?.plano_codigo && (props.assinatura?.subscription_plan ?? 'free') !== 'free')
-// Básico antigo: só conta antiga, sem plano novo escolhido.
-const basicoAntigo = computed(() => contaAntiga.value && !planoConta.value)
-const periodos = computed(() => (basicoAntigo.value
-  ? [{ key: '1month', nome: 'Mensal', periodo: '1 mês' }]
-  : [
-      { key: '1month', nome: 'Mensal', periodo: '1 mês' },
-      { key: '12months', nome: 'Anual', periodo: '12 meses' },
-    ]))
-watch(basicoAntigo, (b) => { if (b && selected.value !== '1month' && !selected.value.startsWith('trial')) selected.value = '1month' })
+// 06/11/2026 00:00 em SP, lançamento dos planos. A mesma data está em
+// server/api/admin/renovar-assinatura.post.ts, que confere de novo.
+const LANCAMENTO_PLANOS = Date.parse('2026-11-06T03:00:00Z')
+const testeAntesDosPlanos = computed(() => {
+  const a = props.assinatura
+  if (!a || a.plano_codigo || (a.subscription_plan ?? 'free') !== 'free' || !a.created_at) return false
+  const criada = Date.parse(a.created_at)
+  return Number.isFinite(criada) && criada < LANCAMENTO_PLANOS
+})
+const podeBasico = computed(() => contaAntiga.value || testeAntesDosPlanos.value)
+const basicoAntigo = computed(() => podeBasico.value && !planoConta.value)
+const periodos = [
+  { key: '1month', nome: 'Mensal', periodo: '1 mês' },
+  { key: '12months', nome: 'Anual', periodo: '12 meses' },
+]
 onMounted(async () => {
   try {
     const r = await $fetch<{ planos: PlanoConta[] }>('/api/admin/planos-assinatura', { headers: await useAdminAuthHeaders() })
@@ -346,7 +353,9 @@ watch(() => [props.show, props.clienteId], async ([s]) => {
 const precoPeriodo = computed(() => {
   const p = planoDaConta.value
   if (p && !ehTeste.value) return selected.value === '12months' ? p.precoAnual : p.precoMensal
+  // Básico: o valor que a conta já tem cadastrado.
   if (basicoAntigo.value && selected.value === '1month') return Number(props.precoMensal || 0)
+  if (basicoAntigo.value && selected.value === '12months') return Number(props.precoAnual || 0)
   return 0
 })
 watch([saldoDisponivel, () => selected.value, planoConta], () => {
@@ -360,9 +369,11 @@ function brlCurto(v: number) {
 function precoPlano(key: string): string | null {
   const p = planoDaConta.value
   if (p) return key === '12months' ? brlCurto(p.precoAnual) : `${brlCurto(p.precoMensal)}/mês`
-  // Básico antigo: o valor que o cliente já paga.
+  // Básico: o valor que o cliente já paga.
   const mensal = Number(props.precoMensal || 0)
+  const anual = Number(props.precoAnual || 0)
   if (basicoAntigo.value && key === '1month' && mensal > 0) return `${brlCurto(mensal)}/mês`
+  if (basicoAntigo.value && key === '12months' && anual > 0) return brlCurto(anual)
   return null
 }
 
@@ -382,7 +393,7 @@ const efeitoNoPlano = computed<string | null>(() => {
   return null
 })
 
-const faltaPlano = computed(() => !ehTeste.value && !contaAntiga.value && !planoConta.value)
+const faltaPlano = computed(() => !ehTeste.value && !podeBasico.value && !planoConta.value)
 const podeRenovar = computed(() => !enviando.value && !erroData.value && !faltaPlano.value)
 function handleSubmit() {
   if (!podeRenovar.value) return
@@ -406,7 +417,7 @@ const classeCampo = 'h-9 w-full rounded-lg border bg-white px-2.5 text-sm tabula
 </script>
 
 <template>
-  <BaseModal :show="show" title="Renovar assinatura" max-width="max-w-4xl" @close="$emit('close')">
+  <BaseModal :show="show" title="Renovar assinatura" max-width="max-w-5xl" @close="$emit('close')">
     <form class="space-y-5" @submit.prevent="handleSubmit">
       <p class="-mt-1 text-sm text-slate-600 dark:text-slate-400">
         Renovando para <span class="font-medium text-slate-900 dark:text-white break-words">{{ clienteNome }}</span>
@@ -456,8 +467,8 @@ const classeCampo = 'h-9 w-full rounded-lg border bg-white px-2.5 text-sm tabula
               </button>
             </div>
 
-            <!-- Plano antigo: só para conta antiga, renova como sempre foi -->
-            <template v-if="contaAntiga">
+            <!-- Plano antigo: conta antiga ou em teste de antes dos planos, renova como sempre foi -->
+            <template v-if="podeBasico">
               <p id="renovar-plano-antigo" class="mb-2 mt-4 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Plano antigo</p>
               <div class="grid grid-cols-2 gap-2 sm:grid-cols-3" role="radiogroup" aria-labelledby="renovar-plano-antigo">
                 <button
@@ -642,6 +653,7 @@ const classeCampo = 'h-9 w-full rounded-lg border bg-white px-2.5 text-sm tabula
             <template v-else-if="basicoAntigo">
               <p class="text-sm font-medium text-slate-900 dark:text-white">Básico (plano antigo)</p>
               <p class="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">A conta continua com os módulos e limites que tem hoje. Só o vencimento muda.</p>
+              <p v-if="testeAntesDosPlanos" class="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">A conta está em teste e foi criada antes dos planos: sai do teste sem plano, como os clientes antigos.</p>
             </template>
             <p v-else class="text-xs text-slate-500 dark:text-slate-400">Escolha o plano para ver o que vem nele.</p>
           </div>

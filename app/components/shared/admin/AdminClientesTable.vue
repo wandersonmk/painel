@@ -661,8 +661,8 @@ function valorInfo(c: AdminCliente) {
                   <button type="button" @click="emitAction('limite-instancias', menuCliente.id)" class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-purple-300 dark:hover:border-purple-500/40 hover:bg-purple-50/40 dark:hover:bg-purple-500/5">
                     <span class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400"><i class="fa-solid fa-mobile-screen" aria-hidden="true" /></span>
                     <span class="min-w-0">
-                      <span class="block text-sm font-semibold text-slate-800 dark:text-slate-200">Canais WhatsApp</span>
-                      <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">{{ menuCliente.max_instancias ?? 1 }} {{ (menuCliente.max_instancias ?? 1) === 1 ? 'canal liberado' : 'canais liberados' }}</span>
+                      <span class="block text-sm font-semibold text-slate-800 dark:text-slate-200">Limites e canais</span>
+                      <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">{{ menuCliente.max_instancias ?? 1 }} {{ (menuCliente.max_instancias ?? 1) === 1 ? 'canal liberado' : 'canais liberados' }} · assistentes, equipe, CRM</span>
                     </span>
                   </button>
                   <button type="button" @click="emitAction('modulos', menuCliente.id)" class="group flex items-start gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left transition-colors hover:border-purple-300 dark:hover:border-purple-500/40 hover:bg-purple-50/40 dark:hover:bg-purple-500/5">

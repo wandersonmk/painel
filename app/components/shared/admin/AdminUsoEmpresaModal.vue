@@ -17,6 +17,8 @@ const emit = defineEmits<{
   editarModulos: [clienteId: string]
   // Badge "Indicação de …": abre quem indicou / remover indicação.
   verIndicacao: [clienteId: string]
+  // Atalho para o Renovar assinatura (o mesmo dos três pontinhos), pedido do dono 07/11/2026.
+  renovar: [clienteId: string]
 }>()
 
 const { formatDate, getPlanLabel, getDataVencimento, formatDiasVencimento } = useAdminClientes()
@@ -333,6 +335,14 @@ const criadoEm = computed(() => {
         <p v-if="criadoEm" class="mt-1 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums" :title="`Cliente ${criadoEm.ha}`">
           Criado em <span class="font-medium text-slate-900 dark:text-white">{{ criadoEm.data }}</span>
         </p>
+        <button
+          type="button"
+          class="mt-2 inline-flex items-center gap-1.5 rounded-md border border-purple-300 px-2.5 py-1 text-[12px] font-normal text-purple-700 transition-colors hover:bg-purple-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 dark:border-purple-500/40 dark:text-purple-300 dark:hover:bg-purple-500/10"
+          @click="emit('renovar', cliente.id)"
+        >
+          <i class="fa-solid fa-rotate text-[11px]" aria-hidden="true" />
+          Renovar plano
+        </button>
       </div>
     </div>
 

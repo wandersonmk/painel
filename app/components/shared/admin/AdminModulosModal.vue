@@ -17,10 +17,7 @@ export interface ModulosEmpresa {
   dominioAgendaHabilitado: boolean
   enviosHabilitado: boolean
   maxEnviosMes: number
-  maxProfissionais: number
-  maxClientes: number
   deliveryModuloAtivo: boolean
-  maxMacros: number
   maxAcoesMacro: number
   maxPedidosMes: number
   maxProdutosVitrine: number
@@ -29,8 +26,6 @@ export interface ModulosEmpresa {
   maxImoveis: number
   gruposHabilitado: boolean
   formulariosHabilitado: boolean
-  // Só conta com plano: nulo no banco (conta antiga) = sem limite, nem vai.
-  maxFunis?: number
 }
 
 const props = defineProps<{
@@ -46,10 +41,7 @@ const props = defineProps<{
   dominioAgendaAtual?: boolean
   enviosAtual: boolean
   maxEnviosMesAtual: number
-  maxProfissionaisAtual: number
-  maxClientesAtual: number
   deliveryAtual: boolean
-  maxMacrosAtual: number
   maxAcoesMacroAtual: number
   maxPedidosMesAtual: number
   maxProdutosVitrineAtual: number
@@ -58,8 +50,6 @@ const props = defineProps<{
   maxImoveisAtual?: number
   gruposAtual?: boolean
   formulariosAtual?: boolean
-  // Nulo = conta antiga, sem limite de funis: o campo não aparece.
-  maxFunisAtual?: number | null
 }>()
 
 // Abas (pedido do dono, 28/09/2026): o modal empilhava tudo e precisava rolar.
@@ -84,11 +74,8 @@ const dominioAgenda = ref(true)
 // Envios é add-on pago: nasce desligado, ao contrário dos gates acima.
 const envios = ref(false)
 const maxEnviosMes = ref(0)
-const maxProfissionais = ref(20)
-const maxClientes = ref(100000)
 // Delivery é add-on pago, mesmo padrão de envios: nasce desligado.
 const delivery = ref(false)
-const maxMacros = ref(5)
 const maxAcoesMacro = ref(5)
 // 0 = sem limite de pedidos/mês. Mesma faixa usual de maxEnviosMes.
 const maxPedidosMes = ref(0)
@@ -107,9 +94,6 @@ const maxImoveis = ref(100)
 // Grupos de WhatsApp e Formulários: add-ons, nascem desligados (o Enterprise liga).
 const grupos = ref(false)
 const formularios = ref(false)
-// Funis de CRM: só existe em conta com plano (o plano grava, aqui se ajusta).
-const maxFunis = ref(6)
-const temLimiteFunis = computed(() => props.maxFunisAtual !== null && props.maxFunisAtual !== undefined)
 
 // Faixas usuais na venda, viram só atalhos: o teto de fato é digitável (como
 // profissionais/clientes), pra caber contrato fora das três faixas. Valor em R$
@@ -123,19 +107,15 @@ const fmtMil = new Intl.NumberFormat('pt-BR')
 
 // Quanto a empresa já usa — evita salvar um teto abaixo do consumo atual sem
 // perceber (nada é removido, mas ela ficaria travada pra cadastrar).
-const profissionaisEmUso = ref<number | null>(null)
-const clientesEmUso = ref<number | null>(null)
+// Profissionais, contatos, macros e funis ficam no modal Limites e canais
+// (dono, 07/11/2026).
 const produtosVitrineEmUso = ref<number | null>(null)
 const imoveisEmUso = ref<number | null>(null)
-const funisEmUso = ref<number | null>(null)
 
 watch(() => props.show, async (open) => {
   if (!open) {
-    profissionaisEmUso.value = null
-    clientesEmUso.value = null
     produtosVitrineEmUso.value = null
     imoveisEmUso.value = null
-    funisEmUso.value = null
     extrasSaldo.value = null
     extrasAdicionar.value = null
     extrasValor.value = null
@@ -150,10 +130,7 @@ watch(() => props.show, async (open) => {
   dominioAgenda.value = props.dominioAgendaAtual ?? true
   envios.value = props.enviosAtual
   maxEnviosMes.value = props.maxEnviosMesAtual ?? 0
-  maxProfissionais.value = props.maxProfissionaisAtual ?? 20
-  maxClientes.value = props.maxClientesAtual ?? 100000
   delivery.value = props.deliveryAtual
-  maxMacros.value = props.maxMacrosAtual ?? 5
   maxAcoesMacro.value = props.maxAcoesMacroAtual ?? 5
   maxPedidosMes.value = props.maxPedidosMesAtual ?? 0
   maxProdutosVitrine.value = props.maxProdutosVitrineAtual ?? 0
@@ -162,37 +139,24 @@ watch(() => props.show, async (open) => {
   maxImoveis.value = props.maxImoveisAtual ?? 100
   grupos.value = props.gruposAtual ?? false
   formularios.value = props.formulariosAtual ?? false
-  maxFunis.value = props.maxFunisAtual ?? 6
   aba.value = 'modulos'
   valoresAoAbrir = valoresDoFormulario()
 
   if (!props.clienteId) return
   try {
-    const resp = await $fetch<{ success: boolean; data?: { profissionais: number; clientes: number; produtosVitrine?: number; imoveis?: number; pedidosExtras?: number; funis?: number } }>('/api/admin/empresa-uso', {
+    const resp = await $fetch<{ success: boolean; data?: { produtosVitrine?: number; imoveis?: number; pedidosExtras?: number } }>('/api/admin/empresa-uso', {
       query: { empresaId: props.clienteId },
       headers: await useAdminAuthHeaders(),
     })
-    profissionaisEmUso.value = resp.success && resp.data ? (resp.data.profissionais ?? null) : null
-    clientesEmUso.value = resp.success && resp.data ? (resp.data.clientes ?? null) : null
     produtosVitrineEmUso.value = resp.success && resp.data ? (resp.data.produtosVitrine ?? null) : null
     imoveisEmUso.value = resp.success && resp.data ? (resp.data.imoveis ?? null) : null
     extrasSaldo.value = resp.success && resp.data ? (resp.data.pedidosExtras ?? 0) : null
-    funisEmUso.value = resp.success && resp.data ? (resp.data.funis ?? null) : null
   } catch {
-    profissionaisEmUso.value = null
-    clientesEmUso.value = null
     produtosVitrineEmUso.value = null
     imoveisEmUso.value = null
-    funisEmUso.value = null
   }
 })
 
-const profAbaixoDoUso = computed(() =>
-  profissionaisEmUso.value !== null && maxProfissionais.value < profissionaisEmUso.value
-)
-const clientesAbaixoDoUso = computed(() =>
-  clientesEmUso.value !== null && maxClientes.value < clientesEmUso.value
-)
 // 0 = sem limite, então só alerta com teto de verdade abaixo do que já existe.
 const produtosVitrineAbaixoDoUso = computed(() =>
   produtosVitrineEmUso.value !== null && maxProdutosVitrine.value > 0 && maxProdutosVitrine.value < produtosVitrineEmUso.value
@@ -200,10 +164,6 @@ const produtosVitrineAbaixoDoUso = computed(() =>
 // Mesma regra (0 = sem limite) pros imóveis.
 const imoveisAbaixoDoUso = computed(() =>
   imoveisEmUso.value !== null && maxImoveis.value > 0 && maxImoveis.value < imoveisEmUso.value
-)
-// Funis: o trigger conta o quadro Geral junto, e o "em uso" também.
-const funisAbaixoDoUso = computed(() =>
-  temLimiteFunis.value && funisEmUso.value !== null && maxFunis.value < funisEmUso.value
 )
 
 const MODULOS = [
@@ -274,8 +234,7 @@ const addonsLigados = computed(() =>
   Number(roteamento.value) + Number(envios.value) + Number(delivery.value) + Number(imoveis.value)
   + Number(grupos.value) + Number(formularios.value))
 const algumLimiteAbaixo = computed(() =>
-  profAbaixoDoUso.value || clientesAbaixoDoUso.value || produtosVitrineAbaixoDoUso.value || imoveisAbaixoDoUso.value
-  || funisAbaixoDoUso.value)
+  produtosVitrineAbaixoDoUso.value || imoveisAbaixoDoUso.value)
 
 // Add-ons simples (só o liga/desliga), na mesma lista pra não duplicar markup.
 const ADDONS_SIMPLES = [
@@ -297,58 +256,9 @@ const ADDONS_SIMPLES = [
   },
 ]
 
-// Funis de CRM entra na lista só em conta com plano.
-const LIMITE_FUNIS = {
-  key: 'funis' as const,
-  modelo: maxFunis,
-  emUso: funisEmUso,
-  alerta: funisAbaixoDoUso,
-  label: 'Funis de CRM',
-  icon: 'fa-table-columns',
-  iconCls: 'text-purple-500',
-  min: 1,
-  max: 500,
-  ajuda: 'Quantos funis pode ter, contando o Geral (1 – 500)',
-}
-
-// Limites numéricos, na mesma lista pra não duplicar markup
-const LIMITES_FIXOS = [
-  {
-    key: 'profissionais' as const,
-    modelo: maxProfissionais,
-    emUso: profissionaisEmUso,
-    alerta: profAbaixoDoUso,
-    label: 'Profissionais',
-    icon: 'fa-user-tie',
-    iconCls: 'text-teal-500',
-    min: 1,
-    max: 500,
-    ajuda: 'Quantos pode cadastrar (1 – 500)',
-  },
-  {
-    key: 'clientes' as const,
-    modelo: maxClientes,
-    emUso: clientesEmUso,
-    alerta: clientesAbaixoDoUso,
-    label: 'Clientes',
-    icon: 'fa-users',
-    iconCls: 'text-blue-500',
-    min: 1,
-    max: 1000000,
-    ajuda: 'Quantos pode cadastrar na mão (padrão 100.000)',
-  },
-  {
-    key: 'macros' as const,
-    modelo: maxMacros,
-    emUso: ref(null),
-    alerta: ref(false),
-    label: 'Macros',
-    icon: 'fa-bolt',
-    iconCls: 'text-amber-500',
-    min: 0,
-    max: 100,
-    ajuda: 'Quantos macros a empresa pode ter (padrão 5)',
-  },
+// Limites numéricos que ficam aqui, na mesma lista pra não duplicar markup.
+// Profissionais, contatos, macros e funis foram para Limites e canais.
+const LIMITES = [
   {
     key: 'acoesMacro' as const,
     modelo: maxAcoesMacro,
@@ -386,7 +296,6 @@ const LIMITES_FIXOS = [
     ajuda: 'Quantos imóveis pode cadastrar (padrão 100, 0 = sem limite)',
   },
 ]
-const LIMITES = computed(() => (temLimiteFunis.value ? [LIMITE_FUNIS, ...LIMITES_FIXOS] : LIMITES_FIXOS))
 
 // Ligar o add-on já preenche a faixa padrão (nunca "ligado sem teto"); desligar
 // zera, porque plano sem gate não significa nada.
@@ -410,7 +319,7 @@ function tetoEnviosValido() {
 function submeter() {
   // Os campos de limite só existem no DOM na aba Limites: valida aqui e, se
   // algum estiver fora da faixa, abre a aba pra mostrar o erro no campo.
-  const limiteInvalido = LIMITES.value.some(l => {
+  const limiteInvalido = LIMITES.some(l => {
     const v = l.modelo.value
     return !Number.isInteger(v) || v < l.min || v > l.max
   })
@@ -445,10 +354,7 @@ function valoresDoFormulario(): ModulosEmpresa {
     webhooksHabilitado: webhooks.value,
     documentacaoHabilitada: documentacao.value,
     dominioAgendaHabilitado: dominioAgenda.value,
-    maxProfissionais: maxProfissionais.value,
-    maxClientes: maxClientes.value,
     deliveryModuloAtivo: delivery.value,
-    maxMacros: maxMacros.value,
     maxAcoesMacro: maxAcoesMacro.value,
     maxPedidosMes: delivery.value ? pedidosMesValido() : 0,
     maxProdutosVitrine: produtosVitrineValido(),
@@ -457,11 +363,9 @@ function valoresDoFormulario(): ModulosEmpresa {
     maxImoveis: imoveisValido(),
     gruposHabilitado: grupos.value,
     formulariosHabilitado: formularios.value,
-    ...(temLimiteFunis.value ? { maxFunis: maxFunis.value } : {}),
   }
 }
 
-// Campo livre (0 = sem limite): fora da faixa cai em 0, nunca manda lixo.
 // Campo livre (0 = sem limite): fora da faixa cai em 0, nunca manda lixo.
 function produtosVitrineValido() {
   const n = Math.trunc(Number(maxProdutosVitrine.value))
@@ -831,8 +735,8 @@ function pedidosMesValido() {
         </template>
 
         <template v-else>
-          <!-- Limites: moram aqui (e não em "Canais WhatsApp") porque na venda são
-               negociados junto dos módulos. 2 colunas, mesma pegada dos gates. -->
+          <!-- Limites ligados aos módulos (macros, Vitrine, Imóveis). Os de quantidade
+               do plano ficam em Limites e canais. 2 colunas, mesma pegada dos gates. -->
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div
               v-for="l in LIMITES"
@@ -864,16 +768,6 @@ function pedidosMesValido() {
             </div>
           </div>
 
-          <p v-if="funisAbaixoDoUso" class="text-[11px] leading-snug text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
-            <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true" />
-            <span>Abaixo dos {{ funisEmUso }} funis que a empresa já tem (o Geral conta). Nenhum é removido, mas ela não poderá criar novos até ficar dentro do limite.</span>
-          </p>
-
-          <p v-if="profAbaixoDoUso" class="text-[11px] leading-snug text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
-            <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true" />
-            <span>Abaixo dos {{ profissionaisEmUso }} profissionais já cadastrados. Ninguém é removido, mas a empresa não poderá cadastrar novos até ficar dentro do limite.</span>
-          </p>
-
           <p v-if="produtosVitrineAbaixoDoUso" class="text-[11px] leading-snug text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
             <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true" />
             <span>Abaixo dos {{ produtosVitrineEmUso }} produtos já cadastrados na Vitrine. Nenhum é removido, mas a empresa não poderá cadastrar novos até ficar dentro do limite.</span>
@@ -884,13 +778,9 @@ function pedidosMesValido() {
             <span>Abaixo dos {{ imoveisEmUso }} imóveis já cadastrados. Nenhum é removido, mas a empresa não poderá cadastrar novos até ficar dentro do limite.</span>
           </p>
 
-          <p v-if="clientesAbaixoDoUso" class="text-[11px] leading-snug text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
-            <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true" />
-            <span>Abaixo dos {{ clientesEmUso }} clientes já cadastrados. Nada é removido, mas a empresa não poderá cadastrar novos na mão até ficar dentro do limite.</span>
-          </p>
           <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 flex items-start gap-1.5">
-            <i class="fa-solid fa-comment-dots mt-0.5" aria-hidden="true" />
-            <span>O limite de clientes vale só para cadastro manual. Contato que chega sozinho por mensagem no WhatsApp nunca é bloqueado.</span>
+            <i class="fa-solid fa-circle-info mt-0.5" aria-hidden="true" />
+            <span>Canais, assistentes, profissionais, contatos, funis, macros e webhooks ficam em Limites e canais, no menu do cliente.</span>
           </p>
         </template>
       </div>

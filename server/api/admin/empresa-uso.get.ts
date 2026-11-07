@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
   const [
     agentesResp, webhooksResp, webhooksSaidaResp, profissionaisResp, clientesResp,
     instanciasResp, macrosResp, enviosResp, cotaResp, produtosVitrineResp,
-    imoveisResp,
+    imoveisResp, funisResp, webchatsResp,
   ] = await Promise.all([
     supabase.from('agente_configuracoes').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId),
     supabase.from('webhooks_entrada').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId),
@@ -47,6 +47,12 @@ export default defineEventHandler(async (event) => {
     // null e cai em 0; o catch cobre falha de rede pra não derrubar o resto.
     supabase.from('imoveis').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId)
       .then(r => r, () => ({ count: null })),
+    // Funis de CRM: todos, o Geral junto, como conta o trigger trg_limite_funis.
+    supabase.from('crm_boards').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId)
+      .then(r => r, () => ({ count: null })),
+    // Chats do site: o mesmo que POST /api/webchat/canais do app conta.
+    supabase.from('instancias_webchat').select('id', { count: 'exact', head: true }).eq('empresa_id', empresaId)
+      .then(r => r, () => ({ count: null })),
   ])
 
   return {
@@ -64,6 +70,8 @@ export default defineEventHandler(async (event) => {
       pedidosExtras: Number((cotaResp.data as { extras?: number } | null)?.extras ?? 0) || 0,
       produtosVitrine: produtosVitrineResp.count ?? 0,
       imoveis: imoveisResp.count ?? 0,
+      funis: funisResp.count ?? 0,
+      webchats: webchatsResp.count ?? 0,
     },
   }
 })

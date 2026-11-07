@@ -95,6 +95,15 @@ export interface AdminCliente {
   imoveis_modulo_ativo?: boolean
   // Limite de imóveis cadastrados. Padrão 100, 0 = sem limite.
   max_imoveis?: number
+  // Gravados pelo plano. Nulo = conta antiga: sem limite de funis, e os canais
+  // seguem a soma de max_instancias.
+  max_funis?: number | null
+  max_canais_whatsapp?: number | null
+  max_canais_instagram?: number | null
+  max_canais_webchat?: number | null
+  // Add-ons que nascem FALSE (Grupos de WhatsApp e Formulários).
+  grupos_habilitado?: boolean
+  formularios_habilitado?: boolean
 }
 
 // Faturamento do Dashboard (14/10/2026): onde cada cliente entra, ou por que fica de fora.

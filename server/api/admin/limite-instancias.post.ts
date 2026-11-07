@@ -2,12 +2,16 @@ import { requireSuperAdmin, getServiceClient } from '~~/server/utils/requireSupe
 
 export default defineEventHandler(async (event) => {
   await requireSuperAdmin(event)
-  const { clienteId, maxInstancias, maxAgentes, maxWebhooksEntrada, maxWebhooksSaida } = await readBody<{
+  const { clienteId, maxInstancias, maxAgentes, maxWebhooksEntrada, maxWebhooksSaida, maxCanaisWhatsapp, maxCanaisInstagram, maxCanaisWebchat } = await readBody<{
     clienteId: string
     maxInstancias?: number
     maxAgentes?: number
     maxWebhooksEntrada?: number
     maxWebhooksSaida?: number
+    // Conta com plano: limite por tipo de canal. Vem no lugar de maxInstancias.
+    maxCanaisWhatsapp?: number
+    maxCanaisInstagram?: number
+    maxCanaisWebchat?: number
   }>(event)
 
   if (!clienteId) {
@@ -43,11 +47,50 @@ export default defineEventHandler(async (event) => {
     update.max_webhooks_saida = maxWebhooksSaida
   }
 
-  if (Object.keys(update).length === 1) {
+  // Faixas por tipo de canal (conta com plano). Sem CHECK no banco: a trava é aqui.
+  const CANAIS = [
+    { valor: maxCanaisWhatsapp, coluna: 'max_canais_whatsapp', nome: 'maxCanaisWhatsapp', max: 20 },
+    { valor: maxCanaisInstagram, coluna: 'max_canais_instagram', nome: 'maxCanaisInstagram', max: 5 },
+    { valor: maxCanaisWebchat, coluna: 'max_canais_webchat', nome: 'maxCanaisWebchat', max: 5 },
+  ] as const
+  const porTipo = CANAIS.some(c => c.valor !== undefined)
+  if (porTipo && maxInstancias !== undefined) {
+    throw createError({ statusCode: 400, statusMessage: 'Mande maxInstancias ou os canais por tipo, não os dois' })
+  }
+  for (const c of CANAIS) {
+    if (c.valor === undefined) continue
+    if (!Number.isInteger(c.valor) || c.valor < 0 || c.valor > c.max) {
+      throw createError({ statusCode: 400, statusMessage: `${c.nome} inválido (0–${c.max})` })
+    }
+  }
+
+  if (Object.keys(update).length === 1 && !porTipo) {
     throw createError({ statusCode: 400, statusMessage: 'Nenhum limite informado' })
   }
 
   const supabase = getServiceClient()
+
+  // Conta com plano: grava cada tipo e mantém max_instancias como a soma, igual
+  // aplicar_plano_assinatura. Conta antiga (WhatsApp nulo) não vira conta por
+  // tipo por aqui: ela segue com o campo único.
+  if (porTipo) {
+    const { data: atual, error: erroAtual } = await supabase
+      .from('empresas')
+      .select('max_canais_whatsapp, max_canais_instagram, max_canais_webchat')
+      .eq('id', clienteId)
+      .maybeSingle()
+    if (erroAtual) return { success: false, error: erroAtual.message }
+    if (!atual) throw createError({ statusCode: 404, statusMessage: 'Cliente não encontrado' })
+    if (atual.max_canais_whatsapp === null || atual.max_canais_whatsapp === undefined) {
+      throw createError({ statusCode: 400, statusMessage: 'Esta conta não tem limite por tipo de canal: use o limite de canais WhatsApp.' })
+    }
+    const novo: Record<string, number> = {}
+    for (const c of CANAIS) {
+      novo[c.coluna] = c.valor !== undefined ? c.valor : Number((atual as Record<string, unknown>)[c.coluna] ?? 0)
+    }
+    Object.assign(update, novo)
+    update.max_instancias = Math.max(1, novo.max_canais_whatsapp! + novo.max_canais_instagram! + novo.max_canais_webchat!)
+  }
 
   // Cliente com plano assinado pela tela tem limite por tipo de canal. O canal a
   // mais vendido aqui é número de WhatsApp: sem isso o app recusaria o número novo.

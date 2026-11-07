@@ -19,21 +19,42 @@ const props = defineProps<{
   agentesAtual: number
   webhooksAtual: number
   webhooksSaidaAtual: number
+  // Conta com plano: limite por tipo de canal (max_canais_*). Nulo = conta
+  // antiga, que segue com o campo único de canais WhatsApp (max_instancias).
+  canaisWhatsappAtual?: number | null
+  canaisInstagramAtual?: number | null
+  canaisWebchatAtual?: number | null
 }>()
+// Conta com plano manda os 3 tipos no lugar de maxInstancias; o servidor grava
+// max_instancias como a soma.
 const emit = defineEmits<{
   close: []
-  confirm: [limites: { maxInstancias: number; maxAgentes: number; maxWebhooksEntrada: number; maxWebhooksSaida: number }]
+  confirm: [limites: {
+    maxInstancias?: number
+    maxAgentes: number
+    maxWebhooksEntrada: number
+    maxWebhooksSaida: number
+    maxCanaisWhatsapp?: number
+    maxCanaisInstagram?: number
+    maxCanaisWebchat?: number
+  }]
 }>()
 
 const quantidade = ref(1)
 const qtdAgentes = ref(1)
 const qtdWebhooks = ref(5)
 const qtdWebhooksSaida = ref(5)
+const qtdWhatsapp = ref(1)
+const qtdInstagram = ref(0)
+const qtdWebchat = ref(0)
+const porTipo = computed(() => props.canaisWhatsappAtual !== null && props.canaisWhatsappAtual !== undefined)
 const instancias = ref<Instancia[]>([])
 const loadingInstancias = ref(false)
 const usoAssistentes = ref(0)
 const usoWebhooks = ref(0)
 const usoWebhooksSaida = ref(0)
+// Chats do site não vêm na lista de canais: o uso sai de empresa-uso.
+const usoWebchats = ref<number | null>(null)
 const loadingUso = ref(false)
 const idExpandido = ref<string | null>(null)
 const idCopiado = ref<string | null>(null)
@@ -49,6 +70,9 @@ watch(() => props.show, async (open) => {
     qtdAgentes.value = props.agentesAtual || 1
     qtdWebhooks.value = props.webhooksAtual ?? 5
     qtdWebhooksSaida.value = props.webhooksSaidaAtual ?? 5
+    qtdWhatsapp.value = props.canaisWhatsappAtual ?? 1
+    qtdInstagram.value = props.canaisInstagramAtual ?? 0
+    qtdWebchat.value = props.canaisWebchatAtual ?? 0
     abaAtiva.value = 'instancias'
     toast = await useToastSafe()
     await Promise.all([carregarInstancias(), carregarUso()])
@@ -57,6 +81,7 @@ watch(() => props.show, async (open) => {
     usoAssistentes.value = 0
     usoWebhooks.value = 0
     usoWebhooksSaida.value = 0
+    usoWebchats.value = null
     idExpandido.value = null
     idCopiado.value = null
     acaoConfirmacao.value = null
@@ -67,7 +92,7 @@ async function carregarUso() {
   if (!props.clienteId) return
   loadingUso.value = true
   try {
-    const resp = await $fetch<{ success: boolean; data?: { assistentes: number; webhooks: number; webhooksSaida: number } }>('/api/admin/empresa-uso', {
+    const resp = await $fetch<{ success: boolean; data?: { assistentes: number; webhooks: number; webhooksSaida: number; webchats?: number } }>('/api/admin/empresa-uso', {
       query: { empresaId: props.clienteId },
       headers: await useAdminAuthHeaders(),
     })
@@ -75,11 +100,13 @@ async function carregarUso() {
       usoAssistentes.value = resp.data.assistentes
       usoWebhooks.value = resp.data.webhooks
       usoWebhooksSaida.value = resp.data.webhooksSaida ?? 0
+      usoWebchats.value = resp.data.webchats ?? null
     }
   } catch {
     usoAssistentes.value = 0
     usoWebhooks.value = 0
     usoWebhooksSaida.value = 0
+    usoWebchats.value = null
   } finally {
     loadingUso.value = false
   }
@@ -184,6 +211,20 @@ const totalCanais = computed(() => instancias.value.length)
 // parte — a checagem de teto do IG, se houver, é no app, não neste painel.
 const canaisWhatsapp = computed(() => instancias.value.filter(i => i.provider !== 'instagram').length)
 const canaisInstagram = computed(() => instancias.value.filter(i => i.provider === 'instagram').length)
+
+// Conta com plano: um campo por tipo, cada um travado pela própria coluna no app.
+const CAMPOS_CANAL = computed(() => [
+  { id: 'max-canais-whatsapp', label: 'Canais WhatsApp', icon: 'fa-brands fa-whatsapp text-emerald-500', modelo: qtdWhatsapp, emUso: canaisWhatsapp.value as number | null, max: 20, ajuda: 'Número nativo e API Oficial somados (0 – 20)' },
+  { id: 'max-canais-instagram', label: 'Canais Instagram', icon: 'fa-brands fa-instagram text-pink-500', modelo: qtdInstagram, emUso: canaisInstagram.value as number | null, max: 5, ajuda: 'Contas do Instagram (0 – 5). 0 = o plano não inclui' },
+  { id: 'max-canais-webchat', label: 'Webchat para site', icon: 'fa-solid fa-comment-dots text-sky-500', modelo: qtdWebchat, emUso: usoWebchats.value, max: 5, ajuda: 'Chats do site (0 – 5). 0 = o plano não inclui' },
+])
+
+function enviar() {
+  const base = { maxAgentes: qtdAgentes.value, maxWebhooksEntrada: qtdWebhooks.value, maxWebhooksSaida: qtdWebhooksSaida.value }
+  emit('confirm', porTipo.value
+    ? { ...base, maxCanaisWhatsapp: qtdWhatsapp.value, maxCanaisInstagram: qtdInstagram.value, maxCanaisWebchat: qtdWebchat.value }
+    : { ...base, maxInstancias: quantidade.value })
+}
 </script>
 
 <template>
@@ -196,7 +237,10 @@ const canaisInstagram = computed(() => instancias.value.filter(i => i.provider =
       </div>
       <div>
         <p class="font-semibold text-slate-900 dark:text-white">{{ clienteNome }}</p>
-        <p class="text-xs text-slate-500 dark:text-slate-400">
+        <p v-if="porTipo" class="text-xs text-slate-500 dark:text-slate-400">
+          {{ canaisWhatsapp }} de {{ canaisWhatsappAtual }} WhatsApp · {{ canaisInstagram }} de {{ canaisInstagramAtual ?? 0 }} Instagram<template v-if="usoWebchats !== null"> · {{ usoWebchats }} de {{ canaisWebchatAtual ?? 0 }} Webchat</template>
+        </p>
+        <p v-else class="text-xs text-slate-500 dark:text-slate-400">
           {{ canaisWhatsapp }} de {{ valorAtual }} canal{{ valorAtual > 1 ? 'is' : '' }} WhatsApp<template v-if="canaisInstagram"> · {{ canaisInstagram }} Instagram</template>
         </p>
       </div>
@@ -395,11 +439,44 @@ const canaisInstagram = computed(() => instancias.value.filter(i => i.provider =
     <!-- Limites da empresa -->
     <section v-show="abaAtiva === 'limites'" class="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 p-4">
       <form
-        @submit.prevent="$emit('confirm', { maxInstancias: quantidade, maxAgentes: qtdAgentes, maxWebhooksEntrada: qtdWebhooks, maxWebhooksSaida: qtdWebhooksSaida })"
+        @submit.prevent="enviar"
         class="space-y-4"
       >
-        <!-- Canais -->
-        <div class="flex items-start justify-between gap-3">
+        <!-- Canais por tipo: conta com plano (cada tipo tem limite próprio no app) -->
+        <template v-if="porTipo">
+          <div
+            v-for="(c, i) in CAMPOS_CANAL"
+            :key="c.id"
+            class="flex items-start justify-between gap-3"
+            :class="i > 0 ? 'pt-3 border-t border-slate-200 dark:border-slate-800' : ''"
+          >
+            <div class="min-w-0 flex-1">
+              <label :for="c.id" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <i :class="[c.icon, 'text-xs']" aria-hidden="true" />
+                {{ c.label }}
+              </label>
+              <p class="text-xs text-slate-400 dark:text-slate-600 mt-0.5">
+                <template v-if="c.emUso !== null">Em uso: <span class="tabular-nums font-semibold text-slate-600 dark:text-slate-400">{{ c.emUso }}</span> · </template>{{ c.ajuda }}
+              </p>
+            </div>
+            <input
+              :id="c.id"
+              v-model.number="c.modelo.value"
+              type="number"
+              min="0"
+              :max="c.max"
+              required
+              class="w-20 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-sm text-slate-900 dark:text-white tabular-nums text-center font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+          <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 flex items-start gap-1.5">
+            <i class="fa-solid fa-circle-info mt-0.5" aria-hidden="true" />
+            <span>Conta com plano: cada tipo de canal tem limite próprio. Baixar o limite não desconecta nenhum canal; só impede de conectar um novo.</span>
+          </p>
+        </template>
+
+        <!-- Canais: conta antiga, campo único (max_instancias) -->
+        <div v-else class="flex items-start justify-between gap-3">
           <div class="min-w-0 flex-1">
             <label for="max-instancias" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
               <i class="fa-brands fa-whatsapp text-emerald-500 text-xs" aria-hidden="true" />

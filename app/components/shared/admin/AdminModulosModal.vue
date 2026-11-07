@@ -27,6 +27,10 @@ export interface ModulosEmpresa {
   vitrineHabilitada: boolean
   imoveisModuloAtivo: boolean
   maxImoveis: number
+  gruposHabilitado: boolean
+  formulariosHabilitado: boolean
+  // Só conta com plano: nulo no banco (conta antiga) = sem limite, nem vai.
+  maxFunis?: number
 }
 
 const props = defineProps<{
@@ -52,6 +56,10 @@ const props = defineProps<{
   vitrineAtual?: boolean
   imoveisAtual?: boolean
   maxImoveisAtual?: number
+  gruposAtual?: boolean
+  formulariosAtual?: boolean
+  // Nulo = conta antiga, sem limite de funis: o campo não aparece.
+  maxFunisAtual?: number | null
 }>()
 
 // Abas (pedido do dono, 28/09/2026): o modal empilhava tudo e precisava rolar.
@@ -96,6 +104,12 @@ const vitrine = ref(true)
 const imoveis = ref(false)
 // Limite de imóveis cadastrados. Padrão 100, 0 = sem limite.
 const maxImoveis = ref(100)
+// Grupos de WhatsApp e Formulários: add-ons, nascem desligados (o Enterprise liga).
+const grupos = ref(false)
+const formularios = ref(false)
+// Funis de CRM: só existe em conta com plano (o plano grava, aqui se ajusta).
+const maxFunis = ref(6)
+const temLimiteFunis = computed(() => props.maxFunisAtual !== null && props.maxFunisAtual !== undefined)
 
 // Faixas usuais na venda, viram só atalhos: o teto de fato é digitável (como
 // profissionais/clientes), pra caber contrato fora das três faixas. Valor em R$
@@ -113,6 +127,7 @@ const profissionaisEmUso = ref<number | null>(null)
 const clientesEmUso = ref<number | null>(null)
 const produtosVitrineEmUso = ref<number | null>(null)
 const imoveisEmUso = ref<number | null>(null)
+const funisEmUso = ref<number | null>(null)
 
 watch(() => props.show, async (open) => {
   if (!open) {
@@ -120,6 +135,7 @@ watch(() => props.show, async (open) => {
     clientesEmUso.value = null
     produtosVitrineEmUso.value = null
     imoveisEmUso.value = null
+    funisEmUso.value = null
     extrasSaldo.value = null
     extrasAdicionar.value = null
     extrasValor.value = null
@@ -144,12 +160,15 @@ watch(() => props.show, async (open) => {
   vitrine.value = props.vitrineAtual ?? true
   imoveis.value = props.imoveisAtual ?? false
   maxImoveis.value = props.maxImoveisAtual ?? 100
+  grupos.value = props.gruposAtual ?? false
+  formularios.value = props.formulariosAtual ?? false
+  maxFunis.value = props.maxFunisAtual ?? 6
   aba.value = 'modulos'
   valoresAoAbrir = valoresDoFormulario()
 
   if (!props.clienteId) return
   try {
-    const resp = await $fetch<{ success: boolean; data?: { profissionais: number; clientes: number; produtosVitrine?: number; imoveis?: number; pedidosExtras?: number } }>('/api/admin/empresa-uso', {
+    const resp = await $fetch<{ success: boolean; data?: { profissionais: number; clientes: number; produtosVitrine?: number; imoveis?: number; pedidosExtras?: number; funis?: number } }>('/api/admin/empresa-uso', {
       query: { empresaId: props.clienteId },
       headers: await useAdminAuthHeaders(),
     })
@@ -158,11 +177,13 @@ watch(() => props.show, async (open) => {
     produtosVitrineEmUso.value = resp.success && resp.data ? (resp.data.produtosVitrine ?? null) : null
     imoveisEmUso.value = resp.success && resp.data ? (resp.data.imoveis ?? null) : null
     extrasSaldo.value = resp.success && resp.data ? (resp.data.pedidosExtras ?? 0) : null
+    funisEmUso.value = resp.success && resp.data ? (resp.data.funis ?? null) : null
   } catch {
     profissionaisEmUso.value = null
     clientesEmUso.value = null
     produtosVitrineEmUso.value = null
     imoveisEmUso.value = null
+    funisEmUso.value = null
   }
 })
 
@@ -179,6 +200,10 @@ const produtosVitrineAbaixoDoUso = computed(() =>
 // Mesma regra (0 = sem limite) pros imóveis.
 const imoveisAbaixoDoUso = computed(() =>
   imoveisEmUso.value !== null && maxImoveis.value > 0 && maxImoveis.value < imoveisEmUso.value
+)
+// Funis: o trigger conta o quadro Geral junto, e o "em uso" também.
+const funisAbaixoDoUso = computed(() =>
+  temLimiteFunis.value && funisEmUso.value !== null && maxFunis.value < funisEmUso.value
 )
 
 const MODULOS = [
@@ -246,12 +271,48 @@ const valores = {
 
 // Selo nas abas: quantos add-ons ligados / limite abaixo do uso atual.
 const addonsLigados = computed(() =>
-  Number(roteamento.value) + Number(envios.value) + Number(delivery.value) + Number(imoveis.value))
+  Number(roteamento.value) + Number(envios.value) + Number(delivery.value) + Number(imoveis.value)
+  + Number(grupos.value) + Number(formularios.value))
 const algumLimiteAbaixo = computed(() =>
-  profAbaixoDoUso.value || clientesAbaixoDoUso.value || produtosVitrineAbaixoDoUso.value || imoveisAbaixoDoUso.value)
+  profAbaixoDoUso.value || clientesAbaixoDoUso.value || produtosVitrineAbaixoDoUso.value || imoveisAbaixoDoUso.value
+  || funisAbaixoDoUso.value)
+
+// Add-ons simples (só o liga/desliga), na mesma lista pra não duplicar markup.
+const ADDONS_SIMPLES = [
+  {
+    key: 'grupos' as const,
+    modelo: grupos,
+    label: 'Grupos de WhatsApp',
+    icon: 'fa-users-rectangle',
+    iconCls: 'text-emerald-500',
+    descricao: 'Gerenciar os grupos do WhatsApp pelo app. Nasce bloqueado.',
+  },
+  {
+    key: 'formularios' as const,
+    modelo: formularios,
+    label: 'Formulários',
+    icon: 'fa-rectangle-list',
+    iconCls: 'text-indigo-500',
+    descricao: 'Formulários do WhatsApp, só em número da API Oficial. Nasce bloqueado.',
+  },
+]
+
+// Funis de CRM entra na lista só em conta com plano.
+const LIMITE_FUNIS = {
+  key: 'funis' as const,
+  modelo: maxFunis,
+  emUso: funisEmUso,
+  alerta: funisAbaixoDoUso,
+  label: 'Funis de CRM',
+  icon: 'fa-table-columns',
+  iconCls: 'text-purple-500',
+  min: 1,
+  max: 500,
+  ajuda: 'Quantos funis pode ter, contando o Geral (1 – 500)',
+}
 
 // Limites numéricos, na mesma lista pra não duplicar markup
-const LIMITES = [
+const LIMITES_FIXOS = [
   {
     key: 'profissionais' as const,
     modelo: maxProfissionais,
@@ -325,6 +386,7 @@ const LIMITES = [
     ajuda: 'Quantos imóveis pode cadastrar (padrão 100, 0 = sem limite)',
   },
 ]
+const LIMITES = computed(() => (temLimiteFunis.value ? [LIMITE_FUNIS, ...LIMITES_FIXOS] : LIMITES_FIXOS))
 
 // Ligar o add-on já preenche a faixa padrão (nunca "ligado sem teto"); desligar
 // zera, porque plano sem gate não significa nada.
@@ -348,7 +410,7 @@ function tetoEnviosValido() {
 function submeter() {
   // Os campos de limite só existem no DOM na aba Limites: valida aqui e, se
   // algum estiver fora da faixa, abre a aba pra mostrar o erro no campo.
-  const limiteInvalido = LIMITES.some(l => {
+  const limiteInvalido = LIMITES.value.some(l => {
     const v = l.modelo.value
     return !Number.isInteger(v) || v < l.min || v > l.max
   })
@@ -393,6 +455,9 @@ function valoresDoFormulario(): ModulosEmpresa {
     vitrineHabilitada: vitrine.value,
     imoveisModuloAtivo: imoveis.value,
     maxImoveis: imoveisValido(),
+    gruposHabilitado: grupos.value,
+    formulariosHabilitado: formularios.value,
+    ...(temLimiteFunis.value ? { maxFunis: maxFunis.value } : {}),
   }
 }
 
@@ -732,6 +797,37 @@ function pedidosMesValido() {
               </button>
             </div>
           </div>
+
+          <!-- Grupos e Formulários: add-ons só de liga/desliga (o Enterprise liga os dois). -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div
+              v-for="a in ADDONS_SIMPLES"
+              :key="a.key"
+              class="flex items-center justify-between gap-3 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 px-3 py-2.5"
+            >
+              <div class="min-w-0 flex-1">
+                <p class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 flex-wrap">
+                  <i :class="['fa-solid', a.icon, a.iconCls, 'text-[10px]']" aria-hidden="true" />
+                  {{ a.label }}
+                </p>
+                <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">{{ a.descricao }}</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                :aria-checked="a.modelo.value"
+                :aria-label="`${a.modelo.value ? 'Bloquear' : 'Liberar'} ${a.label}`"
+                @click="a.modelo.value = !a.modelo.value"
+                class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+                :class="a.modelo.value ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'"
+              >
+                <span
+                  class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform"
+                  :class="a.modelo.value ? 'translate-x-[18px]' : 'translate-x-0.5'"
+                />
+              </button>
+            </div>
+          </div>
         </template>
 
         <template v-else>
@@ -767,6 +863,11 @@ function pedidosMesValido() {
               />
             </div>
           </div>
+
+          <p v-if="funisAbaixoDoUso" class="text-[11px] leading-snug text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
+            <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true" />
+            <span>Abaixo dos {{ funisEmUso }} funis que a empresa já tem (o Geral conta). Nenhum é removido, mas ela não poderá criar novos até ficar dentro do limite.</span>
+          </p>
 
           <p v-if="profAbaixoDoUso" class="text-[11px] leading-snug text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
             <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true" />

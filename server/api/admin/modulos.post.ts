@@ -25,6 +25,9 @@ const FLAGS: Record<string, string> = {
   imoveisModuloAtivo: 'imoveis_modulo_ativo',
   // Vitrine ("Produtos" no app): gate comum, nasce TRUE (28/09/2026).
   vitrineHabilitada: 'vitrine_habilitada',
+  // Add-ons que nascem FALSE (o plano Enterprise liga os dois).
+  gruposHabilitado: 'grupos_habilitado',
+  formulariosHabilitado: 'formularios_habilitado',
 }
 
 export default defineEventHandler(async (event) => {
@@ -69,6 +72,10 @@ export default defineEventHandler(async (event) => {
     // Imóveis cadastrados (módulo Imóveis no app). 0 = sem limite, padrão 100.
     // Quem trava de fato é POST /api/imoveis no app (conta todos, inativos inclusos).
     maxImoveis: { coluna: 'max_imoveis', min: 0, max: 100_000 },
+    // Funis de CRM, gravado pelo plano. Quem trava é o trigger trg_limite_funis,
+    // que conta o quadro Geral junto. Nulo (conta antiga) = sem limite: a tela
+    // só manda este campo para conta com plano.
+    maxFunis: { coluna: 'max_funis', min: 1, max: 500 },
   }
 
   for (const [campo, regra] of Object.entries(LIMITES)) {

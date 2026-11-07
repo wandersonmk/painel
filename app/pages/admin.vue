@@ -86,6 +86,10 @@ const clienteLimiteInstancias = ref<{
   max_agentes: number
   max_webhooks_entrada: number
   max_webhooks_saida: number
+  // Conta com plano: limite por tipo de canal. Nulo = conta antiga.
+  max_canais_whatsapp: number | null
+  max_canais_instagram: number | null
+  max_canais_webchat: number | null
 } | null>(null)
 const showModulosModal = ref(false)
 const clienteModulos = ref<{
@@ -110,6 +114,10 @@ const clienteModulos = ref<{
   vitrine_habilitada: boolean
   imoveis_modulo_ativo: boolean
   max_imoveis: number
+  grupos_habilitado: boolean
+  formularios_habilitado: boolean
+  // Nulo = conta antiga, sem limite de funis.
+  max_funis: number | null
 } | null>(null)
 
 const searchQuery = ref('')
@@ -581,14 +589,26 @@ function handleLimiteInstancias(id: string) {
       max_agentes: c.max_agentes ?? 1,
       max_webhooks_entrada: c.max_webhooks_entrada ?? 5,
       max_webhooks_saida: c.max_webhooks_saida ?? 5,
+      max_canais_whatsapp: c.max_canais_whatsapp ?? null,
+      max_canais_instagram: c.max_canais_instagram ?? null,
+      max_canais_webchat: c.max_canais_webchat ?? null,
     }
     showLimiteInstanciasModal.value = true
   }
 }
-async function confirmLimiteInstancias(limites: { maxInstancias: number; maxAgentes: number; maxWebhooksEntrada: number; maxWebhooksSaida: number }) {
+// Conta com plano manda os 3 tipos de canal no lugar de maxInstancias.
+async function confirmLimiteInstancias(limites: {
+  maxInstancias?: number
+  maxAgentes: number
+  maxWebhooksEntrada: number
+  maxWebhooksSaida: number
+  maxCanaisWhatsapp?: number
+  maxCanaisInstagram?: number
+  maxCanaisWebchat?: number
+}) {
   if (!clienteLimiteInstancias.value) return
   try {
-    const resp = await $fetch<{ success: boolean }>('/api/admin/limite-instancias', {
+    const resp = await $fetch<{ success: boolean; error?: string }>('/api/admin/limite-instancias', {
       method: 'POST',
       body: {
         clienteId: clienteLimiteInstancias.value.id,
@@ -596,19 +616,34 @@ async function confirmLimiteInstancias(limites: { maxInstancias: number; maxAgen
         maxAgentes: limites.maxAgentes,
         maxWebhooksEntrada: limites.maxWebhooksEntrada,
         maxWebhooksSaida: limites.maxWebhooksSaida,
+        maxCanaisWhatsapp: limites.maxCanaisWhatsapp,
+        maxCanaisInstagram: limites.maxCanaisInstagram,
+        maxCanaisWebchat: limites.maxCanaisWebchat,
       },
       headers: await useAdminAuthHeaders(),
     })
-    if (!resp.success) throw new Error('Erro')
+    if (!resp.success) throw new Error(resp.error || 'Erro')
     const c = clientes.value.find(x => x.id === clienteLimiteInstancias.value!.id)
     if (c) {
-      c.max_instancias = limites.maxInstancias
+      if (limites.maxCanaisWhatsapp !== undefined) {
+        // Mesma conta do servidor: max_instancias é a soma dos 3 tipos.
+        c.max_canais_whatsapp = limites.maxCanaisWhatsapp
+        c.max_canais_instagram = limites.maxCanaisInstagram ?? c.max_canais_instagram ?? 0
+        c.max_canais_webchat = limites.maxCanaisWebchat ?? c.max_canais_webchat ?? 0
+        c.max_instancias = Math.max(1, c.max_canais_whatsapp + (c.max_canais_instagram ?? 0) + (c.max_canais_webchat ?? 0))
+      } else if (limites.maxInstancias !== undefined) {
+        // O servidor também move o limite de WhatsApp da conta com plano pela diferença.
+        if (c.max_canais_whatsapp != null) {
+          c.max_canais_whatsapp = Math.max(0, c.max_canais_whatsapp + limites.maxInstancias - (c.max_instancias ?? 1))
+        }
+        c.max_instancias = limites.maxInstancias
+      }
       c.max_agentes = limites.maxAgentes
       c.max_webhooks_entrada = limites.maxWebhooksEntrada
       c.max_webhooks_saida = limites.maxWebhooksSaida
     }
     toast?.success('Limites atualizados')
-  } catch { toast?.error('Erro ao atualizar limites') }
+  } catch (e: any) { toast?.error(e?.data?.statusMessage || 'Erro ao atualizar limites') }
   showLimiteInstanciasModal.value = false
   clienteLimiteInstancias.value = null
 }
@@ -641,6 +676,10 @@ function handleModulos(id: string) {
       // Add-on pago (01/10/2026), igual Delivery: ausente = bloqueado.
       imoveis_modulo_ativo: c.imoveis_modulo_ativo ?? false,
       max_imoveis: c.max_imoveis ?? 100,
+      // Add-ons que nascem desligados: ausente = bloqueado.
+      grupos_habilitado: c.grupos_habilitado === true,
+      formularios_habilitado: c.formularios_habilitado === true,
+      max_funis: c.max_funis ?? null,
     }
     showModulosModal.value = true
   }
@@ -667,6 +706,9 @@ const COLUNA_MODULO = {
   vitrineHabilitada: 'vitrine_habilitada',
   imoveisModuloAtivo: 'imoveis_modulo_ativo',
   maxImoveis: 'max_imoveis',
+  gruposHabilitado: 'grupos_habilitado',
+  formulariosHabilitado: 'formularios_habilitado',
+  maxFunis: 'max_funis',
 } as const
 
 // Espelha ModulosEmpresa do AdminModulosModal (tipo declarado aqui em vez de
@@ -1108,6 +1150,9 @@ function abrirModulosDeUso(id: string) {
         :agentes-atual="clienteLimiteInstancias?.max_agentes ?? 1"
         :webhooks-atual="clienteLimiteInstancias?.max_webhooks_entrada ?? 5"
         :webhooks-saida-atual="clienteLimiteInstancias?.max_webhooks_saida ?? 5"
+        :canais-whatsapp-atual="clienteLimiteInstancias?.max_canais_whatsapp ?? null"
+        :canais-instagram-atual="clienteLimiteInstancias?.max_canais_instagram ?? null"
+        :canais-webchat-atual="clienteLimiteInstancias?.max_canais_webchat ?? null"
         @close="showLimiteInstanciasModal = false; clienteLimiteInstancias = null"
         @confirm="confirmLimiteInstancias"
       />
@@ -1135,6 +1180,9 @@ function abrirModulosDeUso(id: string) {
         :vitrine-atual="clienteModulos?.vitrine_habilitada ?? true"
         :imoveis-atual="clienteModulos?.imoveis_modulo_ativo ?? false"
         :max-imoveis-atual="clienteModulos?.max_imoveis ?? 100"
+        :grupos-atual="clienteModulos?.grupos_habilitado ?? false"
+        :formularios-atual="clienteModulos?.formularios_habilitado ?? false"
+        :max-funis-atual="clienteModulos?.max_funis ?? null"
         @close="showModulosModal = false; clienteModulos = null"
         @confirm="confirmModulos"
       />

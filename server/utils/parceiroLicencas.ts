@@ -2,11 +2,18 @@ import type { H3Event } from 'h3'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { failPublic } from './apiError'
 
-export const TIPOS_CREDITO = ['mensal_30d', 'anual_12m', 'delivery_ate500_30d', 'delivery_acima500_30d'] as const
+// Um crédito por plano e período. mensal_30d é o Start e anual_12m é o PRO: os
+// nomes vêm de quando só existiam esses dois, e o saldo antigo continua valendo.
+export const TIPOS_CREDITO = [
+  'mensal_30d', 'pro_30d', 'enterprise_30d', 'delivery_ate500_30d', 'delivery_acima500_30d',
+  'start_12m', 'anual_12m', 'enterprise_12m', 'delivery_ate500_12m', 'delivery_acima500_12m',
+] as const
 export type TipoCredito = (typeof TIPOS_CREDITO)[number]
 
-/** Só renovam empresa com o módulo Delivery e definem a cota de pedidos dela. */
-export const TIPOS_CREDITO_DELIVERY: readonly TipoCredito[] = ['delivery_ate500_30d', 'delivery_acima500_30d']
+/** Só renovam o plano Delivery, ou cliente antigo com o módulo, e definem a cota de pedidos. */
+export const TIPOS_CREDITO_DELIVERY: readonly TipoCredito[] = [
+  'delivery_ate500_30d', 'delivery_acima500_30d', 'delivery_ate500_12m', 'delivery_acima500_12m',
+]
 
 /** Cota com que o cliente fica ao liberar o módulo. Nunca 0: 0 é "sem limite". */
 export const COTA_INICIAL_DELIVERY = 500
@@ -16,14 +23,20 @@ export function isTipoCredito(valor: unknown): valor is TipoCredito {
 }
 
 export const LABEL_CREDITO: Record<TipoCredito, string> = {
-  mensal_30d: '30 dias',
-  anual_12m: '12 meses',
-  delivery_ate500_30d: 'Delivery até 500',
-  delivery_acima500_30d: 'Delivery acima de 500',
+  mensal_30d: 'Start 30 dias',
+  pro_30d: 'PRO 30 dias',
+  enterprise_30d: 'Enterprise 30 dias',
+  delivery_ate500_30d: 'Delivery até 500 · 30 dias',
+  delivery_acima500_30d: 'Delivery acima de 500 · 30 dias',
+  start_12m: 'Start 12 meses',
+  anual_12m: 'PRO 12 meses',
+  enterprise_12m: 'Enterprise 12 meses',
+  delivery_ate500_12m: 'Delivery até 500 · 12 meses',
+  delivery_acima500_12m: 'Delivery acima de 500 · 12 meses',
 }
 
 export function saldosZerados(): Record<TipoCredito, number> {
-  return { mensal_30d: 0, anual_12m: 0, delivery_ate500_30d: 0, delivery_acima500_30d: 0 }
+  return Object.fromEntries(TIPOS_CREDITO.map(t => [t, 0])) as Record<TipoCredito, number>
 }
 
 /**
@@ -38,9 +51,11 @@ const MENSAGENS: Record<string, string> = {
   CUSTOMER_NOT_RENEWABLE: 'Este cliente não pode ser renovado.',
   CUSTOMER_BILLED_BY_AGZAP: 'Este cliente é cobrado diretamente pela Agzap e não consome crédito.',
   INSUFFICIENT_CREDITS: 'Você não tem crédito suficiente para esta renovação.',
-  DELIVERY_MODULE_REQUIRED: 'Esta empresa não tem o módulo Delivery. Para renovar, escolha um crédito de 30 dias ou de 12 meses.',
+  CREDIT_NOT_COMPATIBLE: 'Este crédito não renova o plano escolhido. Use um crédito do mesmo plano ou de um plano acima.',
+  INVALID_PLAN: 'Plano inválido.',
+  DELIVERY_MODULE_REQUIRED: 'Esta empresa não tem o módulo Delivery. Para renovar, escolha um crédito Start, PRO ou Enterprise.',
   DELIVERY_ABOVE_500: 'Este cliente passou de 500 pedidos neste ciclo. Para renovar, escolha o crédito Delivery acima de 500, de 30 dias ou de 12 meses.',
-  DELIVERY_NO_USAGE: 'O crédito de Delivery está bloqueado para este cliente, por falta de pedidos. Para renovar, escolha um crédito de 30 dias ou de 12 meses.',
+  DELIVERY_NO_USAGE: 'O crédito de Delivery está bloqueado para este cliente, por falta de pedidos. Para renovar, escolha um crédito Start, PRO ou Enterprise.',
   INVALID_CREDIT_TYPE: 'Tipo de crédito inválido.',
   INVALID_QUANTITY: 'Quantidade inválida.',
   RENEWAL_ALREADY_PROCESSED: 'Esta renovação já foi processada.',

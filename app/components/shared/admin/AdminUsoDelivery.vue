@@ -3,15 +3,17 @@ import { computed, onMounted, ref } from 'vue'
 import type { UsoDelivery } from '~/composables/useParceiroLicencas'
 
 /**
- * Pedidos por mês de cada cliente de parceiro com Delivery. É aqui que a Agzap
- * vê quem usa crédito de Delivery sem vender pelo módulo, alerta o parceiro e,
- * se preciso, desliga o Delivery do cliente.
+ * Pedidos por mês de cada cliente com Delivery. É aqui que a Agzap vê quem usa
+ * crédito de Delivery sem vender pelo módulo, alerta o parceiro e, se preciso,
+ * desliga o Delivery do cliente. Quem assinou o plano Delivery direto pelo app
+ * também aparece: a troca dele para o Start é feita à mão pela equipe.
  */
 interface LinhaUso {
   empresa_id: string
   empresa_nome: string
-  parceiro_id: string
+  parceiro_id: string | null
   parceiro_nome: string
+  direto?: boolean
   modulo_ativo: boolean
   pedidos_mes_atual: number
   pedidos_mes_anterior: number
@@ -102,7 +104,9 @@ const visiveis = computed(() => {
 
 const alertasDoPainel = computed(() => linhas.value
   .filter(l => l.uso.situacao === 'bloqueado' && semPedidosEmDoisMeses(l))
-  .map(l => `${l.empresa_nome} está há 2 meses sem pedidos e foi renovada ${l.uso.renovacoes_delivery} vezes com crédito de Delivery por ${l.parceiro_nome}.`))
+  .map(l => l.direto
+    ? `${l.empresa_nome} assinou o plano Delivery e está há 2 meses sem pedidos.`
+    : `${l.empresa_nome} está há 2 meses sem pedidos e foi renovada ${l.uso.renovacoes_delivery} vezes com crédito de Delivery por ${l.parceiro_nome}.`))
 
 // ───────── Meses da tabela ─────────
 const FUSO = 'America/Sao_Paulo'
@@ -213,7 +217,7 @@ const linhaResumo = 'flex items-center justify-between gap-3 px-4 py-2.5'
   <div class="space-y-4">
     <div>
       <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Uso do Delivery</h2>
-      <p class="text-sm text-slate-500 dark:text-slate-400">Pedidos por mês de cada cliente de parceiro com Delivery liberado</p>
+      <p class="text-sm text-slate-500 dark:text-slate-400">Pedidos por mês de cada cliente com Delivery, de parceiro ou de assinatura direta</p>
     </div>
 
     <div class="flex flex-wrap gap-2">
@@ -251,7 +255,7 @@ const linhaResumo = 'flex items-center justify-between gap-3 px-4 py-2.5'
       </div>
 
       <p v-else-if="!visiveis.length" class="px-5 py-12 text-center text-sm text-slate-500 dark:text-slate-400">
-        {{ linhas.length ? 'Nenhum cliente neste filtro' : 'Nenhum cliente de parceiro com Delivery' }}
+        {{ linhas.length ? 'Nenhum cliente neste filtro' : 'Nenhum cliente com Delivery' }}
       </p>
 
       <div v-else class="overflow-x-auto">
@@ -259,7 +263,7 @@ const linhaResumo = 'flex items-center justify-between gap-3 px-4 py-2.5'
           <thead>
             <tr class="border-b border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-white/[0.02]">
               <th :class="th">Cliente</th>
-              <th :class="th">Parceiro</th>
+              <th :class="th">Origem</th>
               <th :class="[th, 'text-right']">Pedidos {{ rotuloMes(0) }}</th>
               <th :class="[th, 'text-right']">Pedidos {{ rotuloMes(1) }}</th>
               <th :class="[th, 'text-right']">Pedidos {{ rotuloMes(2) }}</th>
@@ -289,7 +293,8 @@ const linhaResumo = 'flex items-center justify-between gap-3 px-4 py-2.5'
               </td>
               <td :class="[td, 'text-xs !whitespace-normal min-w-[6.5rem]']">{{ textoAlertas(l) }}</td>
               <td :class="[td, 'text-right', colAcoes]">
-                <div v-if="situacaoDe(l).grupo === 'sem_uso'" class="flex justify-end gap-1.5">
+                <span v-if="l.direto && situacaoDe(l).grupo === 'sem_uso'" class="text-xs text-slate-500 dark:text-slate-400">Avisar e trocar para Start</span>
+                <div v-else-if="situacaoDe(l).grupo === 'sem_uso'" class="flex justify-end gap-1.5">
                   <button
                     type="button"
                     @click="abrirAlerta(l)"

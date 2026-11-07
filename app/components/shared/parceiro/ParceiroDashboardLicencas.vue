@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { somaSaldos } from '~/composables/useParceiroLicencas'
 
 const props = defineProps<{ parceiroNome?: string }>()
 
@@ -53,10 +54,10 @@ const totalCreditos = computed(() => Object.values(saldos.value).reduce((acc, s)
 const semSaldo = computed(() => totalCreditos.value < 1)
 
 const tilesCreditos = computed(() => [
-  { label: '30 dias', icon: 'fa-calendar-day', iconCls: 'text-purple-500', valor: fmt(saldos.value.mensal_30d), detalhe: 'disponíveis' },
-  { label: '12 meses', icon: 'fa-calendar-days', iconCls: 'text-indigo-500', valor: fmt(saldos.value.anual_12m), detalhe: 'disponíveis' },
-  { label: 'Delivery até 500', icon: 'fa-motorcycle', iconCls: 'text-orange-500', valor: fmt(saldos.value.delivery_ate500_30d), detalhe: 'disponíveis' },
-  { label: 'Delivery acima de 500', icon: 'fa-motorcycle', iconCls: 'text-orange-600', valor: fmt(saldos.value.delivery_acima500_30d), detalhe: 'disponíveis' },
+  { label: '30 dias', icon: 'fa-calendar-day', iconCls: 'text-purple-500', valor: fmt(somaSaldos(saldos.value, '30d')), detalhe: 'disponíveis' },
+  { label: '12 meses', icon: 'fa-calendar-days', iconCls: 'text-indigo-500', valor: fmt(somaSaldos(saldos.value, '12m')), detalhe: 'disponíveis' },
+  { label: 'Delivery até 500', icon: 'fa-motorcycle', iconCls: 'text-orange-500', valor: fmt(somaSaldos(saldos.value, 'delivery_ate500')), detalhe: 'disponíveis' },
+  { label: 'Delivery acima de 500', icon: 'fa-motorcycle', iconCls: 'text-orange-600', valor: fmt(somaSaldos(saldos.value, 'delivery_acima500')), detalhe: 'disponíveis' },
 ])
 
 const renovacoesMes = computed(() => indicadores.value?.renovacoes_mes ?? 0)

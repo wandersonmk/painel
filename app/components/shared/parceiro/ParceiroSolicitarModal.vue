@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { LABEL_CREDITO, WHATSAPP_AGZAP, saldosVazios } from '~/composables/useParceiroLicencas'
+import { CREDITOS, LABEL_CREDITO, PLANOS_PARCEIRO, TIPOS_CREDITO, WHATSAPP_AGZAP, saldosVazios } from '~/composables/useParceiroLicencas'
 import type { ClienteCarteira, PrecoLicenca, TipoCredito } from '~/composables/useParceiroLicencas'
 
 export type TipoSolicitacao = 'creditos' | 'exclusao' | 'instancia' | 'numero' | 'assistente'
@@ -63,6 +63,8 @@ const observacao = ref('')
 const { precos: precosCarregados, loadCreditos } = useParceiroLicencas()
 const precos = computed(() => props.precos?.length ? props.precos : precosCarregados.value)
 const quantidades = ref<Record<TipoCredito, number>>(saldosVazios())
+// São 10 créditos: 5 por período, em abas. O total soma os dois.
+const periodoPedido = ref<1 | 12>(1)
 
 onMounted(() => {
   if (props.tipo === 'creditos' && !props.precos?.length) loadCreditos()
@@ -72,6 +74,7 @@ watch(() => props.show, (aberto) => {
   if (!aberto) return
   observacao.value = ''
   quantidades.value = saldosVazios()
+  periodoPedido.value = 1
 })
 
 const fmtBRL = (v: number) =>
@@ -112,29 +115,29 @@ function proximaFaixa(tipoCredito: TipoCredito, qtd: number, unitario: number) {
   return { faltam: proxima.quantidade_min - qtd, preco: Number(proxima.preco_unitario) }
 }
 
-const TIPOS_PEDIDO: { id: TipoCredito; titulo: string; sub: string; icone: string; corIcone: string }[] = [
-  {
-    id: 'mensal_30d', titulo: 'Créditos de 30 dias', sub: 'Renova um cliente por 30 dias', icone: 'fa-calendar-day',
-    corIcone: 'bg-purple-100 dark:bg-purple-500/15 text-purple-600 dark:text-purple-400',
-  },
-  {
-    id: 'anual_12m', titulo: 'Créditos de 12 meses', sub: 'Renova um cliente por um ano', icone: 'fa-calendar-days',
-    corIcone: 'bg-indigo-100 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400',
-  },
-  {
-    id: 'delivery_ate500_30d', titulo: 'Delivery até 500', sub: 'Deixa o cliente com 500 pedidos por mês', icone: 'fa-motorcycle',
-    corIcone: 'bg-orange-100 dark:bg-orange-500/15 text-orange-600 dark:text-orange-400',
-  },
-  {
-    id: 'delivery_acima500_30d', titulo: 'Delivery acima de 500', sub: 'Deixa o cliente com até 5.000 pedidos por mês', icone: 'fa-motorcycle',
-    corIcone: 'bg-orange-100 dark:bg-orange-500/15 text-orange-600 dark:text-orange-400',
-  },
-]
+const TIPOS_PEDIDO = TIPOS_CREDITO.map((id) => {
+  const { plano, meses, nivel } = CREDITOS[id]
+  const anual = meses === 12
+  return {
+    id,
+    meses,
+    titulo: LABEL_CREDITO[id],
+    sub: PLANOS_PARCEIRO.find(p => p.codigo === plano)?.alcance ?? '',
+    icone: nivel === 0 ? 'fa-motorcycle' : anual ? 'fa-calendar-days' : 'fa-calendar-day',
+    corIcone: nivel === 0
+      ? 'bg-orange-100 dark:bg-orange-500/15 text-orange-600 dark:text-orange-400'
+      : anual
+        ? 'bg-indigo-100 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400'
+        : 'bg-purple-100 dark:bg-purple-500/15 text-purple-600 dark:text-purple-400',
+  }
+})
 
 const linhasPedido = computed(() => TIPOS_PEDIDO.map((tipo) => {
   const dados = linhaDe(tipo.id, Number(quantidades.value[tipo.id]) || 0)
   return { ...tipo, dados, proxima: proximaFaixa(tipo.id, dados.qtd, dados.unitario) }
 }))
+const linhasDoPeriodo = computed(() => linhasPedido.value.filter(l => l.meses === periodoPedido.value))
+const qtdDoPeriodo = (meses: 1 | 12) => linhasPedido.value.filter(l => l.meses === meses).reduce((acc, l) => acc + l.dados.qtd, 0)
 const totalPedido = computed(() => linhasPedido.value.reduce((acc, l) => acc + l.dados.total, 0))
 const totalCreditos = computed(() => linhasPedido.value.reduce((acc, l) => acc + l.dados.qtd, 0))
 /** Sem tabela carregada, some com o dinheiro em vez de exibir R$ 0,00. */
@@ -204,8 +207,24 @@ function abrir() {
            Antes o parceiro tinha que escrever "10 créditos mensais" num campo
            livre e a Agzap voltava perguntando valor. -->
       <div v-if="tipo === 'creditos'" class="space-y-2">
+        <div class="grid grid-cols-2 gap-1 p-1 rounded-lg bg-slate-100 dark:bg-white/[0.04]" role="group" aria-label="Período do crédito">
+          <button
+            v-for="p in ([{ valor: 1, rotulo: '30 dias' }, { valor: 12, rotulo: '12 meses' }] as const)"
+            :key="p.valor"
+            type="button"
+            :aria-pressed="periodoPedido === p.valor"
+            @click="periodoPedido = p.valor"
+            class="py-1.5 rounded-md text-sm font-semibold transition-colors"
+            :class="periodoPedido === p.valor
+              ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
+          >
+            {{ p.rotulo }}<span v-if="qtdDoPeriodo(p.valor) > 0" class="ml-1.5 tabular-nums text-purple-600 dark:text-purple-400">{{ qtdDoPeriodo(p.valor) }}</span>
+          </button>
+        </div>
+
         <div
-          v-for="linha in linhasPedido"
+          v-for="linha in linhasDoPeriodo"
           :key="linha.id"
           class="rounded-lg border p-3 transition-colors"
           :class="linha.dados.qtd > 0

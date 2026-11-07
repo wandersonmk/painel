@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { formatPhoneSemDdiBrasil, whatsappLink } from '~/utils/phone'
-import { LABEL_CREDITO, ehCreditoDelivery, fmtPedidos, rotuloDelivery } from '~/composables/useParceiroLicencas'
+import { CREDITOS, LABEL_CREDITO, ehCreditoDelivery, fmtPedidos, rotuloDelivery, somaSaldos } from '~/composables/useParceiroLicencas'
 import type { SaldosCredito, TipoCredito } from '~/composables/useParceiroLicencas'
 import AdminCobrancaAgzapModal from './AdminCobrancaAgzapModal.vue'
 import AdminRenovarCortesiaModal from './AdminRenovarCortesiaModal.vue'
@@ -154,10 +154,10 @@ const totais = computed(() => {
     t.parceiros += 1
     if (p.ativo) t.ativos += 1
     else t.suspensos += 1
-    t.mensal += Number(p.saldos?.mensal_30d ?? 0)
-    t.anual += Number(p.saldos?.anual_12m ?? 0)
-    t.deliveryAte500 += Number(p.saldos?.delivery_ate500_30d ?? 0)
-    t.deliveryAcima500 += Number(p.saldos?.delivery_acima500_30d ?? 0)
+    t.mensal += somaSaldos(p.saldos, '30d')
+    t.anual += somaSaldos(p.saldos, '12m')
+    t.deliveryAte500 += somaSaldos(p.saldos, 'delivery_ate500')
+    t.deliveryAcima500 += somaSaldos(p.saldos, 'delivery_acima500')
     t.clientes += p.clientes_total
     t.clientesAtivos += p.clientes_ativos
     t.vencidos += p.clientes_vencidos
@@ -657,10 +657,10 @@ const pillDelivery = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full te
                   <!-- O que não cabe nas colunas desta largura -->
                   <div class="min-[1440px]:hidden mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
                     <span class="min-[1200px]:hidden inline-flex flex-wrap items-center gap-1.5">
-                      <span :class="pill30"><span class="opacity-75">30 dias</span><span class="tabular-nums font-medium">{{ p.saldos.mensal_30d }}</span></span>
-                      <span :class="pill12"><span class="opacity-75">12 meses</span><span class="tabular-nums font-medium">{{ p.saldos.anual_12m }}</span></span>
-                      <span :class="pillDelivery"><span class="opacity-75">Delivery até 500</span><span class="tabular-nums font-medium">{{ p.saldos.delivery_ate500_30d }}</span></span>
-                      <span :class="pillDelivery"><span class="opacity-75">Delivery acima de 500</span><span class="tabular-nums font-medium">{{ p.saldos.delivery_acima500_30d }}</span></span>
+                      <span :class="pill30"><span class="opacity-75">30 dias</span><span class="tabular-nums font-medium">{{ somaSaldos(p.saldos, '30d') }}</span></span>
+                      <span :class="pill12"><span class="opacity-75">12 meses</span><span class="tabular-nums font-medium">{{ somaSaldos(p.saldos, '12m') }}</span></span>
+                      <span :class="pillDelivery"><span class="opacity-75">Delivery até 500</span><span class="tabular-nums font-medium">{{ somaSaldos(p.saldos, 'delivery_ate500') }}</span></span>
+                      <span :class="pillDelivery"><span class="opacity-75">Delivery acima de 500</span><span class="tabular-nums font-medium">{{ somaSaldos(p.saldos, 'delivery_acima500') }}</span></span>
                     </span>
                     <span class="tabular-nums whitespace-nowrap">
                       <span class="text-emerald-600 dark:text-emerald-400">{{ p.clientes_ativos }}</span> ativos
@@ -672,10 +672,10 @@ const pillDelivery = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full te
                 </div>
 
                 <div class="hidden min-[1200px]:flex flex-wrap w-[27rem] shrink-0 items-center gap-1.5">
-                  <span :class="pill30" title="Créditos de 30 dias"><span class="opacity-75">30 dias</span><span class="tabular-nums font-medium">{{ p.saldos.mensal_30d }}</span></span>
-                  <span :class="pill12" title="Créditos de 12 meses"><span class="opacity-75">12 meses</span><span class="tabular-nums font-medium">{{ p.saldos.anual_12m }}</span></span>
-                  <span :class="pillDelivery" title="Créditos de Delivery até 500"><span class="opacity-75">Delivery até 500</span><span class="tabular-nums font-medium">{{ p.saldos.delivery_ate500_30d }}</span></span>
-                  <span :class="pillDelivery" title="Créditos de Delivery acima de 500"><span class="opacity-75">Delivery acima de 500</span><span class="tabular-nums font-medium">{{ p.saldos.delivery_acima500_30d }}</span></span>
+                  <span :class="pill30" title="Créditos de 30 dias"><span class="opacity-75">30 dias</span><span class="tabular-nums font-medium">{{ somaSaldos(p.saldos, '30d') }}</span></span>
+                  <span :class="pill12" title="Créditos de 12 meses"><span class="opacity-75">12 meses</span><span class="tabular-nums font-medium">{{ somaSaldos(p.saldos, '12m') }}</span></span>
+                  <span :class="pillDelivery" title="Créditos de Delivery até 500"><span class="opacity-75">Delivery até 500</span><span class="tabular-nums font-medium">{{ somaSaldos(p.saldos, 'delivery_ate500') }}</span></span>
+                  <span :class="pillDelivery" title="Créditos de Delivery acima de 500"><span class="opacity-75">Delivery acima de 500</span><span class="tabular-nums font-medium">{{ somaSaldos(p.saldos, 'delivery_acima500') }}</span></span>
                 </div>
 
                 <div
@@ -1016,7 +1016,7 @@ const pillDelivery = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full te
         <!-- Linha 1: tipo. Linha 2: operação · quantidade -->
         <div>
           <span id="lc-tipo-rotulo" class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Tipo</span>
-          <div role="radiogroup" aria-labelledby="lc-tipo-rotulo" class="grid grid-cols-2 sm:grid-cols-[0.8fr_0.8fr_1.2fr_1.4fr] gap-1 sm:h-10 p-1 rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/10">
+          <div role="radiogroup" aria-labelledby="lc-tipo-rotulo" class="grid grid-cols-2 sm:grid-cols-5 gap-1 p-1 rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/10">
             <button
               v-for="t in TIPOS_CREDITO"
               :key="t"
@@ -1024,7 +1024,7 @@ const pillDelivery = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full te
               role="radio"
               :aria-checked="formTipo === t"
               @click="formTipo = t"
-              class="h-8 sm:h-auto rounded-lg text-sm whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
+              class="min-h-8 px-1.5 py-1 rounded-lg text-xs leading-tight transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
               :class="formTipo !== t
                 ? 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                 : ehCreditoDelivery(t)
@@ -1117,8 +1117,8 @@ const pillDelivery = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full te
         <p v-if="ehCreditoDelivery(formTipo)" class="flex items-start gap-2 px-3 py-2 rounded-xl bg-orange-50 dark:bg-orange-500/10 text-xs leading-snug text-orange-800 dark:text-orange-300">
           <i class="fa-solid fa-circle-info mt-px" aria-hidden="true" />
           <span>
-            Este crédito renova por 30 dias, só funciona em empresas com o módulo Delivery ativo e deixa a cota do cliente em
-            {{ formTipo === 'delivery_ate500_30d' ? '500' : 'até 5.000' }} pedidos por mês.
+            Este crédito renova por {{ CREDITOS[formTipo].meses === 12 ? '12 meses' : '30 dias' }}, só serve para quem vende pelo Delivery e deixa a cota do cliente em
+            {{ CREDITOS[formTipo].plano === 'delivery_ate500' ? '500' : 'até 5.000' }} pedidos por mês.
           </span>
         </p>
 

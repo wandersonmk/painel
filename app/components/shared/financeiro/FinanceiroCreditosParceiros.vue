@@ -194,7 +194,7 @@ const rotuloPeriodo = computed(() => {
 
 const LABEL_TIPO: Record<string, string> = LABEL_CREDITO
 const detalheSaldo = (saldo: SaldosCredito) =>
-  (Object.keys(LABEL_CREDITO) as TipoCredito[]).map(t => `${saldo[t]} de ${LABEL_CREDITO[t]}`).join(' · ')
+  (Object.keys(LABEL_CREDITO) as TipoCredito[]).filter(t => saldo[t] > 0).map(t => `${saldo[t]} de ${LABEL_CREDITO[t]}`).join(' · ') || 'Sem saldo'
 
 const parceirosDisponiveis = computed(() => porParceiro.value.map(p => ({ id: p.id, nome: p.nome })))
 const filtrar = (ls: Movimentacao[]) =>

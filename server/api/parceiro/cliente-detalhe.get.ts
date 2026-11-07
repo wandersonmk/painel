@@ -28,7 +28,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: empresa, error: empErr } = await supabase
     .from('empresas')
-    .select('id, nome, nome_cliente, email, whatsapp, ativo, created_at, subscription_status, subscription_plan, subscription_period, subscription_price, subscription_price_anual, subscription_renews_at, trial_ends_at, indicado_por_empresa_id')
+    .select('id, nome, nome_cliente, email, whatsapp, ativo, created_at, subscription_status, subscription_plan, plano_codigo, subscription_period, subscription_price, subscription_price_anual, subscription_renews_at, trial_ends_at, indicado_por_empresa_id')
     .eq('id', empresaId)
     .maybeSingle()
   if (empErr || !empresa) return failPublic(empErr, 'parceiro/cliente-detalhe', 'Não foi possível carregar o cliente.')
@@ -43,7 +43,7 @@ export default defineEventHandler(async (event) => {
       : Promise.resolve({ data: null, error: null }),
     supabase
       .from('empresas')
-      .select('id, nome, nome_cliente, ativo, created_at, subscription_status, subscription_plan, subscription_period, subscription_renews_at, trial_ends_at')
+      .select('id, nome, nome_cliente, ativo, created_at, subscription_status, subscription_plan, plano_codigo, subscription_period, subscription_renews_at, trial_ends_at')
       .eq('indicado_por_empresa_id', empresaId)
       .order('created_at', { ascending: true })
       .limit(1000),
@@ -124,7 +124,7 @@ export default defineEventHandler(async (event) => {
         nome: e.nome as string,
         responsavel: e.nome_cliente?.trim() || null,
         situacao,
-        plano: e.subscription_plan ?? null,
+        plano: e.plano_codigo ?? e.subscription_plan ?? null,
         periodo: e.subscription_period ?? null,
         vencimento,
         created_at: e.created_at as string,
@@ -145,7 +145,7 @@ export default defineEventHandler(async (event) => {
         whatsapp: empresa.whatsapp ?? null,
         created_at: empresa.created_at as string,
         vinculado_em: vinculo.created_at as string,
-        plano: empresa.subscription_plan ?? null,
+        plano: empresa.plano_codigo ?? empresa.subscription_plan ?? null,
         periodo: empresa.subscription_period ?? null,
         status_assinatura: empresa.subscription_status ?? null,
         vencimento,

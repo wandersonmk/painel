@@ -14,6 +14,7 @@ export interface ModulosEmpresa {
   apiAssistenteHabilitada: boolean
   webhooksHabilitado: boolean
   documentacaoHabilitada: boolean
+  dominioAgendaHabilitado: boolean
   enviosHabilitado: boolean
   maxEnviosMes: number
   maxProfissionais: number
@@ -38,6 +39,7 @@ const props = defineProps<{
   apiAssistenteAtual: boolean
   webhooksAtual: boolean
   documentacaoAtual: boolean
+  dominioAgendaAtual?: boolean
   enviosAtual: boolean
   maxEnviosMesAtual: number
   maxProfissionaisAtual: number
@@ -69,6 +71,8 @@ const paginaAgendamento = ref(true)
 const apiAssistente = ref(true)
 const webhooks = ref(true)
 const documentacao = ref(true)
+// Nasce ligada: conta antiga continua com a URL liberada.
+const dominioAgenda = ref(true)
 // Envios é add-on pago: nasce desligado, ao contrário dos gates acima.
 const envios = ref(false)
 const maxEnviosMes = ref(0)
@@ -127,6 +131,7 @@ watch(() => props.show, async (open) => {
   apiAssistente.value = props.apiAssistenteAtual
   webhooks.value = props.webhooksAtual
   documentacao.value = props.documentacaoAtual
+  dominioAgenda.value = props.dominioAgendaAtual ?? true
   envios.value = props.enviosAtual
   maxEnviosMes.value = props.maxEnviosMesAtual ?? 0
   maxProfissionais.value = props.maxProfissionaisAtual ?? 20
@@ -192,6 +197,13 @@ const MODULOS = [
     descricao: 'Link público onde o cliente final marca horário',
   },
   {
+    key: 'dominioAgenda' as const,
+    label: 'URL personalizada da agenda',
+    icon: 'fa-link',
+    iconCls: 'text-violet-500',
+    descricao: 'Domínio próprio da agenda em Configurações › Personalização',
+  },
+  {
     key: 'apiAssistente' as const,
     label: 'Integração API',
     icon: 'fa-plug',
@@ -225,6 +237,7 @@ const valores = {
   roteamento,
   agendamentos,
   paginaAgendamento,
+  dominioAgenda,
   apiAssistente,
   webhooks,
   documentacao,
@@ -369,6 +382,7 @@ function valoresDoFormulario(): ModulosEmpresa {
     apiAssistenteHabilitada: apiAssistente.value,
     webhooksHabilitado: webhooks.value,
     documentacaoHabilitada: documentacao.value,
+    dominioAgendaHabilitado: dominioAgenda.value,
     maxProfissionais: maxProfissionais.value,
     maxClientes: maxClientes.value,
     deliveryModuloAtivo: delivery.value,

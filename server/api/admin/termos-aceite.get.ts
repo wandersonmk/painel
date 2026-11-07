@@ -14,7 +14,7 @@ import { requireSuperAdmin, getServiceClient } from '~~/server/utils/requireSupe
 // Versão vigente dos Termos no app (= VERSAO_TERMOS_SERVICO em
 // app/constants/termosServico.ts do repo do app). Subiu lá? Suba aqui também,
 // senão a aba Termos não avisa quem precisa aceitar a versão nova.
-const VERSAO_TERMOS_VIGENTE = '2026-11-06.1'
+const VERSAO_TERMOS_VIGENTE = '2026-11-06.2'
 // Quem tem aceite desta versão ou mais nova não vê a tela de novo no app (=
 // VERSAO_MINIMA_ACEITE em server/api/termos/aceite.ts do repo do app). Subiu lá?
 // Suba aqui também, senão a aba Termos avisa errado.

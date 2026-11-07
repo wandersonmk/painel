@@ -1,6 +1,13 @@
 import { ref } from 'vue'
 
-export type TipoCredito = 'mensal_30d' | 'anual_12m' | 'delivery_ate500_30d' | 'delivery_acima500_30d'
+// mensal_30d é o Start e anual_12m é o PRO: os nomes vêm de quando só existiam
+// esses dois, e o saldo antigo continua valendo.
+export const TIPOS_CREDITO = [
+  'mensal_30d', 'pro_30d', 'enterprise_30d', 'delivery_ate500_30d', 'delivery_acima500_30d',
+  'start_12m', 'anual_12m', 'enterprise_12m', 'delivery_ate500_12m', 'delivery_acima500_12m',
+] as const
+export type TipoCredito = (typeof TIPOS_CREDITO)[number]
+export type PlanoCodigo = 'start' | 'pro' | 'enterprise' | 'delivery_ate500' | 'delivery_acima500'
 export type SituacaoAcesso = 'ativo' | 'vencido' | 'bloqueado_parceiro' | 'bloqueado_admin'
 
 /** Regra de uso do crédito de Delivery. Quem decide é a função do banco. */
@@ -24,6 +31,10 @@ export interface ClienteCarteira {
   email: string | null
   telefone: string | null
   plano: string | null
+  /** Plano liberado. Nulo em conta antiga e em quem ainda não renovou. */
+  plano_codigo: PlanoCodigo | null
+  /** Pagava antes dos planos: renova sem plano e sem limite novo. */
+  legado: boolean
   status_assinatura: string | null
   vinculado_em: string
   empresa_cadastro: string
@@ -170,7 +181,10 @@ export interface ClienteDetalhe {
   percentuais: { primeira: number; recorrente: number }
 }
 
-const PLANOS: Record<string, string> = { free: 'Gratuito', basic: 'Básico', pro: 'Pro', enterprise: 'Enterprise' }
+const PLANOS: Record<string, string> = {
+  free: 'Gratuito', basic: 'Básico', pro: 'Pro', enterprise: 'Enterprise',
+  start: 'Start', delivery_ate500: 'Delivery até 500', delivery_acima500: 'Delivery acima de 500',
+}
 const PERIODOS: Record<string, string> = { '1month': '1 mês', '6months': '6 meses', '12months': '12 meses' }
 
 /**
@@ -189,11 +203,61 @@ export function rotuloPlanoCliente(plano: string | null, periodo: string | null,
 export type SaldosCredito = Record<TipoCredito, number>
 
 export function saldosVazios(): SaldosCredito {
-  return { mensal_30d: 0, anual_12m: 0, delivery_ate500_30d: 0, delivery_acima500_30d: 0 }
+  return Object.fromEntries(TIPOS_CREDITO.map(t => [t, 0])) as SaldosCredito
+}
+
+/** Nível: Start 1, PRO 2, Enterprise 3. Delivery fica em 0 e só renova Delivery. */
+export const CREDITOS: Record<TipoCredito, { plano: PlanoCodigo; meses: 1 | 12; nivel: number }> = {
+  mensal_30d: { plano: 'start', meses: 1, nivel: 1 },
+  pro_30d: { plano: 'pro', meses: 1, nivel: 2 },
+  enterprise_30d: { plano: 'enterprise', meses: 1, nivel: 3 },
+  delivery_ate500_30d: { plano: 'delivery_ate500', meses: 1, nivel: 0 },
+  delivery_acima500_30d: { plano: 'delivery_acima500', meses: 1, nivel: 0 },
+  start_12m: { plano: 'start', meses: 12, nivel: 1 },
+  anual_12m: { plano: 'pro', meses: 12, nivel: 2 },
+  enterprise_12m: { plano: 'enterprise', meses: 12, nivel: 3 },
+  delivery_ate500_12m: { plano: 'delivery_ate500', meses: 12, nivel: 0 },
+  delivery_acima500_12m: { plano: 'delivery_acima500', meses: 12, nivel: 0 },
+}
+
+export const PLANOS_PARCEIRO: { codigo: PlanoCodigo; nome: string; alcance: string }[] = [
+  { codigo: 'start', nome: 'Start', alcance: 'Renova o plano Start' },
+  { codigo: 'pro', nome: 'PRO', alcance: 'Renova os planos PRO e Start' },
+  { codigo: 'enterprise', nome: 'Enterprise', alcance: 'Renova os planos Enterprise, PRO e Start' },
+  { codigo: 'delivery_ate500', nome: 'Delivery até 500', alcance: 'Renova o Delivery de até 500 pedidos' },
+  { codigo: 'delivery_acima500', nome: 'Delivery acima de 500', alcance: 'Renova as duas faixas do Delivery' },
+]
+
+export function nomeDoPlano(codigo: PlanoCodigo) {
+  return PLANOS_PARCEIRO.find(p => p.codigo === codigo)?.nome ?? codigo
 }
 
 export function ehCreditoDelivery(tipo: TipoCredito) {
-  return tipo === 'delivery_ate500_30d' || tipo === 'delivery_acima500_30d'
+  return CREDITOS[tipo].nivel === 0
+}
+
+/** Mesma regra da função do banco, que confere de novo ao renovar. */
+export function creditoServeParaPlano(tipo: TipoCredito, plano: PlanoCodigo) {
+  const credito = CREDITOS[tipo]
+  if (plano === 'delivery_ate500') return credito.nivel === 0
+  if (plano === 'delivery_acima500') return credito.plano === 'delivery_acima500'
+  const nivelDoPlano = { start: 1, pro: 2, enterprise: 3 }[plano]
+  return credito.nivel >= nivelDoPlano
+}
+
+export function creditoDoPlano(plano: PlanoCodigo, meses: 1 | 12) {
+  return TIPOS_CREDITO.find(t => CREDITOS[t].plano === plano && CREDITOS[t].meses === meses)!
+}
+
+export type GrupoSaldo = '30d' | '12m' | 'delivery_ate500' | 'delivery_acima500'
+
+/** Resumo para os lugares sem espaço para os 10 tipos. */
+export function somaSaldos(saldos: Partial<SaldosCredito> | null | undefined, grupo: GrupoSaldo) {
+  return TIPOS_CREDITO.reduce((soma, t) => {
+    const c = CREDITOS[t]
+    const doTipo = c.nivel === 0 ? c.plano : c.meses === 12 ? '12m' : '30d'
+    return doTipo === grupo ? soma + Number(saldos?.[t] ?? 0) : soma
+  }, 0)
 }
 
 /** Faixa do cliente pela cota: 0 = sem limite, definido só pela Agzap. */
@@ -242,10 +306,16 @@ export interface PrecoLicenca {
 }
 
 export const LABEL_CREDITO: Record<TipoCredito, string> = {
-  mensal_30d: '30 dias',
-  anual_12m: '12 meses',
-  delivery_ate500_30d: 'Delivery até 500',
-  delivery_acima500_30d: 'Delivery acima de 500',
+  mensal_30d: 'Start 30 dias',
+  pro_30d: 'PRO 30 dias',
+  enterprise_30d: 'Enterprise 30 dias',
+  delivery_ate500_30d: 'Delivery até 500 · 30 dias',
+  delivery_acima500_30d: 'Delivery acima de 500 · 30 dias',
+  start_12m: 'Start 12 meses',
+  anual_12m: 'PRO 12 meses',
+  enterprise_12m: 'Enterprise 12 meses',
+  delivery_ate500_12m: 'Delivery até 500 · 12 meses',
+  delivery_acima500_12m: 'Delivery acima de 500 · 12 meses',
 }
 
 /** Chave única por tentativa: evita que um duplo clique consuma dois créditos. */
@@ -307,7 +377,13 @@ export const useParceiroLicencas = () => {
    * Consome 1 crédito e renova o cliente. A chave de idempotência é gerada
    * uma vez por tentativa — reenviar a MESMA chave nunca cobra duas vezes.
    */
-  const renovar = async (empresaId: string, tipoCredito: TipoCredito, idempotencyKey: string, confirmouAvisoUso = false) => {
+  const renovar = async (
+    empresaId: string,
+    tipoCredito: TipoCredito,
+    idempotencyKey: string,
+    confirmouAvisoUso = false,
+    plano: PlanoCodigo | null = null,
+  ) => {
     const resp = await $fetch<{
       success: boolean
       codigo?: string | null
@@ -315,7 +391,7 @@ export const useParceiroLicencas = () => {
       data?: { vencimento_novo: string; saldo_restante: number; repetida?: boolean }
     }>('/api/parceiro/renovar', {
       method: 'POST',
-      body: { empresaId, tipoCredito, idempotencyKey, confirmouAvisoUso },
+      body: { empresaId, tipoCredito, plano, idempotencyKey, confirmouAvisoUso },
       headers: await useAdminAuthHeaders(),
     })
     if (!resp.success) throw new Error(resp.error || 'Não foi possível renovar')

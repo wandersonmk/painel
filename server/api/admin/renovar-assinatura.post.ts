@@ -102,7 +102,8 @@ export default defineEventHandler(async (event) => {
   const adminUserId = await requireSuperAdmin(event)
   // vencimento_em ('AAAA-MM-DD', opcional, só para os planos): data escolhida
   // do novo vencimento. Quando vem, ela manda e `ancora` é ignorada.
-  const body = await readBody<{ clienteId: string; plan: string; period: string; motivo?: string; ancora?: Ancora; vencimento_em?: string | null }>(event)
+  // planoCodigo (opcional): plano de `planos_assinatura` aplicado junto da renovação.
+  const body = await readBody<{ clienteId: string; plan: string; period: string; motivo?: string; ancora?: Ancora; vencimento_em?: string | null; planoCodigo?: string | null }>(event)
 
   if (!body?.clienteId || !body.plan || !body.period) {
     throw createError({ statusCode: 400, statusMessage: 'Dados incompletos' })
@@ -124,15 +125,25 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'A data do vencimento só pode ser escolhida nos planos, não no teste grátis.' })
   }
 
+  const planoCodigo = typeof body.planoCodigo === 'string' ? body.planoCodigo.trim() || null : null
+  if (planoCodigo && !['1month', '12months'].includes(body.period)) {
+    throw createError({ statusCode: 400, statusMessage: 'O plano vale para 1 mês ou 12 meses.' })
+  }
+
   const supabase = getServiceClient()
 
   // Estado anterior: base do "contar a partir do vencimento atual" e registro
   // da renovação administrativa.
   const { data: antes, error: erroAntes } = await supabase
     .from('empresas')
-    .select('nome, subscription_status, subscription_renews_at, trial_ends_at, subscription_id')
+    .select('nome, subscription_status, subscription_plan, plano_codigo, subscription_price, subscription_price_anual, subscription_renews_at, trial_ends_at, subscription_id')
     .eq('id', body.clienteId)
     .maybeSingle()
+
+  // Cliente novo sai do teste já com um plano: sem ele viraria conta sem limite.
+  if (!ehTeste && !planoCodigo && (antes as any)?.subscription_plan === 'free' && !(antes as any)?.plano_codigo) {
+    throw createError({ statusCode: 400, statusMessage: 'Escolha o plano para renovar este cliente.' })
+  }
 
   const agora = new Date()
   let renewDate: Date
@@ -192,12 +203,6 @@ export default defineEventHandler(async (event) => {
     update.trial_ends_at = null
   }
 
-  const { error } = await supabase.from('empresas').update(update).eq('id', body.clienteId)
-
-  if (error) return { success: false, error: error.message }
-
-  // Se o cliente é de um parceiro, a renovação administrativa fica registrada
-  // — sem consumir crédito e sem mexer no vínculo.
   const { data: vinculo } = await supabase
     .from('parceiro_empresas')
     .select('parceiro_id')
@@ -205,6 +210,30 @@ export default defineEventHandler(async (event) => {
     .eq('ativo', true)
     .maybeSingle()
 
+  // Antes das datas: se o plano falhar, nada foi renovado. Aplicar de novo o
+  // mesmo plano não mexe em nada, então um ajuste manual continua valendo.
+  if (planoCodigo) {
+    const { error: erroPlano } = await supabase.rpc('aplicar_plano_assinatura', {
+      p_empresa_id: body.clienteId,
+      p_plano: planoCodigo,
+    })
+    if (erroPlano) {
+      console.error('[api:admin/renovar-assinatura] aplicar plano', erroPlano)
+      return { success: false, error: 'Não consegui aplicar o plano. Nada foi renovado.' }
+    }
+    // Cliente de parceiro paga o que o parceiro definiu, não o preço de tabela.
+    if (vinculo) {
+      update.subscription_price = (antes as any)?.subscription_price ?? null
+      update.subscription_price_anual = (antes as any)?.subscription_price_anual ?? null
+    }
+  }
+
+  const { error } = await supabase.from('empresas').update(update).eq('id', body.clienteId)
+
+  if (error) return { success: false, error: error.message }
+
+  // Se o cliente é de um parceiro, a renovação administrativa fica registrada
+  // — sem consumir crédito e sem mexer no vínculo.
   if (vinculo) {
     const motivo = body.motivo?.trim() || ''
     await supabase.from('parceiro_renovacoes').insert({

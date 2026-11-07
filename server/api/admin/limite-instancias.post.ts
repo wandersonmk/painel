@@ -48,6 +48,17 @@ export default defineEventHandler(async (event) => {
   }
 
   const supabase = getServiceClient()
+
+  // Cliente com plano assinado pela tela tem limite por tipo de canal. O canal a
+  // mais vendido aqui é número de WhatsApp: sem isso o app recusaria o número novo.
+  if (maxInstancias !== undefined) {
+    const { data: atual } = await supabase
+      .from('empresas').select('max_instancias, max_canais_whatsapp').eq('id', clienteId).maybeSingle()
+    if (atual?.max_canais_whatsapp !== null && atual?.max_canais_whatsapp !== undefined) {
+      update.max_canais_whatsapp = Math.max(0, atual.max_canais_whatsapp + maxInstancias - (atual.max_instancias ?? 1))
+    }
+  }
+
   const { error } = await supabase.from('empresas').update(update).eq('id', clienteId)
   if (error) return { success: false, error: error.message }
   return { success: true }

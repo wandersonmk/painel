@@ -21,6 +21,8 @@ export interface AdminCliente {
   whatsapp: string | null
   subscription_status: 'trial' | 'active' | 'canceled' | 'expired'
   subscription_plan: 'free' | 'basic' | 'pro' | 'enterprise'
+  /** Plano mensal assinado pela tela do app. Nulo = conta antiga. */
+  plano_codigo?: string | null
   subscription_period: 'trial' | 'trial1d' | 'trial2d' | 'trial3d' | 'trial5d' | '1month' | '6months' | '12months'
   trial_ends_at: string | null
   subscription_renews_at: string | null
@@ -76,6 +78,8 @@ export interface AdminCliente {
   api_assistente_habilitada?: boolean
   webhooks_habilitado?: boolean
   documentacao_habilitada?: boolean
+  // URL personalizada da agenda. Ausente = true: conta antiga continua liberada.
+  dominio_agenda_habilitado?: boolean
   // Envios é add-on pago: ausente = false (bloqueado), nunca liberado por omissão.
   envios_habilitado?: boolean
   max_envios_mes?: number
@@ -214,10 +218,11 @@ export const useAdminClientes = () => {
     period: AdminCliente['subscription_period'],
     ancora?: 'vencimento' | 'hoje',
     vencimentoEm?: string | null,
+    planoCodigo?: string | null,
   ) => {
     const resp = await $fetch<{ success: boolean; error?: string; subscription_renews_at?: string | null; trial_ends_at?: string | null }>('/api/admin/renovar-assinatura', {
       method: 'POST',
-      body: { clienteId: id, plan, period, ...(ancora ? { ancora } : {}), ...(vencimentoEm ? { vencimento_em: vencimentoEm } : {}) },
+      body: { clienteId: id, plan, period, ...(ancora ? { ancora } : {}), ...(vencimentoEm ? { vencimento_em: vencimentoEm } : {}), ...(planoCodigo ? { planoCodigo } : {}) },
       headers: await getAuthHeaders(),
     })
     if (!resp.success) throw new Error(resp.error || 'Erro ao renovar assinatura')
@@ -308,6 +313,12 @@ export const useAdminClientes = () => {
   }
   const formatDate = (s: string | null) => s ? new Date(s).toLocaleDateString('pt-BR') : '-'
   const getPlanLabel = (p: string) => ({ free: 'Gratuito', basic: 'Básico', pro: 'Pro', enterprise: 'Enterprise' }[p] || p)
+  const PLANOS_DA_TELA: Record<string, string> = {
+    start: 'Start', pro: 'PRO', enterprise: 'Enterprise',
+    delivery_ate500: 'Delivery até 500', delivery_acima500: 'Delivery acima de 500',
+  }
+  const rotuloDoPlano = (c: { plano_codigo?: string | null; subscription_plan: string }) =>
+    (c.plano_codigo && PLANOS_DA_TELA[c.plano_codigo]) || getPlanLabel(c.subscription_plan)
   const getDataVencimento = (c: AdminCliente) =>
     (c.subscription_status === 'active' && c.subscription_renews_at) ? c.subscription_renews_at :
     (c.subscription_status === 'trial' && c.trial_ends_at) ? c.trial_ends_at :
@@ -384,6 +395,7 @@ export const useAdminClientes = () => {
     formatDiasVencimento,
     formatDate,
     getPlanLabel,
+    rotuloDoPlano,
     getDataVencimento,
     valorAssinatura,
     valorMensalEquivalente,

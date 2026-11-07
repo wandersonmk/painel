@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { somaSaldos } from '~/composables/useParceiroLicencas'
 
 definePageMeta({
   middleware: ['auth', 'parceiro'],
@@ -94,10 +95,10 @@ const CLASSES_ABA: Record<string, string> = {
 const semSaldo = computed(() => Object.values(saldos.value).every(s => s < 1))
 
 const COLUNAS_SALDO = [
-  { tipo: 'mensal_30d', rotulo: 'de 30 dias', cor: 'text-purple-600 dark:text-purple-400' },
-  { tipo: 'anual_12m', rotulo: 'de 12 meses', cor: 'text-indigo-600 dark:text-indigo-400' },
-  { tipo: 'delivery_ate500_30d', rotulo: 'Delivery até 500', cor: 'text-orange-700 dark:text-orange-400' },
-  { tipo: 'delivery_acima500_30d', rotulo: 'Delivery acima de 500', cor: 'text-orange-800 dark:text-orange-300' },
+  { grupo: '30d', rotulo: 'de 30 dias', cor: 'text-purple-600 dark:text-purple-400' },
+  { grupo: '12m', rotulo: 'de 12 meses', cor: 'text-indigo-600 dark:text-indigo-400' },
+  { grupo: 'delivery_ate500', rotulo: 'Delivery até 500', cor: 'text-orange-700 dark:text-orange-400' },
+  { grupo: 'delivery_acima500', rotulo: 'Delivery acima de 500', cor: 'text-orange-800 dark:text-orange-300' },
 ] as const
 
 const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none'
@@ -125,9 +126,9 @@ const campoFiltro = 'bg-white dark:bg-white/[0.04] border border-slate-200 dark:
             <i class="fa-solid fa-coins text-purple-500 text-xs" aria-hidden="true" />
             <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 leading-tight">Créditos<br>disponíveis</span>
           </div>
-          <div v-for="c in COLUNAS_SALDO" :key="c.tipo" class="px-3.5 py-1.5 text-center min-w-[78px]">
-            <p class="text-xl font-bold leading-none tabular-nums" :class="saldos[c.tipo] > 0 ? 'text-slate-900 dark:text-white' : 'text-slate-300 dark:text-slate-600'">
-              {{ saldos[c.tipo] }}
+          <div v-for="c in COLUNAS_SALDO" :key="c.grupo" class="px-3.5 py-1.5 text-center min-w-[78px]">
+            <p class="text-xl font-bold leading-none tabular-nums" :class="somaSaldos(saldos, c.grupo) > 0 ? 'text-slate-900 dark:text-white' : 'text-slate-300 dark:text-slate-600'">
+              {{ somaSaldos(saldos, c.grupo) }}
             </p>
             <p class="text-[10px] font-semibold uppercase tracking-wide mt-0.5 whitespace-nowrap" :class="c.cor">{{ c.rotulo }}</p>
           </div>

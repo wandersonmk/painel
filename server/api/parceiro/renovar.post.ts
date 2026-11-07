@@ -10,9 +10,10 @@ import {
 /**
  * Renovação do cliente consumindo 1 crédito do parceiro.
  *
- * O trabalho pesado está na função parceiro_consumir_credito_renovacao, que roda
- * tudo numa transação só: valida vínculo, trava a carteira, debita, grava o
- * ledger, move o vencimento e audita. Aqui só autenticamos e repassamos.
+ * O trabalho pesado está na função parceiro_renovar_plano, que roda tudo numa
+ * transação só: valida vínculo e se o crédito serve para o plano, trava a
+ * carteira, debita, grava o ledger, libera o plano, move o vencimento e audita.
+ * Aqui só autenticamos e repassamos. Cliente antigo renova sem plano.
  *
  * O parceiro NUNCA é lido do body — sai do token.
  */
@@ -21,6 +22,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<{
     empresaId?: string
     tipoCredito?: string
+    plano?: string | null
     idempotencyKey?: string
     confirmouAvisoUso?: boolean
   }>(event)
@@ -55,10 +57,11 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const { data, error } = await supabase.rpc('parceiro_consumir_credito_renovacao', {
+  const { data, error } = await supabase.rpc('parceiro_renovar_plano', {
     p_auth_user_id: userId,
     p_empresa_id: empresaId,
     p_tipo_credito: body.tipoCredito,
+    p_plano: typeof body.plano === 'string' ? body.plano.trim() : '',
     p_idempotency_key: idempotencyKey,
   })
   if (error) return failPublic(error, 'parceiro/renovar', 'Não foi possível concluir a renovação.')

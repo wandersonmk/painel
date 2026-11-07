@@ -97,6 +97,7 @@ const clienteModulos = ref<{
   api_assistente_habilitada: boolean
   webhooks_habilitado: boolean
   documentacao_habilitada: boolean
+  dominio_agenda_habilitado: boolean
   envios_habilitado: boolean
   max_envios_mes: number
   max_profissionais: number
@@ -439,10 +440,12 @@ function handleRenovar(id: string) {
   const c = clientes.value.find(x => x.id === id)
   if (c) { selectedCliente.value = { id: c.id, nome: c.nome }; showRenovarModal.value = true }
 }
-async function confirmRenovar(plan: string, period: string, abater = 0, ancora?: 'vencimento' | 'hoje', vencimentoEm?: string | null) {
+async function confirmRenovar(plan: string, period: string, abater = 0, ancora?: 'vencimento' | 'hoje', vencimentoEm?: string | null, planoCodigo?: string | null) {
   if (!selectedCliente.value) return
   try {
-    await renovarAssinatura(selectedCliente.value.id, plan as any, period as any, ancora, vencimentoEm)
+    await renovarAssinatura(selectedCliente.value.id, plan as any, period as any, ancora, vencimentoEm, planoCodigo)
+    // O plano muda limites e módulos: a lista precisa dos valores novos.
+    if (planoCodigo) await loadClientes()
     if (abater > 0) {
       // Desconto do saldo de indicação nesta renovação (cliente de Pix)
       try {
@@ -623,6 +626,7 @@ function handleModulos(id: string) {
       api_assistente_habilitada: c.api_assistente_habilitada ?? true,
       webhooks_habilitado: c.webhooks_habilitado ?? true,
       documentacao_habilitada: c.documentacao_habilitada ?? true,
+      dominio_agenda_habilitado: c.dominio_agenda_habilitado ?? true,
       // Add-on pago: ausente = bloqueado (os outros gates são permissivos).
       envios_habilitado: c.envios_habilitado ?? false,
       max_envios_mes: c.max_envios_mes ?? 0,
@@ -650,6 +654,7 @@ const COLUNA_MODULO = {
   apiAssistenteHabilitada: 'api_assistente_habilitada',
   webhooksHabilitado: 'webhooks_habilitado',
   documentacaoHabilitada: 'documentacao_habilitada',
+  dominioAgendaHabilitado: 'dominio_agenda_habilitado',
   enviosHabilitado: 'envios_habilitado',
   maxEnviosMes: 'max_envios_mes',
   maxProfissionais: 'max_profissionais',
@@ -1117,6 +1122,7 @@ function abrirModulosDeUso(id: string) {
         :api-assistente-atual="clienteModulos?.api_assistente_habilitada ?? true"
         :webhooks-atual="clienteModulos?.webhooks_habilitado ?? true"
         :documentacao-atual="clienteModulos?.documentacao_habilitada ?? true"
+        :dominio-agenda-atual="clienteModulos?.dominio_agenda_habilitado ?? true"
         :envios-atual="clienteModulos?.envios_habilitado ?? false"
         :max-envios-mes-atual="clienteModulos?.max_envios_mes ?? 0"
         :max-profissionais-atual="clienteModulos?.max_profissionais ?? 20"

@@ -1,6 +1,7 @@
 import { requireParceiroPrepago } from '~~/server/utils/requireParceiro'
 import { getServiceClient } from '~~/server/utils/requireSuperAdmin'
 import { failPublic } from '~~/server/utils/apiError'
+import { TIPOS_CREDITO } from '~~/server/utils/parceiroLicencas'
 
 /**
  * Relatório de lucro do parceiro no período.
@@ -104,12 +105,12 @@ export default defineEventHandler(async (event) => {
    * fechado, não 12× o mensal. A ordem é a do mais específico para o mais
    * genérico — valor do cliente, sugerido da tabela, e só então 12× o mensal.
    */
-  function receitaAnual(empresaId: string, precoMensal: number) {
+  function receitaAnual(empresaId: string, precoMensal: number, tipo: string) {
     const doCliente = precoAnualDoCliente.get(empresaId)
     if (doCliente !== null && doCliente !== undefined && doCliente > 0) {
       return { valor: doCliente, origem: 'cliente' as const }
     }
-    const sugerido = sugeridoRevenda('anual_12m')
+    const sugerido = sugeridoRevenda(tipo)
     if (sugerido > 0) return { valor: sugerido, origem: 'tabela' as const }
     return { valor: precoMensal * 12, origem: 'mensal_x12' as const }
   }
@@ -182,7 +183,7 @@ export default defineEventHandler(async (event) => {
     lotesPorTipo.set(tipo, fila)
   }
 
-  const MESES: Record<string, number> = { mensal_30d: 1, anual_12m: 12, delivery_ate500_30d: 1, delivery_acima500_30d: 1 }
+  const MESES = Object.fromEntries(TIPOS_CREDITO.map(t => [t, t.endsWith('_12m') ? 12 : 1])) as Record<string, number>
 
   const linhas = renovacoes.map((r) => {
     const consumiu = r.consumiu_credito === true
@@ -195,7 +196,7 @@ export default defineEventHandler(async (event) => {
     const custo = !consumiu
       ? 0
       : (custoRegistrado?.custo ?? custoPorTipo(r.tipo_credito ?? 'mensal_30d'))
-    const anual = r.tipo_credito === 'anual_12m' ? receitaAnual(r.empresa_id, preco) : null
+    const anual = MESES[r.tipo_credito as string] === 12 ? receitaAnual(r.empresa_id, preco, r.tipo_credito as string) : null
     const receita = !consumiu ? 0 : (anual ? anual.valor : preco * meses)
     return {
       id: r.id,

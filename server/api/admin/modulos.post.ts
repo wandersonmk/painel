@@ -16,6 +16,8 @@ const FLAGS: Record<string, string> = {
   apiAssistenteHabilitada: 'api_assistente_habilitada',
   webhooksHabilitado: 'webhooks_habilitado',
   documentacaoHabilitada: 'documentacao_habilitada',
+  // URL personalizada da agenda: nasce TRUE, conta antiga continua liberada.
+  dominioAgendaHabilitado: 'dominio_agenda_habilitado',
   enviosHabilitado: 'envios_habilitado',
   // Add-on pago, mesmo padrão de enviosHabilitado: nasce FALSE no banco.
   deliveryModuloAtivo: 'delivery_modulo_ativo',

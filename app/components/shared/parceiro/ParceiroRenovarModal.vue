@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { LABEL_CREDITO, ehCreditoDelivery, fmtPedidos, linkSuporteAgzap, rotuloDelivery } from '~/composables/useParceiroLicencas'
-import type { ClienteCarteira, SaldosCredito, TipoCredito } from '~/composables/useParceiroLicencas'
+import {
+  CREDITOS, LABEL_CREDITO, PLANOS_PARCEIRO, TIPOS_CREDITO, creditoServeParaPlano, ehCreditoDelivery,
+  fmtPedidos, linkSuporteAgzap, nomeDoPlano, rotuloDelivery,
+} from '~/composables/useParceiroLicencas'
+import type { ClienteCarteira, PlanoCodigo, SaldosCredito, TipoCredito } from '~/composables/useParceiroLicencas'
 
 const props = defineProps<{
   show: boolean
@@ -24,17 +27,16 @@ const erro = ref<string | null>(null)
  */
 const idempotencyKey = ref('')
 
-const OPCOES: { valor: TipoCredito; icone: string }[] = [
-  { valor: 'mensal_30d', icone: 'fa-calendar-day' },
-  { valor: 'anual_12m', icone: 'fa-calendar-days' },
-  { valor: 'delivery_ate500_30d', icone: 'fa-motorcycle' },
-  { valor: 'delivery_acima500_30d', icone: 'fa-motorcycle' },
-]
+/** Cliente antigo renova sem plano: continua com os limites de hoje. */
+const legado = computed(() => props.cliente?.legado === true)
+const plano = ref<PlanoCodigo>('start')
+const meses = ref<1 | 12>(1)
 
-const COTA_DO_CREDITO: Partial<Record<TipoCredito, number>> = {
-  delivery_ate500_30d: 500,
-  delivery_acima500_30d: 5000,
-}
+const opcoes = computed(() => TIPOS_CREDITO.filter(t =>
+  CREDITOS[t].meses === meses.value && (legado.value || creditoServeParaPlano(t, plano.value))))
+
+const iconeDoCredito = (t: TipoCredito) =>
+  ehCreditoDelivery(t) ? 'fa-motorcycle' : CREDITOS[t].meses === 12 ? 'fa-calendar-days' : 'fa-calendar-day'
 
 const temDelivery = computed(() => props.cliente?.delivery_ativo === true)
 const cotaAtual = computed(() => props.cliente?.cota_pedidos ?? 0)
@@ -48,10 +50,11 @@ const linkSuporte = computed(() =>
 /** Mesmas regras da função do banco, que confere de novo ao confirmar. */
 function motivoBloqueio(t: TipoCredito): 'sem_modulo' | 'sem_uso' | 'passou_500' | null {
   if (!ehCreditoDelivery(t)) return null
-  if (!temDelivery.value) return 'sem_modulo'
+  // Cliente novo ganha o módulo com o plano; só o antigo precisa já ter.
+  if (legado.value && !temDelivery.value) return 'sem_modulo'
   if (uso.value?.situacao === 'bloqueado') return 'sem_uso'
   // Pedido extra pago não conta como passar de 500.
-  if (t === 'delivery_ate500_30d' && (pedidosNoCiclo.value ?? 0) > 500 + (props.cliente?.extras_total ?? 0)) return 'passou_500'
+  if (CREDITOS[t].plano === 'delivery_ate500' && (pedidosNoCiclo.value ?? 0) > 500 + (props.cliente?.extras_total ?? 0)) return 'passou_500'
   return null
 }
 
@@ -69,33 +72,49 @@ function escolher(t: TipoCredito) {
   }
 }
 
-/** Crédito normal mantém a cota; o de Delivery define. */
-const cotaDepois = computed(() => COTA_DO_CREDITO[tipo.value] ?? cotaAtual.value)
+/** Conta antiga: crédito normal mantém a cota e o de Delivery define. Cliente novo segue o plano. */
+const ateQuinhentos = computed(() => CREDITOS[tipo.value].plano === 'delivery_ate500')
+const cotaDepois = computed(() => {
+  if (!ehCreditoDelivery(tipo.value)) return cotaAtual.value
+  return ateQuinhentos.value ? 500 : 5000
+})
 
 const avisoCota = computed(() => {
-  if (!ehCreditoDelivery(tipo.value) || !temDelivery.value) return null
+  if (!legado.value || !ehCreditoDelivery(tipo.value) || !temDelivery.value) return null
   if (cotaAtual.value === 0) {
     return `Este cliente está sem limite de pedidos. Ao confirmar, a cota passa a ser de ${fmtPedidos(cotaDepois.value)} pedidos por mês.`
   }
-  if (tipo.value === 'delivery_acima500_30d' && cotaAtual.value <= 500) {
+  if (!ateQuinhentos.value && cotaAtual.value <= 500) {
     return 'Ao confirmar, a cota deste cliente sobe para 5.000 pedidos por mês. O crédito Delivery até 500 é mais barato e mantém a cota em 500.'
   }
-  if (tipo.value === 'delivery_ate500_30d' && cotaAtual.value > 500) {
+  if (ateQuinhentos.value && cotaAtual.value > 500) {
     const feitos = pedidosNoCiclo.value === null ? '' : ` Neste ciclo ele fez ${fmtPedidos(pedidosNoCiclo.value)} pedidos.`
     return `A cota deste cliente vai baixar de ${fmtPedidos(cotaAtual.value)} para 500 pedidos por mês.${feitos}`
   }
   return null
 })
 
-/** Cliente com Delivery abre no crédito da faixa dele, quando tem saldo. */
-function tipoInicial(): TipoCredito {
-  if (temDelivery.value) {
+const avisoPlano = computed(() => {
+  const atual = props.cliente?.plano_codigo
+  if (legado.value || !atual || atual === plano.value) return null
+  return `O plano deste cliente muda de ${nomeDoPlano(atual)} para ${nomeDoPlano(plano.value)}, e os limites mudam junto.`
+})
+
+/** Abre no crédito mais barato que serve e tem saldo. */
+function melhorCredito(): TipoCredito {
+  return opcoes.value.find(t => props.saldos[t] > 0 && !motivoBloqueio(t)) ?? opcoes.value[0] ?? 'mensal_30d'
+}
+
+/** Cliente antigo com Delivery abre no crédito da faixa dele, quando tem saldo. */
+function creditoInicial(): TipoCredito {
+  if (legado.value && temDelivery.value) {
     const daFaixa: TipoCredito = cotaAtual.value > 500 ? 'delivery_acima500_30d' : 'delivery_ate500_30d'
     if (props.saldos[daFaixa] > 0 && !motivoBloqueio(daFaixa)) return daFaixa
   }
-  // Abre já no tipo que ele tem saldo, quando só um dos dois tem.
-  return props.saldos.mensal_30d < 1 && props.saldos.anual_12m > 0 ? 'anual_12m' : 'mensal_30d'
+  return melhorCredito()
 }
+
+const temSaldoNoPeriodo = () => opcoes.value.some(t => props.saldos[t] > 0)
 
 watch(() => props.show, (aberto) => {
   if (!aberto) return
@@ -103,7 +122,18 @@ watch(() => props.show, (aberto) => {
   salvando.value = false
   confirmouAviso.value = false
   idempotencyKey.value = novaIdempotencyKey()
-  tipo.value = tipoInicial()
+  plano.value = props.cliente?.plano_codigo ?? 'start'
+  // Abre já no período em que ele tem saldo, quando só um dos dois tem.
+  meses.value = 1
+  if (!temSaldoNoPeriodo()) {
+    meses.value = 12
+    if (!temSaldoNoPeriodo()) meses.value = 1
+  }
+  tipo.value = creditoInicial()
+})
+
+watch([plano, meses], () => {
+  if (!opcoes.value.includes(tipo.value as (typeof opcoes.value)[number])) tipo.value = melhorCredito()
 })
 
 const saldoAtual = computed(() => props.saldos[tipo.value] ?? 0)
@@ -117,7 +147,7 @@ const novaValidadeEstimada = computed(() => {
   const agora = new Date()
   const atual = props.cliente?.vencimento ? new Date(props.cliente.vencimento) : agora
   const base = atual > agora ? new Date(atual) : agora
-  if (tipo.value === 'anual_12m') base.setMonth(base.getMonth() + 12)
+  if (CREDITOS[tipo.value].meses === 12) base.setMonth(base.getMonth() + 12)
   else base.setDate(base.getDate() + 30)
   return base
 })
@@ -132,7 +162,7 @@ async function confirmar() {
   salvando.value = true
   erro.value = null
   try {
-    const r = await renovar(props.cliente.empresa_id, tipo.value, idempotencyKey.value, confirmouAviso.value)
+    const r = await renovar(props.cliente.empresa_id, tipo.value, idempotencyKey.value, confirmouAviso.value, legado.value ? null : plano.value)
     toast?.success(`Renovado até ${fmtData(r.vencimento_novo)}`)
     emit('confirmed')
     emit('close')
@@ -179,34 +209,80 @@ async function confirmar() {
         </div>
       </div>
 
+      <!-- Plano que o cliente vai usar -->
+      <div v-if="!legado">
+        <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+          Plano a liberar
+        </p>
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          <button
+            v-for="p in PLANOS_PARCEIRO"
+            :key="p.codigo"
+            type="button"
+            :aria-pressed="plano === p.codigo"
+            @click="plano = p.codigo"
+            class="px-2.5 py-2 rounded-md border text-left text-sm font-semibold leading-snug text-slate-800 dark:text-white transition-colors"
+            :class="plano === p.codigo
+              ? 'border-purple-500 bg-purple-50 dark:bg-purple-500/10'
+              : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'"
+          >{{ p.nome }}</button>
+        </div>
+      </div>
+      <p v-else class="rounded-md bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 px-3 py-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+        Cliente antigo: o crédito só renova o vencimento. O plano e os limites de hoje continuam iguais.
+      </p>
+
+      <!-- Período -->
+      <div>
+        <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+          Período
+        </p>
+        <div class="grid grid-cols-2 gap-2">
+          <button
+            v-for="p in ([{ valor: 1, rotulo: '30 dias' }, { valor: 12, rotulo: '12 meses' }] as const)"
+            :key="p.valor"
+            type="button"
+            :aria-pressed="meses === p.valor"
+            @click="meses = p.valor"
+            class="px-3 py-2 rounded-md border text-sm font-semibold text-slate-800 dark:text-white transition-colors"
+            :class="meses === p.valor
+              ? 'border-purple-500 bg-purple-50 dark:bg-purple-500/10'
+              : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'"
+          >{{ p.rotulo }}</button>
+        </div>
+      </div>
+
       <!-- Tipo de crédito -->
       <div>
         <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
           Crédito a consumir
         </p>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
           <button
-            v-for="opcao in OPCOES"
-            :key="opcao.valor"
+            v-for="valor in opcoes"
+            :key="valor"
             type="button"
-            @click="escolher(opcao.valor)"
+            @click="escolher(valor)"
             class="px-3 py-2.5 rounded-md border text-left transition-colors"
-            :class="tipo !== opcao.valor
+            :class="tipo !== valor
               ? 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-              : motivoBloqueio(opcao.valor)
+              : motivoBloqueio(valor)
                 ? 'border-red-400 bg-red-50 dark:bg-red-500/10'
                 : 'border-purple-500 bg-purple-50 dark:bg-purple-500/10'"
           >
             <span class="flex items-start gap-2">
-              <i :class="['fa-solid', opcao.icone, 'text-xs mt-1', tipo !== opcao.valor ? 'text-slate-400' : motivoBloqueio(opcao.valor) ? 'text-red-500' : 'text-purple-600 dark:text-purple-400']" aria-hidden="true" />
-              <span class="text-sm font-semibold leading-snug text-slate-800 dark:text-white">{{ LABEL_CREDITO[opcao.valor] }}</span>
+              <i :class="['fa-solid', iconeDoCredito(valor), 'text-xs mt-1', tipo !== valor ? 'text-slate-400' : motivoBloqueio(valor) ? 'text-red-500' : 'text-purple-600 dark:text-purple-400']" aria-hidden="true" />
+              <span class="text-sm font-semibold leading-snug text-slate-800 dark:text-white">{{ LABEL_CREDITO[valor] }}</span>
             </span>
-            <span v-if="motivoBloqueio(opcao.valor)" class="block text-[11px] mt-0.5 text-red-600 dark:text-red-400">Não serve aqui</span>
-            <span v-else class="block text-[11px] mt-0.5" :class="saldos[opcao.valor] > 0 ? 'text-slate-500 dark:text-slate-400' : 'text-red-500 dark:text-red-400'">
-              {{ saldos[opcao.valor] }} disponíve{{ saldos[opcao.valor] === 1 ? 'l' : 'is' }}
+            <span v-if="motivoBloqueio(valor)" class="block text-[11px] mt-0.5 text-red-600 dark:text-red-400">Não serve aqui</span>
+            <span v-else class="block text-[11px] mt-0.5" :class="saldos[valor] > 0 ? 'text-slate-500 dark:text-slate-400' : 'text-red-500 dark:text-red-400'">
+              {{ saldos[valor] }} disponíve{{ saldos[valor] === 1 ? 'l' : 'is' }}
             </span>
           </button>
         </div>
+        <p v-if="!legado" class="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+          Aparecem só os créditos que servem para este plano: o do mesmo plano ou de um plano acima.
+        </p>
       </div>
 
       <!-- Crédito que não serve para este cliente: nada é consumido -->
@@ -217,7 +293,7 @@ async function confirmar() {
             O crédito de Delivery só renova empresas com o módulo Delivery ativo, e a {{ cliente.empresa_nome }} não tem esse módulo.
           </p>
           <p class="text-xs text-red-800 dark:text-red-300 leading-relaxed">
-            Nenhum crédito foi consumido. Para renovar, escolha um crédito de 30 dias ou de 12 meses.
+            Nenhum crédito foi consumido. Para renovar, escolha um crédito Start, PRO ou Enterprise.
           </p>
         </template>
         <template v-else-if="bloqueio === 'sem_uso'">
@@ -227,7 +303,7 @@ async function confirmar() {
             Usar crédito de Delivery em empresa que não usa o módulo é proibido pelo Termo do Parceiro e pode gerar penalidades.
           </p>
           <p class="text-xs text-red-800 dark:text-red-300 leading-relaxed">
-            Nenhum crédito foi consumido. Para renovar, escolha um crédito de 30 dias ou de 12 meses. Se houve engano, fale com o suporte.
+            Nenhum crédito foi consumido. Para renovar, escolha um crédito Start, PRO ou Enterprise. Se houve engano, fale com o suporte.
           </p>
           <a :href="linkSuporte" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 text-xs font-semibold text-red-800 dark:text-red-300 underline underline-offset-2">
             <i class="fa-brands fa-whatsapp" aria-hidden="true" />
@@ -254,6 +330,15 @@ async function confirmar() {
         <p class="text-xs text-sky-900 dark:text-sky-300 leading-relaxed">{{ avisoCota }}</p>
       </div>
 
+      <!-- Troca de plano: os limites acompanham -->
+      <div
+        v-else-if="avisoPlano"
+        class="rounded-md bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-500/20 p-3 flex items-start gap-2.5"
+      >
+        <i class="fa-solid fa-circle-info text-sky-600 dark:text-sky-400 text-sm mt-0.5" aria-hidden="true" />
+        <p class="text-xs text-sky-900 dark:text-sky-300 leading-relaxed">{{ avisoPlano }}</p>
+      </div>
+
       <!-- Sem movimento no último mês: renova, com aviso e confirmação -->
       <template v-if="avisoUso && uso">
         <div class="rounded-md bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 p-3 space-y-1">
@@ -275,7 +360,7 @@ async function confirmar() {
         <div class="rounded-md bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 p-3 space-y-1.5">
           <p class="text-sm font-semibold text-red-800 dark:text-red-300">Evite a suspensão da sua conta</p>
           <p class="text-xs text-red-800 dark:text-red-300 leading-relaxed">
-            Se você renovar por mais 30 dias, a Agzap vai verificar se esta empresa é mesmo de delivery. Constatado que não é,
+            Se você renovar, a Agzap vai verificar se esta empresa é mesmo de delivery. Constatado que não é,
             você pode ser penalizado conforme o Termo do Parceiro, inclusive com o banimento da sua conta.
           </p>
           <a :href="linkSuporte" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 text-xs font-semibold text-red-800 dark:text-red-300 underline underline-offset-2">
@@ -316,7 +401,7 @@ async function confirmar() {
             {{ fmtData(novaValidadeEstimada) }}
           </span>
         </div>
-        <div v-if="temDelivery && !avisoUso" class="flex items-center justify-between px-4 py-2.5">
+        <div v-if="legado && temDelivery && !avisoUso" class="flex items-center justify-between px-4 py-2.5">
           <span class="text-xs text-slate-500 dark:text-slate-400">Pedidos depois de renovar</span>
           <span class="text-sm font-semibold text-slate-800 dark:text-white tabular-nums">
             {{ cotaDepois > 0 ? `0 de ${fmtPedidos(cotaDepois + (cliente.extras_pedidos ?? 0))}` : 'Sem limite' }}

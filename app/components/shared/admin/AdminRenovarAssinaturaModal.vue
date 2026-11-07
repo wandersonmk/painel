@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 
 // 'data' = o administrador escolhe a data do novo vencimento (só nos planos).
 type Ancora = 'vencimento' | 'hoje' | 'data'
@@ -13,14 +13,15 @@ const props = defineProps<{
   // Situação atual da assinatura (o cliente da lista). Dá o vencimento atual,
   // na mesma regra da coluna "Vencimento" (getDataVencimento).
   // cobranca_stripe = tem assinatura viva no Stripe (`sub_…`).
-  assinatura?: { subscription_status?: string | null; subscription_renews_at?: string | null; trial_ends_at?: string | null; cobranca_stripe?: boolean | null } | null
+  assinatura?: { subscription_status?: string | null; subscription_plan?: string | null; plano_codigo?: string | null; subscription_renews_at?: string | null; trial_ends_at?: string | null; cobranca_stripe?: boolean | null } | null
 }>()
 const emit = defineEmits<{
   close: []
   // abater = quanto do saldo de indicação foi usado nesta renovação (0 = nada)
   // ancora = de onde o novo período conta: vencimento atual ou hoje
   // vencimentoEm = data escolhida do novo vencimento ('AAAA-MM-DD'); null = usa a âncora
-  confirm: [plan: string, period: string, abater: number, ancora: 'vencimento' | 'hoje', vencimentoEm: string | null]
+  // planoCodigo = plano aplicado junto da renovação; null = a conta fica como está
+  confirm: [plan: string, period: string, abater: number, ancora: 'vencimento' | 'hoje', vencimentoEm: string | null, planoCodigo: string | null]
 }>()
 
 const periodPlanMap: Record<string, { plan: string; label: string }> = {
@@ -47,6 +48,27 @@ const planos = [
 ]
 
 const selected = ref<string>('1month')
+
+// Plano de assinatura aplicado junto da renovação (limites e módulos dele). Conta
+// antiga fica como está, a não ser que o administrador escolha um plano.
+interface PlanoConta { codigo: string; nome: string; precoMensal: number; precoAnual: number }
+const planosConta = ref<PlanoConta[]>([])
+const planoConta = ref<string | null>(null)
+const planoDaConta = computed(() => planosConta.value.find(p => p.codigo === planoConta.value) ?? null)
+const contaAntiga = computed(() => !props.assinatura?.plano_codigo && (props.assinatura?.subscription_plan ?? 'free') !== 'free')
+const periodos = computed(() => (planoConta.value
+  ? [
+      { key: '1month', nome: 'Mensal', periodo: '1 mês', meses: 1 },
+      { key: '12months', nome: 'Anual', periodo: '12 meses', meses: 12 },
+    ]
+  : planos))
+watch(planoConta, (codigo) => { if (codigo && selected.value === '6months') selected.value = '1month' })
+onMounted(async () => {
+  try {
+    const r = await $fetch<{ planos: PlanoConta[] }>('/api/admin/planos-assinatura', { headers: await useAdminAuthHeaders() })
+    planosConta.value = r.planos
+  } catch { planosConta.value = [] }
+})
 
 // ── Datas no relógio de São Paulo ──────────────────────────────────────────
 // A mesma conta está em server/api/admin/renovar-assinatura.post.ts (quem
@@ -295,6 +317,9 @@ watch(() => [props.show, props.clienteId], ([s]) => {
   if (!s) return
   agora.value = new Date()
   ancora.value = ancoraPadrao()
+  planoConta.value = props.assinatura?.plano_codigo ?? null
+  // Sem isto, o período da renovação anterior vinha marcado no cliente seguinte.
+  selected.value = '1month'
   iniciarData()
 }, { immediate: true })
 watch(vencimentoBloqueado, (b) => { if (b && ancora.value === 'vencimento') ancora.value = 'hoje' })
@@ -315,11 +340,13 @@ watch(() => [props.show, props.clienteId], async ([s]) => {
   } catch { saldoDisponivel.value = 0 }
 }, { immediate: true })
 const precoPeriodo = computed(() => {
+  const p = planoDaConta.value
+  if (p && !ehTeste.value) return selected.value === '12months' ? p.precoAnual : p.precoMensal
   if (selected.value === '1month') return Number(props.precoMensal || 0)
   if (selected.value === '6months' || selected.value === '12months') return Number(props.precoAnual || 0)
   return 0
 })
-watch([saldoDisponivel, () => selected.value], () => {
+watch([saldoDisponivel, () => selected.value, planoConta], () => {
   valorAbater.value = precoPeriodo.value > 0 ? Math.min(saldoDisponivel.value, precoPeriodo.value) : saldoDisponivel.value
 })
 function brl(v: number) { return (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }
@@ -328,6 +355,8 @@ function brlCurto(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2 })
 }
 function precoPlano(key: string): string | null {
+  const p = planoDaConta.value
+  if (p) return key === '12months' ? brlCurto(p.precoAnual) : `${brlCurto(p.precoMensal)}/mês`
   const mensal = Number(props.precoMensal || 0)
   const anual = Number(props.precoAnual || 0)
   if (key === '1month' && mensal > 0) return `${brlCurto(mensal)}/mês`
@@ -335,7 +364,8 @@ function precoPlano(key: string): string | null {
   return null
 }
 
-const podeRenovar = computed(() => !enviando.value && !erroData.value)
+const faltaPlano = computed(() => !ehTeste.value && !contaAntiga.value && !planoConta.value)
+const podeRenovar = computed(() => !enviando.value && !erroData.value && !faltaPlano.value)
 function handleSubmit() {
   if (!podeRenovar.value) return
   const { plan } = periodPlanMap[selected.value] || { plan: 'basic' }
@@ -348,7 +378,7 @@ function handleSubmit() {
     : ancora.value === 'vencimento' && !vencimentoBloqueado.value ? 'vencimento' : 'hoje'
   // O modal fecha quando a renovação termina; até lá, sem segundo clique.
   enviando.value = true
-  emit('confirm', plan, selected.value, abater > 0 ? abater : 0, a, n !== null ? isoDeDia(n) : null)
+  emit('confirm', plan, selected.value, abater > 0 ? abater : 0, a, n !== null ? isoDeDia(n) : null, ehTeste.value ? null : planoConta.value)
 }
 
 const classeOpcao = (ativa: boolean) => (ativa
@@ -388,12 +418,55 @@ const classeCampo = 'h-9 w-full rounded-lg border bg-white px-2.5 text-sm tabula
             </div>
           </div>
 
+          <!-- Plano da conta: limites e módulos que entram com a renovação -->
+          <div v-if="!ehTeste">
+            <p id="renovar-plano-conta" class="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Plano da conta</p>
+            <div class="grid grid-cols-2 gap-2 sm:grid-cols-3" role="radiogroup" aria-labelledby="renovar-plano-conta">
+              <button
+                v-if="contaAntiga"
+                type="button"
+                role="radio"
+                :aria-checked="planoConta === null"
+                class="min-h-9 rounded-lg border px-2 py-1.5 text-sm leading-tight transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/60"
+                :class="planoConta === null
+                  ? 'border-purple-500 bg-purple-50 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300'
+                  : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60'"
+                @click="planoConta = null"
+              >
+                Manter como está
+              </button>
+              <button
+                v-for="p in planosConta"
+                :key="p.codigo"
+                type="button"
+                role="radio"
+                :aria-checked="planoConta === p.codigo"
+                class="min-h-9 rounded-lg border px-2 py-1.5 text-sm leading-tight transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/60"
+                :class="planoConta === p.codigo
+                  ? 'border-purple-500 bg-purple-50 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300'
+                  : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60'"
+                @click="planoConta = p.codigo"
+              >
+                {{ p.nome }}
+              </button>
+            </div>
+            <p v-if="contaAntiga && planoDaConta" class="mt-1.5 text-xs text-amber-700 dark:text-amber-300">
+              Esta conta é antiga e hoje não segue limite de plano. Ao renovar, ela passa a seguir os limites e módulos do {{ planoDaConta.nome }}.
+            </p>
+            <p v-if="planoDaConta && cobrancaStripe" class="mt-1.5 text-xs text-amber-700 dark:text-amber-300">
+              Cobrança pelo Stripe: o plano muda aqui, mas o valor cobrado só muda se for trocado na Stripe.
+            </p>
+            <p v-if="faltaPlano" class="mt-1.5 text-xs text-rose-600 dark:text-rose-400">
+              {{ planosConta.length ? 'Escolha o plano para renovar.' : 'Não consegui carregar os planos. Recarregue a página.' }}
+            </p>
+          </div>
+
           <!-- Planos -->
           <div>
-            <p id="renovar-planos" class="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Planos</p>
-            <div class="grid grid-cols-3 gap-2.5" role="radiogroup" aria-labelledby="renovar-planos">
+            <p id="renovar-planos" class="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ planoConta ? 'Período' : 'Planos' }}</p>
+            <div class="grid gap-2.5" :class="periodos.length === 2 ? 'grid-cols-2' : 'grid-cols-3'" role="radiogroup" aria-labelledby="renovar-planos">
               <button
-                v-for="p in planos"
+                v-for="p in periodos"
                 :key="p.key"
                 type="button"
                 role="radio"

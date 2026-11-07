@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { LABEL_CREDITO } from '~/composables/useParceiroLicencas'
+import { CREDITOS, LABEL_CREDITO, PLANOS_PARCEIRO, TIPOS_CREDITO, creditoDoPlano } from '~/composables/useParceiroLicencas'
 import type { MovimentacaoCredito } from '~/composables/useParceiroLicencas'
 
 definePageMeta({
@@ -50,34 +50,29 @@ function valorUnitario(m: MovimentacaoCredito) {
   return m.valor_pago / Math.abs(m.quantidade)
 }
 
-const precosMensais = computed(() => precos.value.filter(p => p.tipo_credito === 'mensal_30d'))
-const precosAnuais = computed(() => precos.value.filter(p => p.tipo_credito === 'anual_12m'))
+/** Uma linha por crédito, com as faixas e o ganho já calculados a partir da tabela. */
+function linhasDoPeriodo(meses: 1 | 12) {
+  return TIPOS_CREDITO.filter(t => CREDITOS[t].meses === meses).map((tipo) => {
+    const plano = PLANOS_PARCEIRO.find(p => p.codigo === CREDITOS[tipo].plano)
+    const faixas = precos.value.filter(p => p.tipo_credito === tipo)
+    const valores = faixas.map(p => Number(p.preco_unitario))
+    const revenda = Number(faixas[0]?.preco_sugerido_revenda ?? 0)
+    return {
+      tipo,
+      titulo: plano?.nome ?? tipo,
+      alcance: plano?.alcance ?? '',
+      faixas,
+      revenda,
+      ganhoMenor: revenda ? revenda - Math.max(...valores) : 0,
+      ganhoMaior: revenda ? revenda - Math.min(...valores) : 0,
+    }
+  }).filter(linha => linha.faixas.length > 0)
+}
 
-/** Uma linha por cota, com as faixas e o ganho já calculados a partir da tabela. */
-const linhasDelivery = computed(() => ([
-  { tipo: 'delivery_ate500_30d', titulo: 'Até 500 pedidos por mês' },
-  { tipo: 'delivery_acima500_30d', titulo: 'Acima de 500, até 5.000 pedidos por mês' },
-] as const).map((linha) => {
-  const faixas = precos.value.filter(p => p.tipo_credito === linha.tipo)
-  const valores = faixas.map(p => Number(p.preco_unitario))
-  const revenda = Number(faixas[0]?.preco_sugerido_revenda ?? 0)
-  return {
-    ...linha,
-    faixas,
-    revenda,
-    ganhoMenor: revenda ? revenda - Math.max(...valores) : 0,
-    ganhoMaior: revenda ? revenda - Math.min(...valores) : 0,
-  }
-}).filter(linha => linha.faixas.length > 0))
-
-const melhorPrecoDelivery = computed(() =>
-  Math.min(...linhasDelivery.value.flatMap(l => l.faixas.map(p => Number(p.preco_unitario)))))
-
-const melhorPrecoMensal = computed(() =>
-  Math.min(...precosMensais.value.map(p => Number(p.preco_unitario))))
-const precoEntradaMensal = computed(() =>
-  Math.max(...precosMensais.value.map(p => Number(p.preco_unitario))))
-const precoAnual = computed(() => Number(precosAnuais.value[0]?.preco_unitario ?? 0))
+const gruposPreco = computed(() => [
+  { titulo: 'Licenças de 30 dias', sub: 'Renovam um cliente por 30 dias corridos', linhas: linhasDoPeriodo(1) },
+  { titulo: 'Licenças de 12 meses', sub: 'Para o cliente que assina o plano anual', linhas: linhasDoPeriodo(12) },
+].filter(grupo => grupo.linhas.length > 0))
 
 // "1 a 5 licenças" sai da quantidade_min da própria faixa e da seguinte —
 // antes o "até 5" estava escrito na mão e desalinhava se a tabela mudasse.
@@ -89,35 +84,6 @@ function faixaLabel(faixas: typeof precos.value, i: number) {
   if (!proxima) return `${atual.quantidade_min} ou mais`
   return `${atual.quantidade_min} a ${proxima.quantidade_min - 1} licenças`
 }
-
-/** Preço de referência de revenda ao cliente final, sugerido pela Agzap. */
-const precoRevenda = computed(() => Number(precosMensais.value[0]?.preco_sugerido_revenda ?? 0))
-
-/** Uma linha de lucro por faixa de compra: "comprando a X, lucre Y". */
-const margensMensais = computed(() => {
-  if (!precoRevenda.value) return []
-  return precosMensais.value.map(p => ({
-    compra: Number(p.preco_unitario),
-    lucro: precoRevenda.value - Number(p.preco_unitario),
-  }))
-})
-
-/** Preço sugerido do PLANO ANUAL ao cliente final (o mesmo que a Agzap cobra). */
-const precoRevendaAnual = computed(() => Number(precosAnuais.value[0]?.preco_sugerido_revenda ?? 0))
-
-/**
- * No anual: quanto sai o mês e o lucro revendendo o PLANO ANUAL. Não mostra
- * mais "cobrando o mensal do cliente, são X no ano" (pedido do dono,
- * 13/10/2026): incentivava comprar a licença anual e cobrar mês a mês, e o
- * crédito anual é para o cliente que assina o plano anual (cláusula 4 do Termo).
- */
-const anualDetalhe = computed(() => {
-  if (!precoAnual.value) return null
-  return {
-    porMes: precoAnual.value / 12,
-    lucroAno: precoRevendaAnual.value ? precoRevendaAnual.value - precoAnual.value : 0,
-  }
-})
 
 function fmtBRL(v: number | null) {
   if (v === null || v === undefined) return '—'
@@ -178,168 +144,72 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
             </span>
             <h2 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Saldo disponível</h2>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-            <KpiCard label="Créditos de 30 dias" unit="disponíveis" icon="fa-solid fa-calendar-day" color="purple" :loading="loadingCreditos">
-              {{ saldos.mensal_30d }}
-            </KpiCard>
-            <KpiCard label="Créditos de 12 meses" unit="disponíveis" icon="fa-solid fa-calendar-days" color="indigo" :loading="loadingCreditos">
-              {{ saldos.anual_12m }}
-            </KpiCard>
-            <KpiCard label="Delivery até 500" unit="500 pedidos por mês" icon="fa-solid fa-motorcycle" color="orange" :loading="loadingCreditos">
-              {{ saldos.delivery_ate500_30d }}
-            </KpiCard>
-            <KpiCard label="Delivery acima de 500" unit="até 5.000 pedidos" icon="fa-solid fa-motorcycle" color="orange" :loading="loadingCreditos">
-              {{ saldos.delivery_acima500_30d }}
-            </KpiCard>
+          <div :class="['overflow-hidden', cardBase]">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="bg-slate-50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/5">
+                  <th class="text-left px-3.5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Plano</th>
+                  <th class="text-right px-3.5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">30 dias</th>
+                  <th class="text-right px-3.5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">12 meses</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 dark:divide-white/5">
+                <tr v-for="p in PLANOS_PARCEIRO" :key="p.codigo">
+                  <td class="px-3.5 py-2.5 font-medium text-slate-800 dark:text-white">{{ p.nome }}</td>
+                  <td
+                    v-for="m in ([1, 12] as const)"
+                    :key="m"
+                    class="px-3.5 py-2.5 text-right font-semibold tabular-nums"
+                    :class="saldos[creditoDoPlano(p.codigo, m)] > 0 ? 'text-slate-900 dark:text-white' : 'text-slate-300 dark:text-slate-600'"
+                  >
+                    <span v-if="loadingCreditos" class="inline-block w-6 h-4 bg-slate-100 dark:bg-white/5 rounded animate-pulse" />
+                    <template v-else>{{ saldos[creditoDoPlano(p.codigo, m)] }}</template>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-        </section>
-
-        <!-- Tabela comercial -->
-        <section v-if="precos.length > 0">
-          <div class="flex items-center gap-2 mb-3">
-            <span class="w-6 h-6 rounded-md flex items-center justify-center bg-emerald-500/15 shrink-0">
-              <i class="fa-solid fa-tag text-emerald-600 dark:text-emerald-400 text-[11px]" aria-hidden="true" />
-            </span>
-            <h2 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Quanto custa</h2>
-          </div>
-
-          <div class="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-1 gap-3 sm:gap-4">
-            <!-- Um cartão por tipo de licença: preço de entrada em destaque, faixas
-                 logo abaixo e a margem já calculada — o parceiro não deveria
-                 precisar fazer a conta de cabeça para saber quanto ganha. -->
-            <div v-if="precosMensais.length" :class="['p-4 sm:p-5', cardBase]">
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="text-sm font-semibold text-slate-900 dark:text-white">Licença de 30 dias</p>
-                  <p class="text-[11px] text-slate-500 dark:text-slate-400">Renova um cliente por 30 dias corridos</p>
-                </div>
-                <span class="shrink-0 w-9 h-9 rounded-lg bg-purple-100 dark:bg-purple-500/15 flex items-center justify-center">
-                  <i class="fa-solid fa-calendar-day text-purple-600 dark:text-purple-400 text-sm" aria-hidden="true" />
-                </span>
-              </div>
-
-              <p class="mt-3 flex flex-wrap items-baseline gap-x-1.5">
-                <span class="text-[11px] text-slate-400" v-if="precosMensais.length > 1">a partir de</span>
-                <span class="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{{ fmtBRL(melhorPrecoMensal) }}</span>
-                <span class="text-xs text-slate-400">/licença</span>
-              </p>
-
-              <ul class="mt-3 pt-3 border-t border-slate-100 dark:border-white/5 space-y-1.5">
-                <li
-                  v-for="(p, i) in precosMensais"
-                  :key="p.quantidade_min"
-                  class="flex items-baseline justify-between text-xs"
-                >
-                  <span class="text-slate-500 dark:text-slate-400">{{ faixaLabel(precosMensais, i) }}</span>
-                  <span class="flex items-center gap-1.5">
-                    <span class="font-semibold text-slate-800 dark:text-white tabular-nums">{{ fmtBRL(p.preco_unitario) }}</span>
-                    <span
-                      v-if="Number(p.preco_unitario) === melhorPrecoMensal && precosMensais.length > 1"
-                      class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-                    >melhor preço</span>
-                  </span>
-                </li>
-              </ul>
-
-              <!-- Uma frase por faixa, em vez do percentual solto que não dizia
-                   de onde saía nem sobre qual preço de compra. -->
-              <div v-if="margensMensais.length" class="mt-3 pt-3 border-t border-slate-100 dark:border-white/5">
-                <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5">Quanto você ganha</p>
-                <ul class="space-y-1">
-                  <li v-for="m in margensMensais" :key="m.compra" class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                    Comprando a <span class="font-semibold text-slate-800 dark:text-slate-200 tabular-nums">{{ fmtBRL(m.compra) }}</span>
-                    e revendendo a <span class="font-semibold text-slate-800 dark:text-slate-200 tabular-nums">{{ fmtBRL(precoRevenda) }}</span>,
-                    lucre <span class="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{{ fmtBRL(m.lucro) }}</span>
-                  </li>
-                </ul>
-              </div>
-            </div>
-
-            <div v-if="precosAnuais.length" :class="['p-4 sm:p-5', cardBase]">
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="text-sm font-semibold text-slate-900 dark:text-white">Licença de 12 meses</p>
-                  <p class="text-[11px] text-slate-500 dark:text-slate-400">Para o cliente que assina o plano anual</p>
-                </div>
-                <span class="shrink-0 w-9 h-9 rounded-lg bg-indigo-100 dark:bg-indigo-500/15 flex items-center justify-center">
-                  <i class="fa-solid fa-calendar-days text-indigo-600 dark:text-indigo-400 text-sm" aria-hidden="true" />
-                </span>
-              </div>
-
-              <p class="mt-3 flex flex-wrap items-baseline gap-x-1.5">
-                <span class="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{{ fmtBRL(precoAnual) }}</span>
-                <span class="text-xs text-slate-400">/licença</span>
-              </p>
-
-              <!-- Quanto sai o mês e o lucro revendendo o plano anual. -->
-              <div v-if="anualDetalhe" class="mt-3 pt-3 border-t border-slate-100 dark:border-white/5 space-y-2">
-                <p class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                  Sai a <span class="font-semibold text-slate-800 dark:text-slate-200 tabular-nums">{{ fmtBRL(anualDetalhe.porMes) }}</span> por mês
-                  <template v-if="melhorPrecoMensal">
-                    — contra {{ fmtBRL(melhorPrecoMensal) }} na licença de 30 dias
-                  </template>
-                </p>
-                <p v-if="precoRevendaAnual" class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                  Revendendo o plano anual a <span class="font-semibold text-slate-800 dark:text-slate-200 tabular-nums">{{ fmtBRL(precoRevendaAnual) }}</span>,
-                  lucre <span class="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{{ fmtBRL(anualDetalhe.lucroAno) }}</span>
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <p class="mt-3 text-xs text-slate-400 dark:text-slate-500 flex items-start gap-1.5">
-            <i class="fa-solid fa-circle-info text-[10px] mt-0.5 shrink-0" aria-hidden="true" />
-            <span>
-              <strong>Você revende pelo valor que quiser</strong> — os valores de revenda acima
-              <template v-if="precoRevenda && precoRevendaAnual">({{ fmtBRL(precoRevenda) }} no mensal e {{ fmtBRL(precoRevendaAnual) }} no anual)</template>
-              são só a referência sugerida pela Agzap para o cálculo. A licença de 12 meses é para o cliente
-              que assina o plano anual. O crédito entra na carteira depois que a Agzap confirma o pagamento.
-            </span>
-          </p>
         </section>
       </div>
 
-      <!-- Delivery: tabela larga demais para a coluna de 420 px, então ocupa a
+      <!-- Preços: tabela larga demais para a coluna de 420 px, então ocupa a
            linha toda. Abaixo de 2xl continua antes do extrato. -->
-      <section v-if="linhasDelivery.length" class="order-2 2xl:order-3 2xl:col-span-2 min-w-0 space-y-4">
-        <div class="p-4 sm:p-5 space-y-3.5 rounded-md bg-white dark:bg-white/[0.04] border border-orange-300 dark:border-orange-500/30 shadow-sm dark:shadow-none">
-          <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1.5">
-            <div class="min-w-0 flex-1 basis-80">
-              <p class="text-sm font-semibold text-slate-900 dark:text-white">Licença de Delivery</p>
-              <p class="text-[11px] text-slate-500 dark:text-slate-400">
-                Renova por 30 dias empresas com o módulo Delivery. O crédito usado define a cota de pedidos do cliente,
-                e a contagem volta a zero a cada renovação. A sobra da cota não acumula
-              </p>
-            </div>
-            <p class="flex items-baseline gap-x-1.5">
-              <span class="text-[11px] text-slate-400">a partir de</span>
-              <span class="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{{ fmtBRL(melhorPrecoDelivery) }}</span>
-              <span class="text-xs text-slate-400">/licença</span>
-            </p>
+      <section v-if="gruposPreco.length" class="order-2 2xl:order-3 2xl:col-span-2 min-w-0 space-y-4">
+        <div class="flex items-center gap-2">
+          <span class="w-6 h-6 rounded-md flex items-center justify-center bg-emerald-500/15 shrink-0">
+            <i class="fa-solid fa-tag text-emerald-600 dark:text-emerald-400 text-[11px]" aria-hidden="true" />
+          </span>
+          <h2 class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Quanto custa</h2>
+        </div>
+
+        <div v-for="grupo in gruposPreco" :key="grupo.titulo" :class="['p-4 sm:p-5 space-y-3', cardBase]">
+          <div>
+            <p class="text-sm font-semibold text-slate-900 dark:text-white">{{ grupo.titulo }}</p>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400">{{ grupo.sub }}</p>
           </div>
 
           <div class="overflow-x-auto rounded-md border border-slate-100 dark:border-white/5">
             <table class="w-full min-w-[640px] text-sm">
               <thead>
                 <tr class="bg-slate-50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/5">
-                  <th class="text-left px-3.5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Cota do cliente</th>
-                  <th
-                    v-for="(_, i) in linhasDelivery[0]?.faixas"
-                    :key="i"
-                    class="text-right px-3.5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap"
-                  >{{ faixaLabel(linhasDelivery[0]?.faixas ?? [], i) }}</th>
+                  <th class="text-left px-3.5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Plano</th>
+                  <th class="text-right px-3.5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Preço por licença</th>
                   <th class="text-right px-3.5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Revenda sugerida</th>
                   <th class="text-right px-3.5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Quanto você ganha</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 dark:divide-white/5">
-                <tr v-for="l in linhasDelivery" :key="l.tipo">
-                  <td class="px-3.5 py-2.5 font-medium text-slate-800 dark:text-white">{{ l.titulo }}</td>
-                  <td
-                    v-for="p in l.faixas"
-                    :key="p.quantidade_min"
-                    class="px-3.5 py-2.5 text-right font-medium text-slate-800 dark:text-white tabular-nums whitespace-nowrap"
-                  >{{ fmtBRL(p.preco_unitario) }}</td>
+                <tr v-for="l in grupo.linhas" :key="l.tipo">
+                  <td class="px-3.5 py-2.5">
+                    <p class="font-medium text-slate-800 dark:text-white">{{ l.titulo }}</p>
+                    <p class="text-[11px] text-slate-500 dark:text-slate-400">{{ l.alcance }}</p>
+                  </td>
+                  <td class="px-3.5 py-2.5 text-right">
+                    <p v-for="(p, i) in l.faixas" :key="p.quantidade_min" class="whitespace-nowrap">
+                      <span v-if="l.faixas.length > 1" class="text-xs text-slate-500 dark:text-slate-400">{{ faixaLabel(l.faixas, i) }}: </span>
+                      <span class="font-medium text-slate-800 dark:text-white tabular-nums">{{ fmtBRL(p.preco_unitario) }}</span>
+                    </p>
+                  </td>
                   <td class="px-3.5 py-2.5 text-right font-medium text-slate-800 dark:text-white tabular-nums whitespace-nowrap">{{ fmtBRL(l.revenda) }}</td>
                   <td class="px-3.5 py-2.5 text-right font-medium text-emerald-700 dark:text-emerald-400 tabular-nums whitespace-nowrap">
                     {{ fmtBRL(l.ganhoMenor) }}<template v-if="l.ganhoMaior !== l.ganhoMenor"> a {{ fmtBRL(l.ganhoMaior) }}</template>
@@ -348,15 +218,25 @@ const cardBase = 'rounded-md bg-white dark:bg-white/[0.04] border border-slate-2
               </tbody>
             </table>
           </div>
+        </div>
 
-          <div class="px-3 py-2.5 rounded-md bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/20 flex items-start gap-2 text-xs leading-relaxed text-orange-800 dark:text-orange-300">
-            <i class="fa-solid fa-circle-info text-[11px] mt-0.5 shrink-0" aria-hidden="true" />
-            <span>
-              Só renova empresas que vendem pelo módulo Delivery. O crédito até 500 deixa a cota em 500 e não renova quem passou de 500 pedidos no ciclo.
-              O crédito acima de 500 renova qualquer cliente com Delivery e sobe a cota para 5.000.
-              Cliente sem pedidos gera aviso no 1º mês e tem o crédito de Delivery bloqueado no 2º.
-            </span>
-          </div>
+        <p class="text-xs text-slate-400 dark:text-slate-500 flex items-start gap-1.5">
+          <i class="fa-solid fa-circle-info text-[10px] mt-0.5 shrink-0" aria-hidden="true" />
+          <span>
+            <strong>Você revende pelo valor que quiser.</strong> Os valores de revenda são só a referência sugerida pela Agzap para o cálculo.
+            Crédito de plano acima renova plano abaixo: Enterprise serve para PRO e Start, e PRO serve para Start. Start não renova PRO, PRO não renova Enterprise,
+            e Delivery só renova Delivery. A licença de 12 meses é para o cliente que assina o plano anual. O crédito entra na carteira depois que a Agzap confirma o pagamento.
+          </span>
+        </p>
+
+        <div class="px-3 py-2.5 rounded-md bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/20 flex items-start gap-2 text-xs leading-relaxed text-orange-800 dark:text-orange-300">
+          <i class="fa-solid fa-circle-info text-[11px] mt-0.5 shrink-0" aria-hidden="true" />
+          <span>
+            Delivery: só renova empresas que vendem pelo módulo Delivery. O crédito usado define a cota de pedidos do cliente, e a contagem volta a zero a cada renovação.
+            A sobra da cota não acumula. O crédito até 500 deixa a cota em 500 e não renova quem passou de 500 pedidos no ciclo.
+            O crédito acima de 500 renova qualquer cliente com Delivery e sobe a cota para 5.000.
+            Cliente sem pedidos gera aviso no 1º mês e tem o crédito de Delivery bloqueado no 2º.
+          </span>
         </div>
 
         <!-- Só um aviso: o token é colocado na conta do cliente, nunca por aqui. -->

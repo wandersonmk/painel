@@ -34,7 +34,7 @@ function emitAction(action: 'editar' | 'limite-instancias' | 'renovar' | 'desati
 }
 
 const {
-  formatDate, getPlanLabel, isVencido, formatDiasVencimento, diasParaVencimento, getDataVencimento,
+  formatDate, rotuloDoPlano, isVencido, formatDiasVencimento, diasParaVencimento, getDataVencimento,
   valorAssinatura, pagaParceiro, formatBRL,
 } = useAdminClientes()
 
@@ -355,7 +355,7 @@ function valorInfo(c: AdminCliente) {
             </div>
             <div class="min-w-0">
               <dt class="text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">Plano</dt>
-              <dd class="mt-1 text-sm text-slate-700 dark:text-slate-300">{{ getPlanLabel(c.subscription_plan) }}</dd>
+              <dd class="mt-1 text-sm text-slate-700 dark:text-slate-300">{{ rotuloDoPlano(c) }}</dd>
             </div>
             <div class="min-w-0">
               <dt class="text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">Mensalidade</dt>
@@ -506,7 +506,7 @@ function valorInfo(c: AdminCliente) {
 
               <!-- Plano -->
               <td class="px-3 py-4 align-middle">
-                <span class="text-slate-700 dark:text-slate-300 whitespace-nowrap">{{ getPlanLabel(c.subscription_plan) }}</span>
+                <span class="text-slate-700 dark:text-slate-300 whitespace-nowrap">{{ rotuloDoPlano(c) }}</span>
               </td>
 
               <!-- Mensalidade (valor cadastrado) -->
@@ -619,7 +619,7 @@ function valorInfo(c: AdminCliente) {
                     </button>
                   </div>
                   <p class="text-xs text-slate-500 dark:text-slate-400 truncate">
-                    <template v-if="menuCliente.nome_cliente">{{ menuCliente.nome_cliente }} · </template>{{ getPlanLabel(menuCliente.subscription_plan) }} · {{ diasRestantesText(menuCliente) }}
+                    <template v-if="menuCliente.nome_cliente">{{ menuCliente.nome_cliente }} · </template>{{ rotuloDoPlano(menuCliente) }} · {{ diasRestantesText(menuCliente) }}
                   </p>
                 </div>
                 <button

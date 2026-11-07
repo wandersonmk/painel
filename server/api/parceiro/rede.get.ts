@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
   const { data: vinculos, error } = await vinculosDoParceiro(
     supabase,
     parceiro.id,
-    'id, nome, nome_cliente, ativo, created_at, subscription_status, subscription_plan, subscription_period, subscription_price, subscription_renews_at, trial_ends_at, indicado_por_empresa_id',
+    'id, nome, nome_cliente, ativo, created_at, subscription_status, subscription_plan, plano_codigo, subscription_period, subscription_price, subscription_renews_at, trial_ends_at, indicado_por_empresa_id',
   )
   if (error) return failPublic(error, 'parceiro/rede', 'Não foi possível carregar sua rede.')
 
@@ -65,7 +65,7 @@ export default defineEventHandler(async (event) => {
       indicado_por_empresa_id: ref && porId.has(ref) ? ref : null,
       indicado_por_nome: ref ? (porId.get(ref)?.empresas.nome ?? nomesFora.get(ref) ?? null) : null,
       situacao,
-      plano: e.subscription_plan ?? null,
+      plano: e.plano_codigo ?? e.subscription_plan ?? null,
       periodo: e.subscription_period ?? null,
       status_assinatura: e.subscription_status ?? null,
       vencimento,

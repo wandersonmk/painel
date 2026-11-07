@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
     .select(`
       id, empresa_id, ativo, cobranca_agzap, bloqueio_origem, bloqueado_em, created_at,
       empresas ( id, nome, nome_cliente, email, whatsapp, ativo, created_at,
-                 subscription_status, subscription_plan, subscription_price, subscription_price_anual,
+                 subscription_status, subscription_plan, plano_codigo, subscription_price, subscription_price_anual,
                  subscription_renews_at, trial_ends_at,
                  max_instancias, max_agentes, indicado_por_empresa_id,
                  delivery_modulo_ativo, max_pedidos_mes )
@@ -129,7 +129,10 @@ export default defineEventHandler(async (event) => {
       responsavel: e.nome_cliente ?? null,
       email: e.email ?? null,
       telefone: e.whatsapp ?? null,
-      plano: e.subscription_plan ?? null,
+      plano: e.plano_codigo ?? e.subscription_plan ?? null,
+      plano_codigo: e.plano_codigo ?? null,
+      // Quem já pagava antes dos planos fica como está: renova sem plano novo.
+      legado: !e.plano_codigo && (e.subscription_plan ?? 'free') !== 'free',
       // O parceiro define este valor: é o que o cliente dele vê na tela de
       // assinatura do app.
       preco: e.subscription_price === null || e.subscription_price === undefined

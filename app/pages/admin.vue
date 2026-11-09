@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, watch } from 'vue'
-import type { AbaCliente, AdminCliente, CategoriaFaturamento } from '~/composables/useAdminClientes'
+import type { AbaCliente, AdminCliente, CategoriaFaturamento, MotivoForaFaturamento } from '~/composables/useAdminClientes'
 
 definePageMeta({
   middleware: ['auth', 'super-admin'],
@@ -8,7 +8,7 @@ definePageMeta({
 })
 
 const {
-  clientes, stats, loading, error,
+  clientes, parceirosCadastrados, afiliadosCadastrados, stats, loading, error,
   loadClientes, desativarCliente, reativarCliente, renovarAssinatura,
   excluirCliente, editarCliente, diasParaVencimento, abaDoCliente, marcarNaoPagante, faturamento,
 } = useAdminClientes()
@@ -142,8 +142,9 @@ const isRefreshing = ref(false)
 //  - Pagantes (14/10/2026): só quem entra no faturamento do Dashboard.
 //  - Em cancelamento, Cancelados e Desativados (06/11/2026): antes esses clientes
 //    se misturavam em Vencidos. A regra de cada aba está em `abaDoCliente`.
-type Aba = 'em-dia' | 'pagantes' | 'vencidos' | 'em-cancelamento' | 'cancelados' | 'desativados' | 'estatisticas' | 'token'
-const ABAS_VALIDAS: Aba[] = ['em-dia', 'pagantes', 'vencidos', 'em-cancelamento', 'cancelados', 'desativados', 'estatisticas', 'token']
+//  - Não pagantes (09/11/2026): o outro lado de Pagantes, ver `naoPagantes`.
+type Aba = 'em-dia' | 'pagantes' | 'nao-pagantes' | 'vencidos' | 'em-cancelamento' | 'cancelados' | 'desativados' | 'estatisticas' | 'token'
+const ABAS_VALIDAS: Aba[] = ['em-dia', 'pagantes', 'nao-pagantes', 'vencidos', 'em-cancelamento', 'cancelados', 'desativados', 'estatisticas', 'token']
 const rotaAdmin = useRoute()
 const roteadorAdmin = useRouter()
 const abaDaUrl = String(rotaAdmin.query.aba || '') as Aba
@@ -164,9 +165,22 @@ watch(abaAtiva, mostrarAbaAtiva)
 // ativo, em dia, pagando a Agzap (sem não pagante, teste ou cliente que paga o
 // parceiro). Assim o número da aba bate com o Dashboard.
 const pagantes = computed(() => clientes.value.filter(c => 'categoria' in faturamento(c)))
+// Não pagantes (09/11/2026, dono): quem está com o acesso valendo (Clientes em
+// dia ou Em cancelamento) e fica fora do faturamento: marcado como não pagante
+// (permuta, cortesia, conta interna), em teste, cliente que paga o parceiro ou
+// sem valor cadastrado. Vencidos, cancelados e desativados já têm aba própria.
+const MOTIVOS_NAO_PAGANTE: MotivoForaFaturamento[] = ['nao_pagante', 'teste', 'parceiro', 'sem_valor']
+const motivoNaoPagante = (c: AdminCliente): MotivoForaFaturamento | null => {
+  const aba = abaDoCliente(c)
+  if (aba !== 'em-dia' && aba !== 'em-cancelamento') return null
+  const f = faturamento(c)
+  return 'fora' in f && MOTIVOS_NAO_PAGANTE.includes(f.fora) ? f.fora : null
+}
+const naoPagantes = computed(() => clientes.value.filter(c => motivoNaoPagante(c) !== null))
 
 const clientesDaAba = computed(() => {
   if (abaAtiva.value === 'pagantes') return pagantes.value
+  if (abaAtiva.value === 'nao-pagantes') return naoPagantes.value
   return clientes.value.filter(c => abaDoCliente(c) === abaAtiva.value)
 })
 
@@ -176,6 +190,7 @@ const abas = computed<{ value: Aba; label: string; icon: string; count: number |
   return [
     { value: 'em-dia', label: 'Clientes em dia', icon: 'fa-users', count: total('em-dia'), tone: '' },
     { value: 'pagantes', label: 'Pagantes', icon: 'fa-sack-dollar', count: pagantes.value.length, tone: '' },
+    { value: 'nao-pagantes', label: 'Não pagantes', icon: 'fa-hand-holding-heart', count: naoPagantes.value.length, tone: '' },
     { value: 'vencidos', label: 'Vencidos', icon: 'fa-triangle-exclamation', count: total('vencidos'), tone: 'red' },
     { value: 'em-cancelamento', label: 'Em cancelamento', icon: 'fa-hourglass-half', count: total('em-cancelamento'), tone: '' },
     { value: 'cancelados', label: 'Cancelados', icon: 'fa-ban', count: total('cancelados'), tone: '' },
@@ -187,6 +202,7 @@ const abas = computed<{ value: Aba; label: string; icon: string; count: number |
 
 const TITULO_DA_LISTA: Partial<Record<Aba, string>> = {
   pagantes: 'Clientes pagantes',
+  'nao-pagantes': 'Clientes não pagantes',
   vencidos: 'Clientes vencidos',
   'em-cancelamento': 'Clientes em cancelamento',
   cancelados: 'Clientes cancelados',
@@ -227,12 +243,16 @@ const filteredClientes = computed(() => {
         const f = faturamento(c)
         return 'categoria' in f && f.categoria === filterStatus.value
       })
+    } else if (filterStatus.value.startsWith('fora:')) {
+      // Chips da aba Não pagantes: por que o cliente não paga.
+      const motivo = filterStatus.value.slice(5)
+      filtered = filtered.filter(c => motivoNaoPagante(c) === motivo)
     } else {
       filtered = filtered.filter(c => c.subscription_status === filterStatus.value)
     }
   }
   if (filterPlan.value !== 'all') {
-    filtered = filtered.filter(c => c.subscription_plan === filterPlan.value)
+    filtered = filtered.filter(c => planoDoFiltro(c) === filterPlan.value)
   }
   if (filterParceiro.value === 'sem') {
     filtered = filtered.filter(c => !c.parceiro_id)
@@ -280,6 +300,7 @@ const statusCounts = computed<Record<string, number>>(() => {
     mensal_pix: porCategoria('mensal_pix'),
     anual: porCategoria('anual'),
     semestral: porCategoria('semestral'),
+    ...Object.fromEntries(MOTIVOS_NAO_PAGANTE.map(m => [`fora:${m}`, base.filter(c => motivoNaoPagante(c) === m).length])),
   }
 })
 
@@ -293,6 +314,18 @@ const statusChips: ChipStatus[] = [
 // Na aba Pagantes os chips são a forma de pagamento (mesmos cards do Dashboard).
 const CATEGORIAS_PAGANTE: CategoriaFaturamento[] = ['mensal_stripe', 'mensal_pix', 'anual', 'semestral']
 const chipsDaAba = computed<ChipStatus[]>(() => {
+  if (abaAtiva.value === 'nao-pagantes') {
+    // Por que não paga. "Sem valor" só aparece quando tem alguém nele.
+    const chips: ChipStatus[] = [
+      { value: 'all', label: 'Todos' },
+      // Marcados pelo menu do cliente (permuta, cortesia, conta interna).
+      { value: 'fora:nao_pagante', label: 'Marcados como não pagante' },
+      { value: 'fora:teste', label: 'Em teste' },
+      { value: 'fora:parceiro', label: 'Pagam o parceiro' },
+    ]
+    if (statusCounts.value['fora:sem_valor']) chips.push({ value: 'fora:sem_valor', label: 'Sem valor cadastrado' })
+    return chips
+  }
   if (abaAtiva.value !== 'pagantes') return statusChips
   const chips: ChipStatus[] = [
     { value: 'all', label: 'Todos' },
@@ -305,32 +338,67 @@ const chipsDaAba = computed<ChipStatus[]>(() => {
 })
 
 // ───────── Filtros por parceiro e por afiliado (09/10/2026) ─────────
-// As opções listam só quem tem cliente na base. A contagem entre parênteses é
-// da aba aberta, para bater com o que a lista mostra ao escolher.
-const opcoesParceiro = computed(() => {
-  const mapa = new Map<string, { id: string; nome: string; total: number }>()
+// Desde 09/11/2026 (dono) as opções listam TODOS os parceiros e afiliados
+// cadastrados, inclusive quem ainda não tem cliente (aparece com 0). Removido
+// só aparece se ainda tem cliente na base. A contagem entre parênteses é da aba
+// aberta, para bater com o que a lista mostra ao escolher.
+interface OpcaoPapel { id: string; nome: string; total: number; situacao: '' | 'suspenso' | 'bloqueado' | 'removido' }
+function montarOpcoes(
+  cadastrados: { id: string; nome: string; ativo: boolean; removido: boolean }[],
+  doCliente: (c: AdminCliente) => { id: string | null | undefined; nome: string | null | undefined; removido?: boolean },
+  inativo: 'suspenso' | 'bloqueado',
+  semNome: string,
+): OpcaoPapel[] {
+  const mapa = new Map<string, OpcaoPapel>()
+  for (const p of cadastrados) {
+    if (p.removido) continue
+    mapa.set(p.id, { id: p.id, nome: p.nome || semNome, total: 0, situacao: p.ativo ? '' : inativo })
+  }
   for (const c of clientes.value) {
-    if (c.parceiro_id && !mapa.has(c.parceiro_id)) {
-      mapa.set(c.parceiro_id, { id: c.parceiro_id, nome: c.parceiro_nome || 'Parceiro sem nome', total: 0 })
-    }
+    const r = doCliente(c)
+    if (r.id && !mapa.has(r.id)) mapa.set(r.id, { id: r.id, nome: r.nome || semNome, total: 0, situacao: 'removido' })
   }
   for (const c of clientesDaAba.value) {
-    if (c.parceiro_id) mapa.get(c.parceiro_id)!.total++
+    const id = doCliente(c).id
+    if (id) mapa.get(id)!.total++
   }
   return [...mapa.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }))
-})
+}
+const opcoesParceiro = computed(() => montarOpcoes(
+  parceirosCadastrados.value,
+  c => ({ id: c.parceiro_id, nome: c.parceiro_nome }),
+  'suspenso', 'Parceiro sem nome',
+))
 const semParceiroNaAba = computed(() => clientesDaAba.value.filter(c => !c.parceiro_id).length)
-const opcoesAfiliado = computed(() => {
-  const mapa = new Map<string, { id: string; nome: string; removido: boolean; total: number }>()
-  for (const c of clientes.value) {
-    if (c.afiliado_id && !mapa.has(c.afiliado_id)) {
-      mapa.set(c.afiliado_id, { id: c.afiliado_id, nome: c.afiliado_nome || 'Afiliado sem nome', removido: !!c.afiliado_removido, total: 0 })
-    }
-  }
+const opcoesAfiliado = computed(() => montarOpcoes(
+  afiliadosCadastrados.value,
+  c => ({ id: c.afiliado_id, nome: c.afiliado_nome }),
+  'bloqueado', 'Afiliado sem nome',
+))
+const rotuloOpcao = (o: OpcaoPapel) => `${o.nome}${o.situacao ? ` (${o.situacao})` : ''} (${o.total})`
+
+// ───────── Filtro por plano (09/11/2026, dono) ─────────
+// Planos novos pelo plano_codigo; toda conta antiga (sem plano novo e fora do
+// teste) é "Básico", o mesmo "Plano antigo" do Renovar. Os nomes antigos
+// (Pro, Enterprise de 12 meses) não aparecem mais no filtro.
+const PLANOS_NOVOS_FILTRO = [
+  { codigo: 'start', nome: 'Start' },
+  { codigo: 'pro', nome: 'PRO' },
+  { codigo: 'enterprise', nome: 'Enterprise' },
+  { codigo: 'delivery_ate500', nome: 'Delivery até 500' },
+  { codigo: 'delivery_acima500', nome: 'Delivery acima de 500' },
+]
+function planoDoFiltro(c: AdminCliente): string {
+  if (c.plano_codigo) return `plano:${c.plano_codigo}`
+  return c.subscription_plan === 'free' ? 'free' : 'antigo'
+}
+const totalPorPlano = computed(() => {
+  const t: Record<string, number> = {}
   for (const c of clientesDaAba.value) {
-    if (c.afiliado_id) mapa.get(c.afiliado_id)!.total++
+    const k = planoDoFiltro(c)
+    t[k] = (t[k] || 0) + 1
   }
-  return [...mapa.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }))
+  return t
 })
 const afiliadoSelecionado = computed(() => opcoesAfiliado.value.find(a => a.id === filterAfiliado.value) || null)
 // Se o parceiro/afiliado escolhido some da base (ex.: depois de "Remover do
@@ -951,7 +1019,7 @@ function abrirRenovarDeUso(id: string) {
               <!-- Chips de status. Na aba "Em dia" filtram por status; na aba
                    "Pagantes", pela forma de pagamento. As outras abas não têm chips:
                    a lista é curta e não precisa ser fatiada por status. -->
-              <div v-if="abaAtiva === 'em-dia' || abaAtiva === 'pagantes'" class="flex flex-wrap items-center gap-2 mr-auto" role="group" :aria-label="abaAtiva === 'pagantes' ? 'Filtrar por forma de pagamento' : 'Filtrar por status'">
+              <div v-if="abaAtiva === 'em-dia' || abaAtiva === 'pagantes' || abaAtiva === 'nao-pagantes'" class="flex flex-wrap items-center gap-2 mr-auto" role="group" :aria-label="abaAtiva === 'pagantes' ? 'Filtrar por forma de pagamento' : abaAtiva === 'nao-pagantes' ? 'Filtrar pelo motivo de não pagar' : 'Filtrar por status'">
                 <button
                   v-for="chip in chipsDaAba"
                   :key="chip.value"
@@ -981,13 +1049,16 @@ function abrirRenovarDeUso(id: string) {
                   id="plan"
                   v-model="filterPlan"
                   aria-label="Filtrar por plano"
-                  class="h-9 flex-1 min-w-[9rem] sm:flex-none sm:w-40 px-3 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
+                  class="h-9 flex-1 min-w-[9rem] sm:flex-none sm:w-48 px-3 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
                 >
                   <option value="all">Todos os planos</option>
-                  <option value="free">Gratuito</option>
-                  <option value="basic">Básico</option>
-                  <option value="pro">Pro</option>
-                  <option value="enterprise">Enterprise</option>
+                  <option value="free">Gratuito ({{ totalPorPlano.free || 0 }})</option>
+                  <optgroup label="Planos">
+                    <option v-for="p in PLANOS_NOVOS_FILTRO" :key="p.codigo" :value="`plano:${p.codigo}`">{{ p.nome }} ({{ totalPorPlano[`plano:${p.codigo}`] || 0 }})</option>
+                  </optgroup>
+                  <optgroup label="Plano antigo">
+                    <option value="antigo">Básico ({{ totalPorPlano.antigo || 0 }})</option>
+                  </optgroup>
                 </select>
                 <select
                   id="filtro-parceiro"
@@ -998,8 +1069,8 @@ function abrirRenovarDeUso(id: string) {
                 >
                   <option value="all">Todos os parceiros</option>
                   <option value="sem">Agzap, sem parceiro ({{ semParceiroNaAba }})</option>
-                  <optgroup v-if="opcoesParceiro.length" label="Parceiros com clientes">
-                    <option v-for="p in opcoesParceiro" :key="p.id" :value="p.id">{{ p.nome }} ({{ p.total }})</option>
+                  <optgroup v-if="opcoesParceiro.length" label="Parceiros">
+                    <option v-for="p in opcoesParceiro" :key="p.id" :value="p.id">{{ rotuloOpcao(p) }}</option>
                   </optgroup>
                 </select>
                 <select
@@ -1010,9 +1081,9 @@ function abrirRenovarDeUso(id: string) {
                   :disabled="opcoesAfiliado.length === 0"
                   class="h-9 flex-1 min-w-[9rem] sm:flex-none sm:w-48 px-3 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white disabled:opacity-60 focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
                 >
-                  <option value="all">{{ opcoesAfiliado.length ? 'Todos os afiliados' : 'Nenhum cliente via afiliado' }}</option>
+                  <option value="all">{{ opcoesAfiliado.length ? 'Todos os afiliados' : 'Nenhum afiliado cadastrado' }}</option>
                   <optgroup v-if="opcoesAfiliado.length" label="Trouxe o cliente (1ª conexão)">
-                    <option v-for="a in opcoesAfiliado" :key="a.id" :value="a.id">{{ a.nome }}{{ a.removido ? ' (removido)' : '' }} ({{ a.total }})</option>
+                    <option v-for="a in opcoesAfiliado" :key="a.id" :value="a.id">{{ rotuloOpcao(a) }}</option>
                   </optgroup>
                 </select>
                 <button
@@ -1028,7 +1099,7 @@ function abrirRenovarDeUso(id: string) {
 
               <p v-if="afiliadoSelecionado" class="text-xs text-slate-500 dark:text-slate-400">
                 <i class="fa-solid fa-circle-info mr-1 text-slate-400 dark:text-slate-500" aria-hidden="true" />
-                Clientes que entraram pelo link de {{ afiliadoSelecionado.nome }}{{ afiliadoSelecionado.removido ? ' (afiliação removida)' : '' }}: só a 1ª conexão. Indicações entre clientes não entram neste filtro.
+                Clientes que entraram pelo link de {{ afiliadoSelecionado.nome }}{{ afiliadoSelecionado.situacao === 'removido' ? ' (afiliação removida)' : '' }}: só a 1ª conexão. Indicações entre clientes não entram neste filtro.
               </p>
             </div>
           </template>

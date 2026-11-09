@@ -142,8 +142,13 @@ export interface AdminStats {
   clientesVencendoHoje: number
 }
 
+// Parceiro ou afiliado cadastrado, com ou sem cliente (filtros da página Clientes).
+export interface PapelCadastrado { id: string; nome: string; ativo: boolean; removido: boolean }
+
 export const useAdminClientes = () => {
   const clientes = ref<AdminCliente[]>([])
+  const parceirosCadastrados = ref<PapelCadastrado[]>([])
+  const afiliadosCadastrados = ref<PapelCadastrado[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -193,9 +198,11 @@ export const useAdminClientes = () => {
     error.value = null
     try {
       const headers = await getAuthHeaders()
-      const resp = await $fetch<{ success: boolean; data?: AdminCliente[]; error?: string }>('/api/admin/clientes', { headers })
+      const resp = await $fetch<{ success: boolean; data?: AdminCliente[]; parceiros?: PapelCadastrado[]; afiliados?: PapelCadastrado[]; error?: string }>('/api/admin/clientes', { headers })
       if (!resp.success || !resp.data) throw new Error(resp.error || 'Erro ao carregar clientes')
       clientes.value = resp.data
+      parceirosCadastrados.value = resp.parceiros || []
+      afiliadosCadastrados.value = resp.afiliados || []
     } catch (err: any) {
       error.value = err.message || 'Erro ao carregar clientes'
     } finally {
@@ -388,6 +395,8 @@ export const useAdminClientes = () => {
 
   return {
     clientes,
+    parceirosCadastrados,
+    afiliadosCadastrados,
     stats,
     loading,
     error,

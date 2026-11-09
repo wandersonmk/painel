@@ -51,9 +51,12 @@ export default defineEventHandler(async (event) => {
     // empresa). Duas leituras em lote nas tabelas pequenas, sem N+1. O nome
     // vem de afiliados mesmo quando a afiliação foi removida (removido_em): o
     // cliente antigo continua mostrando quem o trouxe, marcado como removido.
-    const [{ data: viaAfiliado }, { data: afiliadosTodos }] = await Promise.all([
+    // parceirosTodos: os filtros da tela listam TODOS os parceiros e afiliados,
+    // inclusive quem ainda não tem cliente (dono, 09/11/2026).
+    const [{ data: viaAfiliado }, { data: afiliadosTodos }, { data: parceirosTodos }] = await Promise.all([
       supabase.from('afiliado_empresas').select('empresa_id, afiliado_id'),
-      supabase.from('afiliados').select('id, nome, removido_em'),
+      supabase.from('afiliados').select('id, nome, ativo, removido_em'),
+      supabase.from('parceiros').select('id, nome, ativo, removido_em'),
     ])
     const afiliadoPorId = new Map<string, { nome: string; removido: boolean }>(
       ((afiliadosTodos || []) as any[]).map(a => [a.id, { nome: a.nome, removido: !!a.removido_em }]))
@@ -161,7 +164,18 @@ export default defineEventHandler(async (event) => {
       }
     })
 
-    return { success: true, data: clientesComRole }
+    const resumoPapel = (lista: any[] | null) => ((lista || []) as any[]).map(p => ({
+      id: p.id as string,
+      nome: (p.nome as string) || '',
+      ativo: p.ativo !== false,
+      removido: !!p.removido_em,
+    }))
+    return {
+      success: true,
+      data: clientesComRole,
+      parceiros: resumoPapel(parceirosTodos),
+      afiliados: resumoPapel(afiliadosTodos),
+    }
   } catch (err: any) {
     return { success: false, error: err?.message || 'Erro ao listar clientes' }
   }

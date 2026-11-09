@@ -47,6 +47,8 @@ export interface TotaisAfiliados {
 }
 
 type Situacao = 'pagando' | 'cadastrado' | 'atrasado' | 'cancelado'
+// O que a tela mostra: 'pagando' que pediu cancelamento vira "Em cancelamento".
+type SituacaoTela = Situacao | 'em_cancelamento'
 type Plano = 'mensal' | 'semestral' | 'anual' | null
 
 interface SaldosRede { retido: number; disponivel: number; em_saque: number; sacado: number; cancelado: number }
@@ -60,6 +62,8 @@ interface NivelRede {
   faltam: number
   clientes_total: number
   clientes_ativos: number
+  // Dentro dos ativos: quantos pediram cancelamento (ainda no período pago).
+  clientes_em_cancelamento?: number
   comissoes: SaldosRede
 }
 
@@ -71,6 +75,9 @@ interface ClienteRede {
   indicado_por_id: string | null
   indicado_por_nome: string | null
   situacao: Situacao
+  // Pediu cancelamento e o acesso vai até encerra_em (fim do período pago).
+  em_cancelamento?: boolean
+  encerra_em?: string | null
   plano: Plano
   preco: number | null
   diretos: number
@@ -244,7 +251,8 @@ function clientesFiltrados(afiliadoId: string, conexao: number) {
   return (redes.value[afiliadoId]?.clientes ?? [])
     .filter(c => c.nivel === conexao)
     .filter(c => !q || semAcento(`${c.nome} ${c.responsavel ?? ''}`).includes(q))
-    .sort((x, y) => Number(y.situacao === 'pagando') - Number(x.situacao === 'pagando') || x.nome.localeCompare(y.nome, 'pt-BR'))
+    // Ativos primeiro, depois quem está em cancelamento, depois o resto.
+    .sort((x, y) => ordemSituacao(x) - ordemSituacao(y) || x.nome.localeCompare(y.nome, 'pt-BR'))
 }
 
 function clientesDoNivel(afiliadoId: string, conexao: number) {
@@ -519,8 +527,17 @@ const DESCRICAO: Record<number, string> = {
   5: 'Indicados pela 4ª conexão',
 }
 
-const SITUACOES: Record<Situacao, { rotulo: string; cls: string }> = {
+function situacaoTela(c: ClienteRede): SituacaoTela {
+  return c.situacao === 'pagando' && c.em_cancelamento ? 'em_cancelamento' : c.situacao
+}
+function ordemSituacao(c: ClienteRede) {
+  const s = situacaoTela(c)
+  return s === 'pagando' ? 0 : s === 'em_cancelamento' ? 1 : 2
+}
+
+const SITUACOES: Record<SituacaoTela, { rotulo: string; cls: string }> = {
   pagando: { rotulo: 'Ativo', cls: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' },
+  em_cancelamento: { rotulo: 'Em cancelamento', cls: 'bg-orange-100 dark:bg-orange-500/15 text-orange-700 dark:text-orange-400' },
   cadastrado: { rotulo: 'Em teste', cls: 'bg-sky-100 dark:bg-sky-500/15 text-sky-700 dark:text-sky-400' },
   atrasado: { rotulo: 'Atrasado', cls: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400' },
   cancelado: { rotulo: 'Cancelado', cls: 'bg-slate-200 dark:bg-slate-500/20 text-slate-600 dark:text-slate-300' },
@@ -1021,6 +1038,9 @@ const itemMenu = 'w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left t
                                 <span :class="n.clientes_ativos ? 'text-emerald-600 dark:text-emerald-400' : ''">{{ n.clientes_ativos }}</span>
                                 {{ n.clientes_ativos === 1 ? 'ativo' : 'ativos' }}
                                 <span class="text-slate-400">de {{ n.clientes_total }}</span>
+                                <span v-if="n.clientes_em_cancelamento" class="text-orange-600 dark:text-orange-400" title="Ainda contam como ativos até o fim do período pago">
+                                  · {{ n.clientes_em_cancelamento }} em cancelamento
+                                </span>
                               </dd>
                             </div>
                             <div class="min-w-0">
@@ -1071,6 +1091,7 @@ const itemMenu = 'w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left t
                                       <template v-else>indicado por {{ c.indicado_por_nome || '—' }}</template>
                                       em {{ fmtData(c.indicado_em) }}
                                       <template v-if="c.diretos"> · indicou {{ c.diretos }}</template>
+                                      <span v-if="c.em_cancelamento" class="text-orange-600 dark:text-orange-400"> · pediu cancelamento, acesso até {{ fmtData(c.encerra_em ?? null) }}</span>
                                     </p>
                                   </div>
                                   <span
@@ -1082,7 +1103,14 @@ const itemMenu = 'w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left t
                                     <i class="text-[9px]" :class="FORMAS[c.pagamentos[0]!.forma].icone" aria-hidden="true" />
                                     {{ FORMAS[c.pagamentos[0]!.forma].curto }}
                                   </span>
-                                  <span class="inline-flex px-1.5 py-0.5 rounded-full text-[10px] whitespace-nowrap shrink-0" :class="SITUACOES[c.situacao]?.cls">{{ SITUACOES[c.situacao]?.rotulo ?? c.situacao }}</span>
+                                  <span
+                                    class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] whitespace-nowrap shrink-0"
+                                    :class="SITUACOES[situacaoTela(c)]?.cls"
+                                    :title="c.em_cancelamento ? `Pediu cancelamento: o acesso vai até ${fmtData(c.encerra_em ?? null)} e não há próxima cobrança` : undefined"
+                                  >
+                                    <i v-if="c.em_cancelamento" class="fa-solid fa-hourglass-half text-[9px]" aria-hidden="true" />
+                                    {{ SITUACOES[situacaoTela(c)]?.rotulo ?? c.situacao }}
+                                  </span>
                                   <span class="text-xs tabular-nums text-slate-700 dark:text-slate-300 whitespace-nowrap shrink-0 lg:w-36 lg:text-right" title="Valor do plano">
                                     {{ c.preco !== null ? fmtBRL(c.preco) : 'Sem valor' }}
                                     <span class="text-slate-400">· {{ c.plano ? PLANOS[c.plano] : 'sem plano' }}</span>

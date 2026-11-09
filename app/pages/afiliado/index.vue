@@ -14,6 +14,8 @@ useHead({ title: 'Minha rede · Portal do Afiliado' })
  * Mostra só nome da empresa, primeiro nome do responsável, plano e situação.
  */
 type Situacao = 'pagando' | 'cadastrado' | 'atrasado' | 'cancelado'
+// O que a tela mostra: 'pagando' que pediu cancelamento vira "Em cancelamento".
+type SituacaoTela = Situacao | 'em_cancelamento'
 type Plano = 'mensal' | 'semestral' | 'anual' | null
 
 interface NoRede {
@@ -24,6 +26,9 @@ interface NoRede {
   nivel: number
   plano: Plano
   situacao: Situacao
+  // Pediu cancelamento e o acesso vai até encerra_em (fim do período pago).
+  em_cancelamento?: boolean
+  encerra_em?: string | null
   preco: number | null
   mes_valor: number
   liberaria: number | null
@@ -203,7 +208,7 @@ const cards = computed(() => [
 ])
 
 // ───────── Filtros ─────────
-type FiltroSituacao = 'todas' | Situacao
+type FiltroSituacao = 'todas' | SituacaoTela
 const nivelFiltro = ref<number | null>(null)
 const situacaoFiltro = ref<FiltroSituacao>('todas')
 const busca = ref('')
@@ -229,7 +234,7 @@ const listaPlana = computed(() => {
   return [...arvore.value.mapa.values()]
     .filter((no) => {
       if (nivelFiltro.value !== null && no.c.nivel !== nivelFiltro.value) return false
-      if (situacaoFiltro.value !== 'todas' && no.c.situacao !== situacaoFiltro.value) return false
+      if (situacaoFiltro.value !== 'todas' && situacaoTela(no.c) !== situacaoFiltro.value) return false
       if (termo) {
         const pai = no.c.pai_id ? (nomePorId.value.get(no.c.pai_id) ?? '') : ''
         const alvo = normalizar(`${no.c.nome} ${no.c.responsavel ?? ''} ${pai}`)
@@ -265,8 +270,19 @@ function rotuloPlano(p: Plano) {
   return p ? (PLANOS[p] ?? 'Sem plano') : 'Sem plano'
 }
 
-const SITUACOES: Record<Situacao, { label: string; cls: string }> = {
+function situacaoTela(c: NoRede): SituacaoTela {
+  return c.situacao === 'pagando' && c.em_cancelamento ? 'em_cancelamento' : c.situacao
+}
+function fmtDataCurta(s: string | null | undefined) {
+  return s ? new Date(s).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: 'America/Sao_Paulo' }) : '—'
+}
+function tituloSituacao(c: NoRede) {
+  return c.em_cancelamento ? `Pediu cancelamento: o acesso vai até ${fmtDataCurta(c.encerra_em)} e não há próxima cobrança` : undefined
+}
+
+const SITUACOES: Record<SituacaoTela, { label: string; cls: string }> = {
   pagando: { label: 'Pagando', cls: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20' },
+  em_cancelamento: { label: 'Em cancelamento', cls: 'bg-orange-100 dark:bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-200 dark:border-orange-500/20' },
   cadastrado: { label: 'Cadastrado', cls: 'bg-sky-100 dark:bg-sky-500/15 text-sky-700 dark:text-sky-400 border-sky-200 dark:border-sky-500/20' },
   atrasado: { label: 'Atrasado', cls: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/20' },
   cancelado: { label: 'Cancelado', cls: 'bg-slate-200 dark:bg-slate-500/20 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600' },
@@ -453,6 +469,7 @@ const campoFiltro = 'bg-white dark:bg-white/[0.04] border border-slate-200 dark:
       <select v-model="situacaoFiltro" :class="[campoFiltro, 'flex-1 sm:flex-initial px-3 py-2']" aria-label="Situação">
         <option value="todas">Todas as situações</option>
         <option value="pagando">Pagando</option>
+        <option value="em_cancelamento">Em cancelamento</option>
         <option value="cadastrado">Cadastrado</option>
         <option value="atrasado">Atrasado</option>
         <option value="cancelado">Cancelado</option>
@@ -566,9 +583,10 @@ const campoFiltro = 'bg-white dark:bg-white/[0.04] border border-slate-200 dark:
                     <p v-if="no.c.responsavel" class="text-xs text-slate-500 truncate max-w-[240px]">{{ no.c.responsavel }}</p>
                     <!-- Celular: o que as colunas escondem -->
                     <div class="sm:hidden mt-1 flex items-center gap-1.5 flex-wrap">
-                      <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] border" :class="SITUACOES[no.c.situacao].cls">
-                        {{ SITUACOES[no.c.situacao].label }}
+                      <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] border" :class="SITUACOES[situacaoTela(no.c)].cls" :title="tituloSituacao(no.c)">
+                        {{ SITUACOES[situacaoTela(no.c)].label }}
                       </span>
+                      <span v-if="no.c.em_cancelamento" class="text-[10px] text-orange-600 dark:text-orange-400">até {{ fmtDataCurta(no.c.encerra_em) }}</span>
                       <span class="text-[10px] text-slate-400 truncate">{{ voceGanha(no.c) }}</span>
                     </div>
                   </div>
@@ -585,10 +603,11 @@ const campoFiltro = 'bg-white dark:bg-white/[0.04] border border-slate-200 dark:
               </td>
 
               <td class="hidden sm:table-cell px-4 py-2.5 text-center">
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border whitespace-nowrap" :class="SITUACOES[no.c.situacao].cls">
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border whitespace-nowrap" :class="SITUACOES[situacaoTela(no.c)].cls" :title="tituloSituacao(no.c)">
                   <span class="w-1.5 h-1.5 rounded-full bg-current" aria-hidden="true" />
-                  {{ SITUACOES[no.c.situacao].label }}
+                  {{ SITUACOES[situacaoTela(no.c)].label }}
                 </span>
+                <p v-if="no.c.em_cancelamento" class="mt-0.5 text-[10px] text-orange-600 dark:text-orange-400 whitespace-nowrap">acesso até {{ fmtDataCurta(no.c.encerra_em) }}</p>
               </td>
 
               <td class="hidden xl:table-cell px-4 py-2.5 text-xs whitespace-nowrap" :class="bloqueada(no.c.nivel) ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-200'">

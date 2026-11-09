@@ -29,7 +29,7 @@ import type { SituacaoRede, TipoChavePix } from '~~/server/utils/requireAfiliado
  * Só leitura. As consultas em `empresas` vão sempre por id (.in em lotes).
  */
 const COLUNAS_EMPRESA
-  = 'id, nome, nome_cliente, subscription_status, subscription_period, subscription_renews_at, trial_ends_at, subscription_price, ativo, indicado_por_empresa_id, created_at'
+  = 'id, nome, nome_cliente, subscription_status, subscription_period, subscription_renews_at, trial_ends_at, subscription_price, ativo, indicado_por_empresa_id, created_at, cancel_at_period_end'
 
 const COLUNAS_AFILIADO
   = 'id, nome, email, telefone, documento, chave_pix, chave_pix_tipo, pix_declarado_titular, codigo_indicacao, ativo, bloqueado_motivo, created_at'
@@ -49,6 +49,7 @@ interface EmpresaRede {
   ativo: boolean | null
   indicado_por_empresa_id: string | null
   created_at: string
+  cancel_at_period_end: boolean | null
 }
 
 interface AfiliadoLinha {
@@ -255,6 +256,11 @@ export default defineEventHandler(async (event) => {
       const precoBruto = n.e.subscription_price
       const preco = precoBruto === null || precoBruto === undefined || precoBruto === '' ? null : Number(precoBruto)
       const gerado = porEmpresa.get(n.e.id)
+      const situacao = situacoes.get(n.e.id)!
+      // Pediu cancelamento e ainda está no período pago (09/11/2026, dono). A
+      // situação continua 'pagando', porque é ela que conta para liberar as
+      // conexões, igual à função do banco; só a tela mostra "Em cancelamento".
+      const emCancelamento = situacao === 'pagando' && n.e.cancel_at_period_end === true
       return {
         empresa_id: n.e.id,
         nome: n.e.nome ?? 'Sem nome',
@@ -262,7 +268,9 @@ export default defineEventHandler(async (event) => {
         nivel: n.nivel,
         indicado_por_id: n.pai_id,
         indicado_por_nome: n.pai_id ? (nomeDe.get(n.pai_id) ?? null) : null,
-        situacao: situacoes.get(n.e.id)!,
+        situacao,
+        em_cancelamento: emCancelamento,
+        encerra_em: emCancelamento ? n.e.subscription_renews_at : null,
         plano: planoDe(n.e.subscription_period),
         preco: Number.isFinite(preco) ? preco : null,
         diretos: diretosDe.get(n.e.id) ?? 0,
@@ -291,6 +299,7 @@ export default defineEventHandler(async (event) => {
         faltam: conexao <= liberadas ? 0 : Math.max(0, meta - propriosAtivos),
         clientes_total: doNivel.length,
         clientes_ativos: doNivel.filter(c => c.situacao === 'pagando').length,
+        clientes_em_cancelamento: doNivel.filter(c => c.em_cancelamento).length,
         comissoes: emReais(porConexao.get(conexao) ?? saldosVazios()),
       }
     })

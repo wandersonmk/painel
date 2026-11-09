@@ -27,7 +27,7 @@ import type { SituacaoRede } from '~~/server/utils/requireAfiliado'
  * situação. Nunca e-mail, telefone ou documento de ninguém da rede.
  */
 const COLUNAS_EMPRESA
-  = 'id, nome, nome_cliente, subscription_status, subscription_period, subscription_renews_at, trial_ends_at, subscription_price, ativo, indicado_por_empresa_id, created_at'
+  = 'id, nome, nome_cliente, subscription_status, subscription_period, subscription_renews_at, trial_ends_at, subscription_price, ativo, indicado_por_empresa_id, created_at, cancel_at_period_end'
 
 interface EmpresaRede {
   id: string
@@ -41,6 +41,7 @@ interface EmpresaRede {
   ativo: boolean | null
   indicado_por_empresa_id: string | null
   created_at: string
+  cancel_at_period_end: boolean | null
 }
 
 type Plano = 'mensal' | 'semestral' | 'anual' | null
@@ -153,6 +154,10 @@ export default defineEventHandler(async (event) => {
       const liberaria = n.nivel > liberadas && situacao === 'pagando' && preco && preco > 0 && regra
         ? Math.round(preco * regra.percentual_recorrente) / 100
         : null
+      // Pediu cancelamento e ainda está no período pago (09/11/2026, dono). A
+      // situação continua 'pagando' (é ela que libera as conexões, igual à
+      // função do banco); a tela mostra "Em cancelamento" e a data do fim.
+      const emCancelamento = situacao === 'pagando' && n.e.cancel_at_period_end === true
       return {
         empresa_id: n.e.id,
         nome: n.e.nome ?? 'Sem nome',
@@ -161,6 +166,8 @@ export default defineEventHandler(async (event) => {
         nivel: n.nivel,
         plano: planoDe(n.e.subscription_period),
         situacao,
+        em_cancelamento: emCancelamento,
+        encerra_em: emCancelamento ? n.e.subscription_renews_at : null,
         preco,
         mes_valor: somarValores(valoresPorEmpresa.get(n.e.id) ?? []),
         liberaria,

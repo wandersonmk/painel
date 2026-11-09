@@ -51,16 +51,19 @@ const selected = ref<string>('1month')
 
 // Plano de assinatura aplicado junto da renovação (limites e módulos dele).
 // Básico (planoConta null) renova sem plano: a conta continua com os módulos e
-// limites que já tem, no mensal ou no anual. Vale para conta antiga e para conta
-// em teste criada antes do lançamento dos planos (dono, 07/11/2026); conta criada
-// depois sai do teste com um plano. Pro 6 meses saiu da tela.
+// limites que já tem, no mensal ou no anual. Vale para qualquer conta (dono,
+// 09/11/2026, Grupo Espresso). Conta antiga e conta em teste criada antes do
+// lançamento dos planos abrem com o Básico marcado; nas outras ele aparece sem
+// marcar e o administrador precisa clicar nele ou num plano. Pro 6 meses saiu da tela.
 type PlanoConta = RecursosPlano & { precoMensal: number; precoAnual: number }
 const planosConta = ref<PlanoConta[]>([])
 const planoConta = ref<string | null>(null)
+// Básico escolhido (vale quando planoConta é null).
+const basicoMarcado = ref(true)
 const planoDaConta = computed(() => planosConta.value.find(p => p.codigo === planoConta.value) ?? null)
 const contaAntiga = computed(() => !props.assinatura?.plano_codigo && (props.assinatura?.subscription_plan ?? 'free') !== 'free')
-// 06/11/2026 00:00 em SP, lançamento dos planos. A mesma data está em
-// server/api/admin/renovar-assinatura.post.ts, que confere de novo.
+// 06/11/2026 00:00 em SP, lançamento dos planos. Só decide se o Básico já
+// vem marcado; o servidor aceita o Básico em qualquer conta.
 const LANCAMENTO_PLANOS = Date.parse('2026-11-06T03:00:00Z')
 const testeAntesDosPlanos = computed(() => {
   const a = props.assinatura
@@ -68,8 +71,10 @@ const testeAntesDosPlanos = computed(() => {
   const criada = Date.parse(a.created_at)
   return Number.isFinite(criada) && criada < LANCAMENTO_PLANOS
 })
-const podeBasico = computed(() => contaAntiga.value || testeAntesDosPlanos.value)
-const basicoAntigo = computed(() => podeBasico.value && !planoConta.value)
+// Básico já vem marcado ao abrir (conta antiga ou teste de antes dos planos).
+const basicoPadrao = computed(() => contaAntiga.value || testeAntesDosPlanos.value)
+const emTeste = computed(() => !props.assinatura?.plano_codigo && (props.assinatura?.subscription_plan ?? 'free') === 'free')
+const basicoAntigo = computed(() => !planoConta.value && basicoMarcado.value)
 const periodos = [
   { key: '1month', nome: 'Mensal', periodo: '1 mês' },
   { key: '12months', nome: 'Anual', periodo: '12 meses' },
@@ -329,6 +334,7 @@ watch(() => [props.show, props.clienteId], ([s]) => {
   agora.value = new Date()
   ancora.value = ancoraPadrao()
   planoConta.value = props.assinatura?.plano_codigo ?? null
+  basicoMarcado.value = basicoPadrao.value
   // Sem isto, o período da renovação anterior vinha marcado no cliente seguinte.
   selected.value = '1month'
   iniciarData()
@@ -393,7 +399,7 @@ const efeitoNoPlano = computed<string | null>(() => {
   return null
 })
 
-const faltaPlano = computed(() => !ehTeste.value && !podeBasico.value && !planoConta.value)
+const faltaPlano = computed(() => !ehTeste.value && !planoConta.value && !basicoMarcado.value)
 const podeRenovar = computed(() => !enviando.value && !erroData.value && !faltaPlano.value)
 function handleSubmit() {
   if (!podeRenovar.value) return
@@ -467,23 +473,23 @@ const classeCampo = 'h-9 w-full rounded-lg border bg-white px-2.5 text-sm tabula
               </button>
             </div>
 
-            <!-- Plano antigo: conta antiga ou em teste de antes dos planos, renova como sempre foi -->
-            <template v-if="podeBasico">
-              <p id="renovar-plano-antigo" class="mb-2 mt-4 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Plano antigo</p>
-              <div class="grid grid-cols-2 gap-2 sm:grid-cols-3" role="radiogroup" aria-labelledby="renovar-plano-antigo">
-                <button
-                  type="button"
-                  role="radio"
-                  :aria-checked="planoConta === null"
-                  class="min-h-9 rounded-lg border px-2 py-1.5 text-sm leading-tight transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/60"
-                  :class="planoConta === null
-                    ? 'border-purple-500 bg-purple-50 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300'
-                    : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60'"
-                  @click="planoConta = null"
-                >
-                  Básico
-                </button>
-              </div>
+            <!-- Plano antigo: renova sem plano, como sempre foi (qualquer conta que ainda não tem plano novo) -->
+            <template v-if="!planoAtual">
+            <p id="renovar-plano-antigo" class="mb-2 mt-4 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Plano antigo</p>
+            <div class="grid grid-cols-2 gap-2 sm:grid-cols-3" role="radiogroup" aria-labelledby="renovar-plano-antigo">
+              <button
+                type="button"
+                role="radio"
+                :aria-checked="basicoAntigo"
+                class="min-h-9 rounded-lg border px-2 py-1.5 text-sm leading-tight transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/60"
+                :class="basicoAntigo
+                  ? 'border-purple-500 bg-purple-50 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300'
+                  : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60'"
+                @click="planoConta = null; basicoMarcado = true"
+              >
+                Básico
+              </button>
+            </div>
             </template>
             <p v-if="contaAntiga && planoDaConta" class="mt-1.5 text-xs text-amber-700 dark:text-amber-300">
               Esta conta é antiga e hoje não segue limite de plano. Ao renovar, ela passa a seguir os limites e módulos do {{ planoDaConta.nome }}<template v-if="!clienteDeParceiro">, e o valor cadastrado vira o de tabela ({{ brlCurto(planoDaConta.precoMensal) }}/mês ou {{ brlCurto(planoDaConta.precoAnual) }}/ano)</template>.
@@ -654,6 +660,7 @@ const classeCampo = 'h-9 w-full rounded-lg border bg-white px-2.5 text-sm tabula
               <p class="text-sm font-medium text-slate-900 dark:text-white">Básico (plano antigo)</p>
               <p class="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">A conta continua com os módulos e limites que tem hoje. Só o vencimento muda.</p>
               <p v-if="testeAntesDosPlanos" class="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">A conta está em teste e foi criada antes dos planos: sai do teste sem plano, como os clientes antigos.</p>
+              <p v-else-if="emTeste" class="mt-1 text-xs leading-relaxed text-amber-700 dark:text-amber-300">A conta está em teste e foi criada depois dos planos: sai do teste sem plano, como os clientes antigos, sem os limites de canais e funis dos planos novos.</p>
             </template>
             <p v-else class="text-xs text-slate-500 dark:text-slate-400">Escolha o plano para ver o que vem nele.</p>
           </div>

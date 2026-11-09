@@ -10,8 +10,6 @@ const PERIOD_DAYS: Record<string, number> = {
 // grátis soma dias.
 const PERIOD_MESES: Record<string, number> = { '1month': 1, '6months': 6, '12months': 12 }
 const PLANS_VALIDOS = ['free', 'basic', 'pro', 'enterprise']
-// 06/11/2026 00:00 em SP, lançamento dos planos (mesma data no AdminRenovarAssinaturaModal.vue).
-const LANCAMENTO_PLANOS = Date.parse('2026-11-06T03:00:00Z')
 type Ancora = 'vencimento' | 'hoje'
 
 // ── Datas no relógio de São Paulo ──────────────────────────────────────────
@@ -142,13 +140,10 @@ export default defineEventHandler(async (event) => {
     .eq('id', body.clienteId)
     .maybeSingle()
 
-  // Cliente novo sai do teste já com um plano: sem ele viraria conta sem limite.
-  // Conta em teste criada antes do lançamento dos planos pode sair no Básico,
-  // sem plano, como os clientes antigos (dono, 07/11/2026).
-  const criadaAntesDosPlanos = Date.parse((antes as any)?.created_at ?? '') < LANCAMENTO_PLANOS
-  if (!ehTeste && !planoCodigo && (antes as any)?.subscription_plan === 'free' && !(antes as any)?.plano_codigo && !criadaAntesDosPlanos) {
-    throw createError({ statusCode: 400, statusMessage: 'Escolha o plano para renovar este cliente.' })
-  }
+  // Sem planoCodigo = Básico (plano antigo): renova sem mexer em módulos e
+  // limites. Vale para qualquer conta, inclusive conta nova em teste (dono,
+  // 09/11/2026: antes só conta criada antes de 06/11/2026). A tela obriga o
+  // administrador a clicar no Básico ou num plano quando a conta é nova.
 
   const agora = new Date()
   let renewDate: Date

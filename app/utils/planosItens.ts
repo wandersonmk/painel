@@ -105,7 +105,7 @@ export function itensDoPlano(p: RecursosPlano): ItensPlano {
       ? `Módulo Delivery, até ${numero.format(p.maxPedidosMes)} pedidos por mês`
       : 'Módulo Delivery')
   }
-  item(p.imoveis, 'Módulo Imóveis')
+  item(p.imoveis, 'Módulo Imobiliária')
   item(p.grupos, 'Grupos de WhatsApp')
   item(p.formularios, 'Formulários')
   item(true, SUPORTE[p.codigo] ?? 'Suporte Padrão')

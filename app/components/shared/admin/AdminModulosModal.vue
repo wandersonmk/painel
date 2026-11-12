@@ -28,6 +28,7 @@ export interface ModulosEmpresa {
   formulariosHabilitado: boolean
   clinicaModuloAtivo: boolean
   clinicaEspecialidades: string[]
+  infoprodutorHabilitado: boolean
 }
 
 const props = defineProps<{
@@ -54,6 +55,7 @@ const props = defineProps<{
   formulariosAtual?: boolean
   clinicaAtual?: boolean
   clinicaEspecialidadesAtual?: string[]
+  infoprodutorAtual?: boolean
 }>()
 
 // Abas (pedido do dono, 28/09/2026): o modal empilhava tudo e precisava rolar.
@@ -100,6 +102,8 @@ const grupos = ref(false)
 const formularios = ref(false)
 // Módulo Clínica (11/11/2026): add-on, nasce desligado; liga para a empresa que é clínica.
 const clinica = ref(false)
+// Infoprodutor (12/11/2026): add-on, nasce desligado; desligado some do menu do app.
+const infoprodutor = ref(false)
 // Especialidades da clínica: liberam as funções de cada uma (odontograma,
 // mapa facial, receita...). Espelha ESPECIALIDADES do app.
 const clinicaEspecialidades = ref<string[]>([])
@@ -185,6 +189,7 @@ watch(() => props.show, async (open) => {
   formularios.value = props.formulariosAtual ?? false
   clinica.value = props.clinicaAtual ?? false
   clinicaEspecialidades.value = [...(props.clinicaEspecialidadesAtual ?? [])]
+  infoprodutor.value = props.infoprodutorAtual ?? false
   tipoEscolhido.value = tipoClinica.value
   aba.value = 'modulos'
   valoresAoAbrir = valoresDoFormulario()
@@ -271,7 +276,7 @@ const valores = {
 // Selo nas abas: quantos add-ons ligados / limite abaixo do uso atual.
 const addonsLigados = computed(() =>
   Number(roteamento.value) + Number(envios.value) + Number(delivery.value) + Number(imoveis.value)
-  + Number(grupos.value) + Number(formularios.value) + Number(clinica.value) + Number(vitrine.value))
+  + Number(grupos.value) + Number(formularios.value) + Number(clinica.value) + Number(vitrine.value) + Number(infoprodutor.value))
 const algumLimiteAbaixo = computed(() =>
   produtosVitrineAbaixoDoUso.value || imoveisAbaixoDoUso.value)
 
@@ -284,6 +289,14 @@ const ADDONS_SIMPLES = [
     icon: 'fa-store',
     iconCls: 'text-emerald-500',
     descricao: 'Catálogo "Produtos", vitrine online e produtos no assistente. Desligado, some do menu.',
+  },
+  {
+    key: 'infoprodutor' as const,
+    modelo: infoprodutor,
+    label: 'Infoprodutor',
+    icon: 'fa-graduation-cap',
+    iconCls: 'text-amber-500',
+    descricao: 'Vendas das plataformas (Hotmart, Kiwify, Eduzz, Cakto, Payt): dinheiro recuperado, ficha de compras e relatórios. Desligado, some do menu.',
   },
   {
     key: 'grupos' as const,
@@ -425,6 +438,7 @@ function valoresDoFormulario(): ModulosEmpresa {
     formulariosHabilitado: formularios.value,
     clinicaModuloAtivo: clinica.value,
     clinicaEspecialidades: [...clinicaEspecialidades.value].sort(),
+    infoprodutorHabilitado: infoprodutor.value,
   }
 }
 

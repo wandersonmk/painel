@@ -33,6 +33,8 @@ const FLAGS: Record<string, string> = {
   formulariosHabilitado: 'formularios_habilitado',
   // Módulo Clínica (11/11/2026): add-on, nasce FALSE.
   clinicaModuloAtivo: 'clinica_modulo_ativo',
+  // Infoprodutor (12/11/2026): add-on, nasce FALSE.
+  infoprodutorHabilitado: 'infoprodutor_habilitado',
 }
 
 export default defineEventHandler(async (event) => {

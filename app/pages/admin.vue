@@ -120,6 +120,7 @@ const clienteModulos = ref<{
   formularios_habilitado: boolean
   clinica_modulo_ativo: boolean
   clinica_especialidades: string[]
+  infoprodutor_habilitado: boolean
 } | null>(null)
 
 const searchQuery = ref('')
@@ -743,6 +744,7 @@ function handleModulos(id: string) {
       formularios_habilitado: c.formularios_habilitado === true,
       clinica_modulo_ativo: c.clinica_modulo_ativo === true,
       clinica_especialidades: Array.isArray(c.clinica_especialidades) ? [...c.clinica_especialidades] : [],
+      infoprodutor_habilitado: c.infoprodutor_habilitado === true,
     }
     showModulosModal.value = true
   }
@@ -770,6 +772,7 @@ const COLUNA_MODULO = {
   formulariosHabilitado: 'formularios_habilitado',
   clinicaModuloAtivo: 'clinica_modulo_ativo',
   clinicaEspecialidades: 'clinica_especialidades',
+  infoprodutorHabilitado: 'infoprodutor_habilitado',
 } as const
 
 // Espelha ModulosEmpresa do AdminModulosModal (tipo declarado aqui em vez de
@@ -1255,6 +1258,7 @@ function abrirRenovarDeUso(id: string) {
         :formularios-atual="clienteModulos?.formularios_habilitado ?? false"
         :clinica-atual="clienteModulos?.clinica_modulo_ativo ?? false"
         :clinica-especialidades-atual="clienteModulos?.clinica_especialidades ?? []"
+        :infoprodutor-atual="clienteModulos?.infoprodutor_habilitado ?? false"
         @close="showModulosModal = false; clienteModulos = null"
         @confirm="confirmModulos"
       />

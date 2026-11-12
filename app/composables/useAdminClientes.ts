@@ -107,6 +107,8 @@ export interface AdminCliente {
   clinica_modulo_ativo?: boolean
   // Especialidades do Módulo Clínica (odontologia, estetica, medica...).
   clinica_especialidades?: string[]
+  // Infoprodutor: add-on desde 12/11/2026, só true libera.
+  infoprodutor_habilitado?: boolean
 }
 
 // Faturamento do Dashboard (14/10/2026): onde cada cliente entra, ou por que fica de fora.

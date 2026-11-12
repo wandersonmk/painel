@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   try {
     const { data: empresas, error } = await supabase
       .from('empresas')
-      .select('id, nome, nome_cliente, email, whatsapp, subscription_status, subscription_plan, subscription_period, trial_ends_at, subscription_renews_at, subscription_price, subscription_price_anual, ativo, created_at, auth_user_id, max_instancias, max_agentes, max_webhooks_entrada, max_webhooks_saida, max_profissionais, max_clientes, cancel_at_period_end, roteamento_habilitado, agendamentos_habilitado, pagina_agendamento_habilitada, api_assistente_habilitada, webhooks_habilitado, documentacao_habilitada, dominio_agenda_habilitado, envios_habilitado, max_envios_mes, delivery_modulo_ativo, max_macros, max_acoes_macro, max_pedidos_mes, max_produtos_vitrine, vitrine_habilitada, imoveis_modulo_ativo, max_imoveis, indicado_por_empresa_id, subscription_id, nao_pagante, plano_codigo, max_funis, max_canais_whatsapp, max_canais_instagram, max_canais_webchat, grupos_habilitado, formularios_habilitado')
+      .select('id, nome, nome_cliente, email, whatsapp, subscription_status, subscription_plan, subscription_period, trial_ends_at, subscription_renews_at, subscription_price, subscription_price_anual, ativo, created_at, auth_user_id, max_instancias, max_agentes, max_webhooks_entrada, max_webhooks_saida, max_profissionais, max_clientes, cancel_at_period_end, roteamento_habilitado, agendamentos_habilitado, pagina_agendamento_habilitada, api_assistente_habilitada, webhooks_habilitado, documentacao_habilitada, dominio_agenda_habilitado, envios_habilitado, max_envios_mes, delivery_modulo_ativo, max_macros, max_acoes_macro, max_pedidos_mes, max_produtos_vitrine, vitrine_habilitada, imoveis_modulo_ativo, max_imoveis, indicado_por_empresa_id, subscription_id, nao_pagante, plano_codigo, max_funis, max_canais_whatsapp, max_canais_instagram, max_canais_webchat, grupos_habilitado, formularios_habilitado, clinica_modulo_ativo, clinica_especialidades')
       .order('created_at', { ascending: false })
     if (error) throw error
 
@@ -121,8 +121,8 @@ export default defineEventHandler(async (event) => {
         max_acoes_macro: emp.max_acoes_macro ?? 5,
         max_pedidos_mes: emp.max_pedidos_mes ?? 0,
         max_produtos_vitrine: emp.max_produtos_vitrine ?? 0,
-        // Gate comum (nasce true): ausente = liberado.
-        vitrine_habilitada: emp.vitrine_habilitada ?? true,
+        // Produtos virou add-on (11/11/2026): só true libera.
+        vitrine_habilitada: emp.vitrine_habilitada === true,
         // Imóveis é add-on pago (01/10/2026), mesmo padrão de Delivery:
         // ausente = bloqueado. Limite padrão 100, 0 = sem limite.
         imoveis_modulo_ativo: emp.imoveis_modulo_ativo ?? false,
@@ -136,6 +136,8 @@ export default defineEventHandler(async (event) => {
         // Add-ons que nascem FALSE: ausente = bloqueado.
         grupos_habilitado: emp.grupos_habilitado === true,
         formularios_habilitado: emp.formularios_habilitado === true,
+        clinica_modulo_ativo: emp.clinica_modulo_ativo === true,
+        clinica_especialidades: Array.isArray(emp.clinica_especialidades) ? emp.clinica_especialidades : [],
         parceiro_nome: vinculo?.parceiros?.nome ?? null,
         // Id do parceiro: o filtro da tela usa o id (nomes podem se repetir).
         parceiro_id: vinculo?.parceiro_id ?? null,

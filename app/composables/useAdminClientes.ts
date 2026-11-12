@@ -89,7 +89,7 @@ export interface AdminCliente {
   max_acoes_macro?: number
   max_pedidos_mes?: number
   max_produtos_vitrine?: number
-  // Gate da Vitrine ("Produtos" no app). Ausente = true (permissivo).
+  // Produtos (vitrine): add-on desde 11/11/2026, só true libera.
   vitrine_habilitada?: boolean
   // Imóveis é add-on pago (01/10/2026): ausente = false (bloqueado).
   imoveis_modulo_ativo?: boolean
@@ -104,6 +104,9 @@ export interface AdminCliente {
   // Add-ons que nascem FALSE (Grupos de WhatsApp e Formulários).
   grupos_habilitado?: boolean
   formularios_habilitado?: boolean
+  clinica_modulo_ativo?: boolean
+  // Especialidades do Módulo Clínica (odontologia, estetica, medica...).
+  clinica_especialidades?: string[]
 }
 
 // Faturamento do Dashboard (14/10/2026): onde cada cliente entra, ou por que fica de fora.

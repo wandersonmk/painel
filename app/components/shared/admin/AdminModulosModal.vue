@@ -4,8 +4,8 @@ import { ref, watch, computed } from 'vue'
 // Habilita/desabilita módulos do app por empresa (gate de admin):
 // o admin decide se a empresa PODE usar cada módulo.
 //
-// Módulo desligado NÃO some do app: o item aparece com cadeado e o clique
-// abre um convite pra contratar. Some só se o usuário não tiver a permissão.
+// Desde 11/11/2026 (pedido do dono) módulo desligado SOME do menu do app, sem
+// cadeado; ligado aqui, aparece na hora (tempo real).
 // CRM Kanban não entra: fica sempre liberado, por decisão de produto.
 export interface ModulosEmpresa {
   roteamentoHabilitado: boolean
@@ -26,6 +26,8 @@ export interface ModulosEmpresa {
   maxImoveis: number
   gruposHabilitado: boolean
   formulariosHabilitado: boolean
+  clinicaModuloAtivo: boolean
+  clinicaEspecialidades: string[]
 }
 
 const props = defineProps<{
@@ -50,6 +52,8 @@ const props = defineProps<{
   maxImoveisAtual?: number
   gruposAtual?: boolean
   formulariosAtual?: boolean
+  clinicaAtual?: boolean
+  clinicaEspecialidadesAtual?: string[]
 }>()
 
 // Abas (pedido do dono, 28/09/2026): o modal empilhava tudo e precisava rolar.
@@ -85,8 +89,8 @@ const extrasAdicionar = ref<number | null>(null)
 const extrasValor = ref<number | null>(null)
 // Produtos da Vitrine ("Produtos" no menu do app). 0 = sem limite.
 const maxProdutosVitrine = ref(0)
-// Gate da Vitrine (28/09/2026): comum, nasce ligado — igual Webhooks.
-const vitrine = ref(true)
+// Produtos (vitrine): add-on desde 11/11/2026 — nasce desligado.
+const vitrine = ref(false)
 // Imóveis (01/10/2026): add-on pago, mesmo padrão de Delivery — nasce desligado.
 const imoveis = ref(false)
 // Limite de imóveis cadastrados. Padrão 100, 0 = sem limite.
@@ -94,6 +98,46 @@ const maxImoveis = ref(100)
 // Grupos de WhatsApp e Formulários: add-ons, nascem desligados (o Enterprise liga).
 const grupos = ref(false)
 const formularios = ref(false)
+// Módulo Clínica (11/11/2026): add-on, nasce desligado; liga para a empresa que é clínica.
+const clinica = ref(false)
+// Especialidades da clínica: liberam as funções de cada uma (odontograma,
+// mapa facial, receita...). Espelha ESPECIALIDADES do app.
+const clinicaEspecialidades = ref<string[]>([])
+const ESPECIALIDADES_CLINICA = [
+  { chave: 'odontologia', nome: 'Odontologia', icone: 'fa-tooth', ajuda: 'Odontograma, plano e orçamento' },
+  { chave: 'estetica', nome: 'Estética', icone: 'fa-wand-magic-sparkles', ajuda: 'Mapa facial, fotos e pacotes' },
+  { chave: 'medica', nome: 'Médica', icone: 'fa-stethoscope', ajuda: 'Sinais vitais, receita e exames' },
+  { chave: 'psicologia', nome: 'Psicologia', icone: 'fa-brain', ajuda: 'Sessão privada e sessões semanais' },
+  { chave: 'fisioterapia', nome: 'Fisioterapia', icone: 'fa-person-walking', ajuda: 'Avaliação e sessões' },
+  { chave: 'nutricao', nome: 'Nutrição', icone: 'fa-apple-whole', ajuda: 'Medidas, IMC e retorno' },
+  { chave: 'outra', nome: 'Outra', icone: 'fa-notes-medical', ajuda: 'Modelo em branco' },
+]
+function alternarEspecialidade(chave: string) {
+  const lista = clinicaEspecialidades.value
+  clinicaEspecialidades.value = lista.includes(chave) ? lista.filter(e => e !== chave) : [...lista, chave]
+}
+// Tipo de negócio (12/11/2026): "Estética" = só estética (atende clientes,
+// sem receita); "Clínica de saúde" = qualquer outra combinação (pacientes,
+// prontuário completo). Espelha perfilDaClinica() do app.
+type TipoClinica = 'saude' | 'estetica'
+const TIPOS_CLINICA: { chave: TipoClinica; nome: string; icone: string; ajuda: string }[] = [
+  { chave: 'saude', nome: 'Clínica de saúde', icone: 'fa-user-doctor', ajuda: 'Pacientes e prontuário completo' },
+  { chave: 'estetica', nome: 'Estética', icone: 'fa-wand-magic-sparkles', ajuda: 'Clientes e procedimentos' },
+]
+const tipoClinica = computed<TipoClinica>(() => {
+  const l = clinicaEspecialidades.value
+  return l.includes('estetica') && l.every(e => e === 'estetica' || e === 'outra') ? 'estetica' : 'saude'
+})
+// Só para a tela: com nada marcado, vale o tipo escolhido (saúde por padrão).
+const tipoEscolhido = ref<TipoClinica>('saude')
+const tipoEfetivo = computed<TipoClinica>(() => (clinicaEspecialidades.value.length ? tipoClinica.value : tipoEscolhido.value))
+function escolherTipo(t: TipoClinica) {
+  tipoEscolhido.value = t
+  if (t === 'estetica') clinicaEspecialidades.value = ['estetica']
+  else if (tipoClinica.value === 'estetica') clinicaEspecialidades.value = []
+}
+const ESPECIALIDADES_SAUDE = ESPECIALIDADES_CLINICA.filter(e => e.chave !== 'estetica')
+const faltaEspecialidade = computed(() => clinica.value && clinicaEspecialidades.value.length === 0)
 
 // Faixas usuais na venda, viram só atalhos: o teto de fato é digitável (como
 // profissionais/clientes), pra caber contrato fora das três faixas. Valor em R$
@@ -134,11 +178,14 @@ watch(() => props.show, async (open) => {
   maxAcoesMacro.value = props.maxAcoesMacroAtual ?? 5
   maxPedidosMes.value = props.maxPedidosMesAtual ?? 0
   maxProdutosVitrine.value = props.maxProdutosVitrineAtual ?? 0
-  vitrine.value = props.vitrineAtual ?? true
+  vitrine.value = props.vitrineAtual ?? false
   imoveis.value = props.imoveisAtual ?? false
   maxImoveis.value = props.maxImoveisAtual ?? 100
   grupos.value = props.gruposAtual ?? false
   formularios.value = props.formulariosAtual ?? false
+  clinica.value = props.clinicaAtual ?? false
+  clinicaEspecialidades.value = [...(props.clinicaEspecialidadesAtual ?? [])]
+  tipoEscolhido.value = tipoClinica.value
   aba.value = 'modulos'
   valoresAoAbrir = valoresDoFormulario()
 
@@ -209,13 +256,6 @@ const MODULOS = [
     iconCls: 'text-rose-500',
     descricao: 'Aba Documentação em Configurações',
   },
-  {
-    key: 'vitrine' as const,
-    label: 'Produtos (Vitrine)',
-    icon: 'fa-store',
-    iconCls: 'text-emerald-500',
-    descricao: 'Catálogo "Produtos", vitrine online e produtos no assistente',
-  },
 ]
 
 const valores = {
@@ -226,18 +266,25 @@ const valores = {
   apiAssistente,
   webhooks,
   documentacao,
-  vitrine,
 }
 
 // Selo nas abas: quantos add-ons ligados / limite abaixo do uso atual.
 const addonsLigados = computed(() =>
   Number(roteamento.value) + Number(envios.value) + Number(delivery.value) + Number(imoveis.value)
-  + Number(grupos.value) + Number(formularios.value))
+  + Number(grupos.value) + Number(formularios.value) + Number(clinica.value) + Number(vitrine.value))
 const algumLimiteAbaixo = computed(() =>
   produtosVitrineAbaixoDoUso.value || imoveisAbaixoDoUso.value)
 
 // Add-ons simples (só o liga/desliga), na mesma lista pra não duplicar markup.
 const ADDONS_SIMPLES = [
+  {
+    key: 'vitrine' as const,
+    modelo: vitrine,
+    label: 'Produtos',
+    icon: 'fa-store',
+    iconCls: 'text-emerald-500',
+    descricao: 'Catálogo "Produtos", vitrine online e produtos no assistente. Desligado, some do menu.',
+  },
   {
     key: 'grupos' as const,
     modelo: grupos,
@@ -253,6 +300,14 @@ const ADDONS_SIMPLES = [
     icon: 'fa-rectangle-list',
     iconCls: 'text-indigo-500',
     descricao: 'Formulários do WhatsApp, só em número da API Oficial. Nasce bloqueado.',
+  },
+  {
+    key: 'clinica' as const,
+    modelo: clinica,
+    label: 'Módulo Clínica e Estética',
+    icon: 'fa-stethoscope',
+    iconCls: 'text-violet-500',
+    descricao: 'Ficha com prontuário por especialidade, Atendimentos, Financeiro com caixa e Estoque. Para clínicas de saúde e de estética.',
   },
 ]
 
@@ -327,6 +382,11 @@ function submeter() {
     aba.value = 'limites'
     return
   }
+  // Clínica ligada sem especialidade não libera nada: mostra o aviso no card.
+  if (faltaEspecialidade.value) {
+    aba.value = 'addons'
+    return
+  }
   const atuais = valoresDoFormulario()
   const campos = Object.keys(atuais) as (keyof ModulosEmpresa)[]
   const quantidade = Math.trunc(Number(extrasAdicionar.value) || 0)
@@ -334,7 +394,7 @@ function submeter() {
     ? { quantidade, valor: Number(extrasValor.value) || 0 }
     : null
   emit('confirm', Object.fromEntries(
-    campos.filter(c => atuais[c] !== valoresAoAbrir?.[c]).map(c => [c, atuais[c]]),
+    campos.filter(c => JSON.stringify(atuais[c]) !== JSON.stringify(valoresAoAbrir?.[c])).map(c => [c, atuais[c]]),
   ) as Partial<ModulosEmpresa>, extras)
 }
 
@@ -363,6 +423,8 @@ function valoresDoFormulario(): ModulosEmpresa {
     maxImoveis: imoveisValido(),
     gruposHabilitado: grupos.value,
     formulariosHabilitado: formularios.value,
+    clinicaModuloAtivo: clinica.value,
+    clinicaEspecialidades: [...clinicaEspecialidades.value].sort(),
   }
 }
 
@@ -731,6 +793,77 @@ function pedidosMesValido() {
                 />
               </button>
             </div>
+          </div>
+
+          <!-- Especialidades da clínica (11/11/2026): o que o dono da empresa
+               disse que ela é. Cada uma libera as funções dela no app. -->
+          <div
+            v-if="clinica"
+            class="rounded-md border px-3 py-2.5"
+            :class="faltaEspecialidade ? 'border-amber-300 bg-amber-50/60 dark:border-amber-700/60 dark:bg-amber-950/20' : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40'"
+          >
+            <p class="text-[13px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <i class="fa-solid fa-stethoscope text-violet-500 text-[10px]" aria-hidden="true" />
+              Tipo de negócio
+            </p>
+            <p class="text-[11px] leading-snug text-slate-400 dark:text-slate-600 mt-0.5">
+              Pergunte ao dono o que a empresa atende. Isso decide as telas, as funções e se o app fala "Pacientes" ou "Clientes".
+            </p>
+            <div class="mt-2 grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Tipo de negócio">
+              <button
+                v-for="t in TIPOS_CLINICA"
+                :key="t.chave"
+                type="button"
+                role="radio"
+                :aria-checked="tipoEfetivo === t.chave"
+                @click="escolherTipo(t.chave)"
+                class="flex items-start gap-2 rounded-md border px-2.5 py-2 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500"
+                :class="tipoEfetivo === t.chave
+                  ? 'border-violet-400 bg-violet-50 dark:border-violet-500/60 dark:bg-violet-500/10'
+                  : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900'"
+              >
+                <i :class="['fa-solid', t.icone, 'mt-0.5 text-[12px] w-4 text-center', tipoEfetivo === t.chave ? 'text-violet-600 dark:text-violet-300' : 'text-slate-400']" aria-hidden="true" />
+                <span class="min-w-0">
+                  <span class="block text-[12px]" :class="tipoEfetivo === t.chave ? 'text-violet-700 dark:text-violet-300' : 'text-slate-700 dark:text-slate-300'">{{ t.nome }}</span>
+                  <span class="block text-[11px] text-slate-400 dark:text-slate-500">{{ t.ajuda }}</span>
+                </span>
+              </button>
+            </div>
+
+            <template v-if="tipoEfetivo === 'saude'">
+              <p class="mt-2.5 text-[11px] text-slate-500 dark:text-slate-400">Especialidades (pode marcar mais de uma; cada uma libera as funções dela):</p>
+              <div class="mt-1.5 grid grid-cols-2 sm:grid-cols-3 gap-1.5" role="group" aria-label="Especialidades da clínica">
+                <button
+                  v-for="e in ESPECIALIDADES_SAUDE"
+                  :key="e.chave"
+                  type="button"
+                  :aria-pressed="clinicaEspecialidades.includes(e.chave)"
+                  :title="e.ajuda"
+                  @click="alternarEspecialidade(e.chave)"
+                  class="flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-left text-[12px] transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  :class="clinicaEspecialidades.includes(e.chave)
+                    ? 'border-violet-400 bg-violet-50 text-violet-700 dark:border-violet-500/60 dark:bg-violet-500/10 dark:text-violet-300'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400'"
+                >
+                  <i :class="['fa-solid', e.icone, 'text-[11px] w-3.5 text-center']" aria-hidden="true" />
+                  <span class="truncate">{{ e.nome }}</span>
+                  <i v-if="clinicaEspecialidades.includes(e.chave)" class="fa-solid fa-check ml-auto text-[10px]" aria-hidden="true" />
+                </button>
+              </div>
+              <label class="mt-2 inline-flex items-center gap-2 text-[12px] text-slate-600 dark:text-slate-400 cursor-pointer">
+                <input type="checkbox" class="h-3.5 w-3.5 accent-violet-600" :checked="clinicaEspecialidades.includes('estetica')" @change="alternarEspecialidade('estetica')">
+                Também faz estética (mapa facial, fotos de antes e depois)
+              </label>
+              <p class="mt-1.5 text-[11px] leading-snug text-slate-400 dark:text-slate-500">
+                No app: menu "Pacientes", prontuário completo e Atendimentos com o registro da consulta (receita na médica e na odontologia).
+              </p>
+            </template>
+            <p v-else class="mt-2 text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+              No app: menu "Clientes", ficha de anamnese estética, procedimentos com produto e lote, mapa facial, fotos de antes e depois, sessões e pacotes, termos. Sem receita e sem sinais vitais.
+            </p>
+            <p v-if="faltaEspecialidade" class="mt-1.5 text-[11px] text-amber-700 dark:text-amber-400">
+              Marque pelo menos uma especialidade de saúde para salvar.
+            </p>
           </div>
         </template>
 

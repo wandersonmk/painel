@@ -118,6 +118,8 @@ const clienteModulos = ref<{
   max_imoveis: number
   grupos_habilitado: boolean
   formularios_habilitado: boolean
+  clinica_modulo_ativo: boolean
+  clinica_especialidades: string[]
 } | null>(null)
 
 const searchQuery = ref('')
@@ -731,13 +733,16 @@ function handleModulos(id: string) {
       max_acoes_macro: c.max_acoes_macro ?? 5,
       max_pedidos_mes: c.max_pedidos_mes ?? 0,
       max_produtos_vitrine: c.max_produtos_vitrine ?? 0,
-      vitrine_habilitada: c.vitrine_habilitada ?? true,
+      // Produtos virou add-on (11/11/2026): ausente = bloqueado.
+      vitrine_habilitada: c.vitrine_habilitada === true,
       // Add-on pago (01/10/2026), igual Delivery: ausente = bloqueado.
       imoveis_modulo_ativo: c.imoveis_modulo_ativo ?? false,
       max_imoveis: c.max_imoveis ?? 100,
       // Add-ons que nascem desligados: ausente = bloqueado.
       grupos_habilitado: c.grupos_habilitado === true,
       formularios_habilitado: c.formularios_habilitado === true,
+      clinica_modulo_ativo: c.clinica_modulo_ativo === true,
+      clinica_especialidades: Array.isArray(c.clinica_especialidades) ? [...c.clinica_especialidades] : [],
     }
     showModulosModal.value = true
   }
@@ -763,11 +768,13 @@ const COLUNA_MODULO = {
   maxImoveis: 'max_imoveis',
   gruposHabilitado: 'grupos_habilitado',
   formulariosHabilitado: 'formularios_habilitado',
+  clinicaModuloAtivo: 'clinica_modulo_ativo',
+  clinicaEspecialidades: 'clinica_especialidades',
 } as const
 
 // Espelha ModulosEmpresa do AdminModulosModal (tipo declarado aqui em vez de
 // importado do .vue: import de tipo entre SFCs quebra fácil no vue-tsc).
-type CamposModulo = Partial<Record<keyof typeof COLUNA_MODULO, boolean | number>>
+type CamposModulo = Partial<Record<keyof typeof COLUNA_MODULO, boolean | number | string[]>>
 
 async function confirmModulos(modulos: CamposModulo, extras: { quantidade: number; valor: number } | null = null) {
   if (!clienteModulos.value) return
@@ -1241,11 +1248,13 @@ function abrirRenovarDeUso(id: string) {
         :max-acoes-macro-atual="clienteModulos?.max_acoes_macro ?? 5"
         :max-pedidos-mes-atual="clienteModulos?.max_pedidos_mes ?? 0"
         :max-produtos-vitrine-atual="clienteModulos?.max_produtos_vitrine ?? 0"
-        :vitrine-atual="clienteModulos?.vitrine_habilitada ?? true"
+        :vitrine-atual="clienteModulos?.vitrine_habilitada ?? false"
         :imoveis-atual="clienteModulos?.imoveis_modulo_ativo ?? false"
         :max-imoveis-atual="clienteModulos?.max_imoveis ?? 100"
         :grupos-atual="clienteModulos?.grupos_habilitado ?? false"
         :formularios-atual="clienteModulos?.formularios_habilitado ?? false"
+        :clinica-atual="clienteModulos?.clinica_modulo_ativo ?? false"
+        :clinica-especialidades-atual="clienteModulos?.clinica_especialidades ?? []"
         @close="showModulosModal = false; clienteModulos = null"
         @confirm="confirmModulos"
       />

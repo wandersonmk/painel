@@ -9,6 +9,9 @@ import { requireSuperAdmin, getServiceClient } from '~~/server/utils/requireSupe
 // FALSE (só liberados após contratação).
 
 // key do body -> coluna em `empresas`
+// Especialidades do Módulo Clínica (espelha ESPECIALIDADES do app).
+const ESPECIALIDADES_CLINICA = ['odontologia', 'estetica', 'psicologia', 'medica', 'fisioterapia', 'nutricao', 'outra']
+
 const FLAGS: Record<string, string> = {
   roteamentoHabilitado: 'roteamento_habilitado',
   agendamentosHabilitado: 'agendamentos_habilitado',
@@ -23,11 +26,13 @@ const FLAGS: Record<string, string> = {
   deliveryModuloAtivo: 'delivery_modulo_ativo',
   // Imóveis (01/10/2026): add-on pago, mesmo padrão de Delivery — nasce FALSE.
   imoveisModuloAtivo: 'imoveis_modulo_ativo',
-  // Vitrine ("Produtos" no app): gate comum, nasce TRUE (28/09/2026).
+  // Produtos (vitrine): add-on desde 11/11/2026 — desligado some do menu do app.
   vitrineHabilitada: 'vitrine_habilitada',
   // Add-ons que nascem FALSE (o plano Enterprise liga os dois).
   gruposHabilitado: 'grupos_habilitado',
   formulariosHabilitado: 'formularios_habilitado',
+  // Módulo Clínica (11/11/2026): add-on, nasce FALSE.
+  clinicaModuloAtivo: 'clinica_modulo_ativo',
 }
 
 export default defineEventHandler(async (event) => {
@@ -87,6 +92,16 @@ export default defineEventHandler(async (event) => {
     update[regra.coluna] = valor
   }
 
+  // Especialidades da clínica (11/11/2026): liberam as funções de cada uma
+  // (odontograma, mapa facial...). Lista de chaves conhecidas, sem repetir.
+  if (body.clinicaEspecialidades !== undefined) {
+    const lista = body.clinicaEspecialidades
+    if (!Array.isArray(lista) || lista.some(e => typeof e !== 'string' || !ESPECIALIDADES_CLINICA.includes(e))) {
+      throw createError({ statusCode: 400, statusMessage: 'clinicaEspecialidades inválido' })
+    }
+    update.clinica_especialidades = [...new Set(lista as string[])]
+  }
+
   // Gate desligado nunca convive com faixa contratada: zera aqui também, e não
   // só na tela, pra não sobrar plano fantasma se a chamada vier de outro lugar.
   if (update.envios_habilitado === false) update.max_envios_mes = 0
@@ -97,6 +112,31 @@ export default defineEventHandler(async (event) => {
   }
 
   const supabase = getServiceClient()
+
+  // Nomenclatura (12/11/2026): ao LIGAR a Clínica ou TROCAR as especialidades,
+  // o app passa a chamar as pessoas pelo perfil: clínica de saúde = "Pacientes";
+  // só estética = "Clientes". Quem usa "Leads" fica como está; depois disso a
+  // empresa pode trocar em Personalização (só muda de novo se mexerem aqui).
+  if (update.clinica_modulo_ativo === true || update.clinica_especialidades !== undefined) {
+    const { data: atual } = await supabase
+      .from('empresas')
+      .select('clinica_modulo_ativo, clinica_especialidades, nomenclatura_pessoa')
+      .eq('id', clienteId)
+      .maybeSingle()
+    if (atual) {
+      const ligada = update.clinica_modulo_ativo ?? atual.clinica_modulo_ativo
+      const esp: string[] = (update.clinica_especialidades as string[] | undefined) ?? atual.clinica_especialidades ?? []
+      const antes = [...(atual.clinica_especialidades || [])].sort().join(',')
+      const mudouEsp = update.clinica_especialidades !== undefined && [...esp].sort().join(',') !== antes
+      const ligouAgora = update.clinica_modulo_ativo === true && atual.clinica_modulo_ativo !== true
+      const termoAtual = atual.nomenclatura_pessoa || 'cliente'
+      if (ligada === true && (ligouAgora || mudouEsp) && termoAtual !== 'lead') {
+        const soEstetica = esp.includes('estetica') && esp.every(e => e === 'estetica' || e === 'outra')
+        update.nomenclatura_pessoa = soEstetica ? 'cliente' : 'paciente'
+      }
+    }
+  }
+
   const { error } = await supabase.from('empresas').update(update).eq('id', clienteId)
   if (error) return { success: false, error: error.message }
   return { success: true }
